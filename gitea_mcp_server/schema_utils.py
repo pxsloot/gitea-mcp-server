@@ -9,7 +9,8 @@ import cycles.
 Following the same pattern as :mod:`gitea_mcp_server.scope` (a flat
 module that breaks a circular import between ``tools/`` and
 ``resources/``).  The agent-facing ``$ref`` marker contract lives in
-:mod:`gitea_mcp_server.marker`.
+:mod:`gitea_mcp_server.marker`; payload ``$ref`` chain resolution lives in
+:mod:`gitea_mcp_server.ref_resolver`.
 """
 
 from typing import Any

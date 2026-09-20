@@ -23,7 +23,6 @@ from gitea_mcp_server.format import (
     call_markdown_formatter,
     collapse_data,
     format_as_markdown,
-    resolve_ref_chain,
 )
 from gitea_mcp_server.models import (
     ToolSchemaResult,  # noqa: TC001 — used as runtime annotation in test helpers
@@ -428,10 +427,6 @@ class TestCollapseData:
         """A scalar payload is returned unchanged."""
         assert collapse_data("x", {"type": "string"}, detail="concise") == "x"
 
-    def test_resolve_ref_chain_without_ref_returns_none(self) -> None:
-        """An inline schema has no ``$ref`` chain to resolve."""
-        assert resolve_ref_chain({"type": "object"}, make_openapi_spec()) is None
-
     def test_nested_mixed(self) -> None:
         """Mixed $ref and inline schemas: only $ref properties collapse."""
         data = {
@@ -467,6 +462,48 @@ class TestCollapseData:
         data = [{"id": 1, "login": "user1"}]
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/User"}}
         result = collapse_data(data, schema, detail="concise")
+        assert result is data
+
+    def test_root_list_ref_to_named_array_resolved(self) -> None:
+        """A root ``$ref`` to a named array type is resolved before ``items``.
+
+        The payload schema may itself be a ``$ref`` (e.g. ``RepoList``); its
+        ``items`` live on the resolved schema.  Resolving the root ref first
+        keeps the collapse in step with ``schema_to_compact_example`` (#763).
+        """
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}, "login": {"type": "string"}},
+                    },
+                    "Repo": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                            "owner": {"$ref": "#/components/schemas/User"},
+                        },
+                    },
+                    "RepoList": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/Repo"},
+                    },
+                }
+            }
+        )
+        data = [{"id": 1, "name": "r", "owner": {"id": 2, "login": "u"}}]
+        schema = {"$ref": "#/components/schemas/RepoList"}
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
+        assert result == [{"id": 1, "name": "r", "owner": {"$ref": "User"}}]
+
+    def test_root_list_unresolvable_root_ref_left_uncollapsed(self) -> None:
+        """An unresolvable root ``$ref`` leaves the list payload unchanged."""
+        spec = _issue_spec()
+        data = [{"a": 1}]
+        schema = {"$ref": "#/components/schemas/Nope"}
+        result = collapse_data(data, schema, detail="concise", openapi_spec=spec)
         assert result is data
 
     def test_root_list_with_spec_summarizes_items(self) -> None:

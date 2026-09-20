@@ -138,7 +138,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
 | `tools/synthetic_contract.py` | Synthetic registration contract — wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
-| `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref:Type`` name resolution and cross-references |
+| `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref`` marker name resolution and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo``, ``content_type`` (pre-request hooks) and ``format``, ``detail``, ``fetch_all`` (hook-less pipeline options read by the result pipeline). See the `virtual params how-to`_ below for adding new entries. |
 | `tools/result_pipeline.py` | Single result pipeline — ``ExecutionResult`` (raw executor output) + ``render()`` (shape → paginate → format → ToolResult); the single writer of both channels |
 | `tools/namespace.py` | `GiteaNamespace` transform (prefix tools, pass resources) |

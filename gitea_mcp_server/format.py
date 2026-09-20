@@ -10,13 +10,12 @@ Public functions:
         (the root object / root-list items), replace ``$ref``-backed
         *relations* with the canonical agent-facing ``$ref`` marker
         (``{"$ref": "TypeName"}``; ``{"$ref": "TypeName", "count": N}`` for a
-        collapsed list).  A root list's item ``$ref`` is resolved one level
-        via the OpenAPI spec so items are summarized (#759); an unresolvable
-        item type leaves the list unchanged — never a content-free marker
-        (#763).  Used to shape data before formatting so any formatter (json
-        or markdown) receives already-collapsed data.
-    resolve_ref_chain - resolve a schema's root ``$ref`` chain to a concrete
-        schema (shared by the collapse and the compact example generator).
+        collapsed list).  A payload ``$ref`` — the root object's schema, or a
+        root list's item schema — is resolved one level via the OpenAPI spec
+        so the payload is summarized (#759); an unresolvable payload type
+        leaves the data unchanged — never a content-free marker (#763).  Used
+        to shape data before formatting so any formatter (json or markdown)
+        receives already-collapsed data.
     decode_base64_content - decode base64 file content from a Gitea
     ContentsResponse (shared by tools and resources).
     format_tool_info_markdown - format a ToolSchemaResult as parseable markdown.
@@ -55,7 +54,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.marker import is_ref_marker, ref_marker, ref_marker_label
-from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
+from gitea_mcp_server.ref_resolver import resolve_ref_chain
 from gitea_mcp_server.schema_utils import (
     extract_type_name,
     extract_type_ref,
@@ -95,10 +94,12 @@ logger = logging.getLogger(__name__)
 # and a schema is available the pipeline pre-collapses the page, so formatters
 # receive already-collapsed data.  Collapsed *fields* arrive as the canonical
 # ``$ref`` marker (``{"$ref": "TypeName"}``, or with ``count`` for a collapsed
-# list) and render through ``is_ref_marker``/``ref_marker_label``; collapsed
-# *items* do not exist — root-list items are summarized (dicts with scalars
-# intact and nested refs marked, #759), so formatters must not branch on
-# item-level collapsed shapes.
+# list) and render through ``is_ref_marker``/``ref_marker_label``.  Root-list
+# items are summarized, not label-replaced (dicts with scalars intact and
+# nested refs marked, #759), so formatters generally do not branch on
+# item-level shapes.  The one exception is a root list whose items are
+# themselves collapsed list relations (a list of lists): those arrive as count
+# markers and ``_format_list_as_markdown`` renders them as compact labels.
 MarkdownFormatter = Callable[..., str]
 
 
@@ -423,45 +424,9 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
     return extract_type_name(schema)
 
 
-# Alias-chasing cap: a ``$ref`` whose target is itself a reference — bare
-# (e.g. ``CreatePullReviewCommentOptions`` in the live Gitea spec) or
-# combinator-wrapped (``allOf``/``anyOf``/``oneOf``) — is followed at most
-# this many hops before resolution gives up.  The cap also breaks reference
-# cycles.
-_MAX_REF_ALIAS_HOPS = 5
-
-
-def resolve_ref_chain(
-    schema: dict[str, Any] | None,
-    openapi_spec: OpenAPISpec | None,
-) -> dict[str, Any] | None:
-    """Resolve a schema's root ``$ref`` chain to a concrete schema.
-
-    A ``$ref`` whose target is itself a reference — bare or
-    combinator-wrapped — is chased up to :data:`_MAX_REF_ALIAS_HOPS` hops.
-    Both producers use this to resolve a *payload* item schema one level: the
-    concise collapse (:func:`collapse_data`) and the compact example
-    generator (``tools.examples.schema_to_compact_example``), so the two can
-    never disagree about a referenced type's shape (#763, #759).
-
-    Returns the concrete schema (one with no root ``$ref``), or ``None`` when
-    there is no spec, no ``$ref`` at the schema root, or the chain is broken
-    or cyclic.
-    """
-    if openapi_spec is None:
-        return None
-    ref = _extract_ref(schema)
-    if ref is None:
-        return None
-    for _ in range(_MAX_REF_ALIAS_HOPS):
-        resolved = resolve_spec_ref(openapi_spec, ref)
-        if not isinstance(resolved, dict):
-            return None
-        nxt = _extract_ref(resolved)
-        if nxt is None:
-            return resolved  # concrete schema (properties / inline combinator)
-        ref = nxt  # alias (bare or combinator-wrapped) — chase one hop
-    return None
+# Alias-chasing cap and the shared resolver live in ``ref_resolver.py``; the
+# collapse and the compact example generator both resolve a payload ``$ref``
+# through :func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`.
 
 
 def collapse_data(
@@ -513,15 +478,23 @@ def _summarize_payload(
     """The requested payload: never replaced by a marker (#759).
 
     A root object is walked as relations; a root list is summarized item by
-    item after resolving the item ``$ref`` one level.  An unresolvable payload
-    ``$ref`` leaves the data unchanged rather than emitting a marker.
+    item after resolving the payload schema and the item ``$ref`` one level
+    each.  An unresolvable payload ``$ref`` leaves the data unchanged rather
+    than emitting a marker.
     """
     if isinstance(data, list):
-        items_schema = schema.get("items", {}) if isinstance(schema, dict) else {}
-        concrete = _concrete_schema(items_schema, openapi_spec)
+        # Resolve the payload schema itself first: a root ``$ref`` may point
+        # at a named array type, whose ``items`` live on the resolved schema,
+        # not on the ``$ref`` wrapper.  This keeps the collapse in step with
+        # ``schema_to_compact_example``, which resolves the same root ref.
+        concrete = _concrete_schema(schema, openapi_spec)
         if concrete is None:
+            return data  # payload type unresolved → leave the payload intact
+        items_schema = concrete.get("items", {}) if isinstance(concrete, dict) else {}
+        items_concrete = _concrete_schema(items_schema, openapi_spec)
+        if items_concrete is None:
             return data  # item type unresolved → leave the payload intact
-        return [_collapse_relations(item, concrete) for item in data]
+        return [_collapse_relations(item, items_concrete) for item in data]
 
     if isinstance(data, dict):
         concrete = _concrete_schema(schema, openapi_spec)
@@ -1001,5 +974,4 @@ __all__ = [
     "get_formatter_for_type",
     "register_formatter",
     "resolve_formatter",
-    "resolve_ref_chain",
 ]

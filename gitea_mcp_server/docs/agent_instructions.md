@@ -214,7 +214,7 @@ parameter:
 | `detail`  | Effect on output |
 |-----------|------------------|
 | `"full"` (default) | Complete information, full object expansion. |
-| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) are replaced by the marker `{"$ref": "TypeName"}`. Lists *inside* an item are replaced by `{"$ref": "TypeName", "count": N}`. In ``markdown`` the marker renders as `$ref:TypeName` (a collapsed list as `$ref:TypeName[N]`). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
+| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) are replaced by the marker `{"$ref": "TypeName"}`. `$ref`-backed lists *inside* an item are replaced by `{"$ref": "TypeName", "count": N}`. In ``markdown`` the marker renders as `$ref:TypeName` (a collapsed list as `$ref:TypeName[N]`). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
 
 **Content is the contract.** The text channel (`content`) is authoritative
 and always present; `structured_content` mirrors it. For `format=json` and

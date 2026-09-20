@@ -56,6 +56,7 @@ tests/
 │   ├── test_mcp_tools.py
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
+│   ├── test_ref_resolver.py
 │   ├── test_regression_316_dotfile_paths.py
 │   ├── test_resource_auto.py
 │   ├── test_resource_custom.py

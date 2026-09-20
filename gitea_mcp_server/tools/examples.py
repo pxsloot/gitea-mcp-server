@@ -4,10 +4,10 @@ from typing import Any
 
 from fastmcp.tools.base import Tool
 
-from gitea_mcp_server.format import resolve_ref_chain
 from gitea_mcp_server.marker import ref_marker
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.ref_resolver import resolve_ref_chain
 from gitea_mcp_server.schema_utils import extract_type_name, get_schema_type
 from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
@@ -92,11 +92,24 @@ def _example_string(schema: dict[str, Any], prop_name: str | None = None) -> str
     return "example"
 
 
+_MAX_INLINE_EXAMPLE_DEPTH = 10
+"""Internal safety bound on compact-example recursion.
+
+Recursion normally stops at ``$ref`` pointers, and alias chains are capped by
+:func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`; this bound also
+breaks a pathological inline schema (or a cyclic array-of-array ``$ref``
+chain) that would otherwise recurse without end.  It is an internal
+invariant, not a public knob — no production caller tunes it, and real specs
+stay far below it.
+"""
+
+
 def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     schema: dict[str, Any],
     at_root: bool = True,
     prop_name: str | None = None,
     openapi_spec: OpenAPISpec | None = None,
+    _depth: int = 0,
 ) -> Any:
     """Generate a compact type-summary from a schema.
 
@@ -104,9 +117,9 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     :func:`~gitea_mcp_server.format.collapse_data`:
 
     - **payload** (``at_root``) — a ``$ref`` is resolved one level (via
-      :func:`~gitea_mcp_server.format.resolve_ref_chain`) so the agent sees
-      actual field names; a root array's item ``$ref`` is resolved the same
-      way so items are summarized.
+      :func:`~gitea_mcp_server.ref_resolver.resolve_ref_chain`) so the agent
+      sees actual field names; a root array's item ``$ref`` is resolved the
+      same way so items are summarized.
     - **relation** (below the payload) — a ``$ref`` is represented by the
       canonical marker ``{"$ref": "TypeName"}`` (built by
       :func:`~gitea_mcp_server.marker.ref_marker`), and a nested list of
@@ -119,7 +132,9 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
     The markdown formatter recognises the marker via ``is_ref_marker`` and
     renders it as ``$ref:TypeName``.  All properties are included (no
     ``max_properties`` truncation).  Leaf types use the shared meaningful
-    example values.
+    example values.  Recursion is bounded by ``_MAX_INLINE_EXAMPLE_DEPTH`` so
+    a pathological inline nest (or a cyclic array-of-array ``$ref`` chain)
+    cannot run away.
 
     Designed to be called on the **raw** (unresolved) schema so that ``$ref``
     pointers are encountered naturally and serve as stop-recursion markers.
@@ -132,12 +147,16 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
         openapi_spec: Post-conversion OpenAPI 3.1 spec.  At the payload, the
             root ``$ref`` chain (or a root array's item ``$ref``) is resolved
             to a concrete schema; ``None`` leaves it unresolved.
+        _depth: Internal recursion depth — do not pass.
 
     Returns:
         A compact representation: the ``{"$ref": "TypeName"}`` marker for
         relations (with ``count`` for a nested list), example values for leaf
         types, dicts/arrays with one level of nesting.
     """
+    if _depth >= _MAX_INLINE_EXAMPLE_DEPTH:
+        return "{...}"
+
     # A payload $ref is resolved so agents see actual fields; a relation $ref
     # is represented by the canonical marker.
     if "$ref" in schema and isinstance(schema.get("$ref"), str):
@@ -145,10 +164,14 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             resolved = resolve_ref_chain(schema, openapi_spec)
             if resolved is not None:
                 return schema_to_compact_example(
-                    resolved, at_root, prop_name=prop_name, openapi_spec=openapi_spec
+                    resolved,
+                    at_root,
+                    prop_name=prop_name,
+                    openapi_spec=openapi_spec,
+                    _depth=_depth + 1,
                 )
             # Fall through to the marker if resolution fails
-        return ref_marker(schema["$ref"].rsplit("/", 1)[-1])
+        return ref_marker(schema["$ref"])
 
     # anyOf/oneOf - pick first non-null option
     for key in ("anyOf", "oneOf"):
@@ -157,7 +180,11 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
             for opt in options:
                 if isinstance(opt, dict) and get_schema_type(opt) != "null":
                     return schema_to_compact_example(
-                        opt, at_root, prop_name=prop_name, openapi_spec=openapi_spec
+                        opt,
+                        at_root,
+                        prop_name=prop_name,
+                        openapi_spec=openapi_spec,
+                        _depth=_depth + 1,
                     )
 
     schema_type = schema.get("type")
@@ -184,6 +211,7 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
                     False,
                     prop_name=prop_name_inner,
                     openapi_spec=openapi_spec,
+                    _depth=_depth + 1,
                 )
         return result
 
@@ -205,7 +233,9 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
                 return []
             items = resolved
         # An array's items are payload items exactly when the array is.
-        return [schema_to_compact_example(items, at_root, openapi_spec=openapi_spec)]
+        return [
+            schema_to_compact_example(items, at_root, openapi_spec=openapi_spec, _depth=_depth + 1)
+        ]
 
     if schema_type == "string":
         return _example_string(schema, prop_name=prop_name)

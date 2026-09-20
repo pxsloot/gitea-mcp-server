@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastmcp.tools.base import Tool
 
 from gitea_mcp_server.tools.examples import (
@@ -158,7 +160,7 @@ class TestSchemaToCompactExample:
         assert result == {"$ref": "SomeDeeplyNestedType"}
 
     def test_inline_nesting_expands_fully(self) -> None:
-        """Inline nested objects expand to their full depth (no depth cap)."""
+        """Inline nested objects expand fully (well under the safety bound)."""
         from gitea_mcp_server.tools.examples import schema_to_compact_example
 
         schema = {
@@ -179,6 +181,56 @@ class TestSchemaToCompactExample:
         }
         result = schema_to_compact_example(schema)
         assert result["a"]["b"]["c"] == "example"
+
+    def test_inline_nesting_truncates_at_safety_bound(self) -> None:
+        """A pathological inline nest stops at ``_MAX_INLINE_EXAMPLE_DEPTH``.
+
+        Recursion is normally bounded by ``$ref`` stops; this guards a deep
+        inline schema from producing an unbounded ``output_example``.
+        """
+        from gitea_mcp_server.tools.examples import (
+            _MAX_INLINE_EXAMPLE_DEPTH,
+            schema_to_compact_example,
+        )
+
+        schema: dict[str, Any] = {"type": "object", "properties": {}}
+        node = schema
+        for _ in range(_MAX_INLINE_EXAMPLE_DEPTH + 5):
+            child: dict[str, Any] = {"type": "object", "properties": {}}
+            node["properties"]["n"] = child
+            node = child
+
+        result = schema_to_compact_example(schema)
+        cur = result
+        depth = 0
+        while isinstance(cur, dict) and "n" in cur:
+            cur = cur["n"]
+            depth += 1
+        assert cur == "{...}"
+        assert depth == _MAX_INLINE_EXAMPLE_DEPTH
+
+    def test_cyclic_array_ref_chain_terminates(self) -> None:
+        """A cyclic array-of-array ``$ref`` chain terminates at the bound.
+
+        ``resolve_ref_chain`` caps *alias* hops, but an ``A``-array-of-``B`` /
+        ``B``-array-of-``A`` cycle keeps ``at_root`` true across resolutions;
+        the depth bound is what breaks it.
+        """
+        import json
+
+        from gitea_mcp_server.tools.examples import schema_to_compact_example
+        from tests.helpers.spec_fixtures import make_openapi_spec
+
+        spec = make_openapi_spec(
+            components={
+                "schemas": {
+                    "A": {"type": "array", "items": {"$ref": "#/components/schemas/B"}},
+                    "B": {"type": "array", "items": {"$ref": "#/components/schemas/A"}},
+                }
+            }
+        )
+        result = schema_to_compact_example({"$ref": "#/components/schemas/A"}, openapi_spec=spec)
+        assert "{...}" in json.dumps(result)
 
     def test_anyof_skips_null_first_option(self) -> None:
         """anyOf should pick the first non-null option."""

@@ -39,7 +39,10 @@ Parameter                         Default        Purpose
                                                  ``list_resources``).  When ``None``, the OpenAPI
                                                  operation summary/description is used; the fallback
                                                  never leaks API plumbing (``Resource for GET {path}``).
-``format_hint``                   ``None``       Registered formatter name in ``tools/display.py``.
+``format_hint``                   ``None``       Name of a **bespoke** formatter registered in
+                                                 ``tools/display.py`` (e.g. ``"labels"``).  Most
+                                                 resources need none: the generic schema-anchored
+                                                 view renders them from the response type (#771).
                                                  Ignored when ``handler_hook`` is set.
 ``handler_hook``                  ``None``       Async callback returning a string from the raw API
                                                  response.  Skips schema derivation, registers as
@@ -51,7 +54,8 @@ Parameter                         Default        Purpose
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
 ``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
                                                  must be included explicitly when the resource has
-                                                 a ``format_hint`` (i.e., a markdown formatter).
+                                                 a ``format_hint`` (i.e., a bespoke markdown
+                                                 formatter).
 ``error_message``                 ``"Resource    User-facing 404 message with optional ``{param}``
                                                  placeholders.
 ``param_config``                  ``None``       A ``ResourceParamConfig`` dataclass grouping the 6

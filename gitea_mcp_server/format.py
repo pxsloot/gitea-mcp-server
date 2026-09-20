@@ -317,18 +317,89 @@ def _identity_list(value: list[Any], key: str | None = None) -> str:
     return ", ".join(_identity(item, key) for item in value)
 
 
+def _ref_target(schema: Any, openapi_spec: OpenAPISpec | None) -> str | None:
+    """Return the type name a property schema references, or ``None``.
+
+    Handles a bare ``$ref``, a combinator (``anyOf``/``oneOf``/``allOf``)
+    wrapping a ``$ref``, and an array whose ``items`` is a ``$ref``.  The
+    referenced type must resolve to an **object** schema — a combinator
+    wrapping a scalar alias (e.g. ``Issue.state`` → ``StateType``, a string)
+    is not a relation.
+    """
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return _object_type_name(ref, openapi_spec)
+    for key in ("anyOf", "oneOf", "allOf"):
+        members = schema.get(key)
+        if isinstance(members, list):
+            for member in members:
+                if isinstance(member, dict) and isinstance(member.get("$ref"), str):
+                    name = _object_type_name(member["$ref"], openapi_spec)
+                    if name:
+                        return name
+    if schema.get("type") == "array" or (
+        isinstance(schema.get("type"), list) and "array" in schema["type"]
+    ):
+        return _ref_target(schema.get("items"), openapi_spec)
+    return None
+
+
+def _object_type_name(ref: str, openapi_spec: OpenAPISpec | None) -> str | None:
+    """Return the type name for *ref* if it resolves to an object schema."""
+    name = ref.rsplit("/", 1)[-1]
+    if openapi_spec is None:
+        return name
+    schema = _type_schema(openapi_spec, name)
+    if schema is None:
+        return name
+    schema_type = schema.get("type")
+    if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
+        return name
+    return None
+
+
 def _view_hints(
     openapi_spec: OpenAPISpec | None, response_type: str | None
 ) -> tuple[set[str], dict[str, str | None]]:
     """Read the converter-stamped view hints for a response type.
 
     Returns ``(omit, compact)`` — the property names to drop and a mapping of
-    property name to identity field (``None`` = generic policy).  Both are
-    empty when no spec/type is available, so the view degrades to the plain
-    schema derivation.
+    property name to identity-field **override** (``None`` = generic policy).
+    Both are empty when no spec/type is available, so the view degrades to
+    the plain schema derivation.
+
+    The hints are keyed by response type, so the whole spec is indexed once
+    (:func:`_hint_index`) rather than scanned per render.
     """
     if openapi_spec is None or not response_type:
         return set(), {}
+    return _hint_index(openapi_spec).get(response_type, (set(), {}))
+
+
+#: Cache of ``id(spec) -> {response_type: (omit, compact)}``.  The spec is
+#: built once at startup and never mutated after registration, so an
+#: identity-keyed cache is safe; it is bounded by the number of live specs
+#: (one per server, plus test fixtures).
+_HINT_INDEX_CACHE: dict[int, dict[str, tuple[set[str], dict[str, str | None]]]] = {}
+
+
+def _hint_index(
+    openapi_spec: OpenAPISpec,
+) -> dict[str, tuple[set[str], dict[str, str | None]]]:
+    """Index the converter-stamped view hints by response type.
+
+    Built once per spec (identity-keyed) so a markdown render does not scan
+    every operation.  When two operations share a response type, the first
+    wins — the hints are keyed by type in the converter, so they agree.
+    """
+    key = id(openapi_spec)
+    cached = _HINT_INDEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    index: dict[str, tuple[set[str], dict[str, str | None]]] = {}
     paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
     for path_item in paths.values():
         if not isinstance(path_item, dict):
@@ -336,15 +407,17 @@ def _view_hints(
         for operation in path_item.values():
             if not isinstance(operation, dict):
                 continue
-            if operation.get("x-response-type") != response_type:
+            response_type = operation.get("x-response-type")
+            if not isinstance(response_type, str) or response_type in index:
                 continue
             omit = operation.get("x-mcp-view-omit")
             compact = operation.get("x-mcp-view-compact")
-            return (
+            index[response_type] = (
                 set(omit) if isinstance(omit, list) else set(),
                 dict(compact) if isinstance(compact, dict) else {},
             )
-    return set(), {}
+    _HINT_INDEX_CACHE[key] = index
+    return index
 
 
 def _type_schema(
@@ -359,6 +432,36 @@ def _type_schema(
         return None
     schema = schemas.get(response_type)
     return schema if isinstance(schema, dict) else None
+
+
+def _build_field_filter(
+    properties: dict[str, Any],
+    omit: set[str],
+    compact: dict[str, str | None],
+    openapi_spec: OpenAPISpec | None,
+) -> dict[str, dict]:
+    """Build the collection view's field filter from the schema.
+
+    A property is a **relation** when its schema references an object type
+    (``$ref``, a combinator wrapping one, or an array of one) — derived from
+    the schema, so a new or unknown type compacts its relations for free.
+    The converter-stamped ``compact`` map supplies identity-field
+    *overrides* for relations whose object has no conventional identity
+    (``base`` → ``ref``, ``milestone`` → ``title``, ``pull_request`` →
+    ``merged``).  ``omit`` drops noise fields.
+    """
+    field_filter: dict[str, dict] = {}
+    for prop_name, prop_schema in properties.items():
+        if prop_name in omit:
+            continue
+        if _ref_target(prop_schema, openapi_spec) is not None:
+            field_filter[prop_name] = {
+                "render": "compact_identity",
+                "identity_key": compact.get(prop_name),
+            }
+        else:
+            field_filter[prop_name] = {}
+    return field_filter
 
 
 def _generic_collection_view(
@@ -394,73 +497,103 @@ def _generic_collection_view(
         return format_as_markdown(data, title=_detail_title(data, response_type, extra))
 
     omit, compact = _view_hints(openapi_spec, response_type)
-    field_filter: dict[str, dict] = {}
-    for prop_name in properties:
-        if prop_name in omit:
-            continue
-        if prop_name in compact:
-            field_filter[prop_name] = {
-                "render": "compact_identity",
-                "identity_key": compact[prop_name],
-            }
-        else:
-            field_filter[prop_name] = {}
+    field_filter = _build_field_filter(properties, omit, compact, openapi_spec)
 
-    title = _collection_title(response_type, len(data), extra)
+    title = _collection_title(response_type, len(data), extra, data)
     return format_as_markdown(
         data,
         title=title,
         field_filter=field_filter,
-        item_title_key=_item_title_key(properties),
+        item_title_key=_item_title_key(properties, response_type),
     )
 
 
 def _detail_title(data: Any, response_type: str | None, extra: dict[str, Any] | None = None) -> str:
     """Heading for a single-object read (``Repository``, ``Issue #1``).
 
-    An Issue/PullRequest detail read gets a ``Issue #N: title`` heading; the
+    An Issue/PullRequest detail read gets an ``Issue #N: title`` heading; the
     ``type`` filter (``pulls``) or a set ``pull_request`` field selects the
-    PR label.
+    PR label.  Other types use their type-appropriate identity field.
     """
     if isinstance(data, dict):
-        if response_type == "Issue":
-            is_pr = bool(data.get("pull_request")) or (extra or {}).get("type") == "pulls"
+        if response_type in ("Issue", "PullRequest"):
+            is_pr = response_type == "PullRequest" or bool(data.get("pull_request"))
+            is_pr = is_pr or (extra or {}).get("type") == "pulls"
             label = "Pull Request" if is_pr else "Issue"
             number = data.get("number", "?")
             title = data.get("title")
             return f"{label} #{number}: {title}" if title else f"{label} #{number}"
-        for key in ("full_name", "title", "name", "username", "login", "tag_name"):
+        for key in _title_keys(response_type):
             value = data.get(key)
-            if value is not None:
+            if value:
+                if response_type == "Release":
+                    return f"Release {value}"
                 return str(value)
     return response_type or "Result"
+
+
+def _title_keys(response_type: str | None) -> tuple[str, ...]:
+    """Identity-field candidates for a type's heading, most specific first.
+
+    Type-aware so an empty ``full_name`` falls through to ``login`` (User) or
+    ``username`` (Organization), and a Release prefers ``tag_name`` over an
+    empty ``name``.
+    """
+    if response_type == "User":
+        return ("login", "full_name", "username", "name")
+    if response_type == "Organization":
+        return ("username", "name", "full_name")
+    if response_type == "Release":
+        return ("tag_name", "name")
+    return ("full_name", "title", "name", "username", "login", "tag_name")
 
 
 def _fallback_title(data: Any, response_type: str | None) -> str:
     """Heading when the type schema is unavailable: collection or detail."""
     if isinstance(data, list):
-        return _collection_title(response_type, len(data))
+        return _collection_title(response_type, len(data), data=data)
     return _detail_title(data, response_type)
 
 
+#: Explicit plural labels for types a naive pluraliser gets wrong.
+_PLURAL_LABELS: dict[str, str] = {
+    "PullRequest": "Pull Requests",
+    "Repository": "Repositories",
+}
+
+
 def _collection_title(
-    response_type: str | None, count: int, extra: dict[str, Any] | None = None
+    response_type: str | None,
+    count: int,
+    extra: dict[str, Any] | None = None,
+    data: list[Any] | None = None,
 ) -> str:
     """Pluralised heading for a collection view (``Issues - 3 items``).
 
     The issue-list ``type`` filter (``issues`` / ``pulls``) overrides the
-    type-derived label, so ``?type=pulls`` titles ``Pull Requests``.
+    type-derived label.  With no filter, an issue list that contains pull
+    requests is labelled ``Issues and Pull Requests`` — Gitea's ``/issues``
+    endpoint returns PRs too.
     """
     type_filter = (extra or {}).get("type")
-    if response_type == "Issue" and type_filter == "pulls":
-        label = "Pull Requests"
+    if response_type == "Issue":
+        if type_filter == "pulls":
+            label = "Pull Requests"
+        elif type_filter == "issues":
+            label = "Issues"
+        elif data and any(isinstance(item, dict) and item.get("pull_request") for item in data):
+            label = "Issues and Pull Requests"
+        else:
+            label = "Issues"
     else:
         label = _pluralize(response_type) if response_type else "Results"
     return f"{label} - {count} items" if count else label
 
 
 def _pluralize(type_name: str) -> str:
-    """Naive pluralisation for a type name (``Issue`` -> ``Issues``)."""
+    """Pluralise a type name (``Issue`` -> ``Issues``, ``PullRequest`` -> ``Pull Requests``)."""
+    if type_name in _PLURAL_LABELS:
+        return _PLURAL_LABELS[type_name]
     if type_name.endswith(("s", "x", "z", "ch", "sh")):
         return f"{type_name}es"
     if type_name.endswith("y") and len(type_name) > 1 and type_name[-2] not in "aeiou":
@@ -468,13 +601,13 @@ def _pluralize(type_name: str) -> str:
     return f"{type_name}s"
 
 
-def _item_title_key(properties: dict[str, Any]) -> str | None:
+def _item_title_key(properties: dict[str, Any], response_type: str | None = None) -> str | None:
     """Pick the per-item title field from the schema's properties.
 
-    ``full_name`` precedes ``name`` so a repository list titles each item
-    ``owner/repo`` rather than the bare name.
+    Type-aware so a repository list titles each item ``owner/repo``
+    (``full_name``) and a release list uses ``tag_name``.
     """
-    for key in ("title", "full_name", "name", "username", "login", "tag_name"):
+    for key in _title_keys(response_type):
         if key in properties:
             return key
     return None

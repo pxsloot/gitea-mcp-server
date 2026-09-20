@@ -33,8 +33,10 @@ an unknown property name, or a hint for a type the spec does not define, is
 logged as an error.  A stale hint is a bug, not a silent no-op — this is the
 systemic form of the drift guard the old hand-written whitelists lacked.
 
-This module is deliberately self-contained (no imports from ``core``) so
-``core`` can import :func:`stamp_display_hints` without a circular import.
+The response-schema helpers (``success_schema`` / ``primary_type``) are
+shared with :mod:`~gitea_mcp_server.openapi_converter.type_references` — the
+same pre-wrap pass that stamps ``x-response-type`` — so the two can never
+disagree about an operation's primary type.
 """
 
 from __future__ import annotations
@@ -43,7 +45,10 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.constants import HTTP_METHODS_ALL
-from gitea_mcp_server.schema_utils import extract_type_name
+from gitea_mcp_server.openapi_converter.type_references import (
+    primary_type,
+    success_schema,
+)
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -195,70 +200,6 @@ _VIEW_COMPACT: dict[str, dict[str, str | None]] = {
 }
 
 
-def _resolve_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
-    """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec.
-
-    Walks the spec tree using string path segments.  Returns ``None`` if any
-    segment is missing (handles malformed refs gracefully).
-    """
-    parts = ref.lstrip("#/").split("/")
-    current: Any = spec
-    try:
-        for part in parts:
-            current = current[part]
-    except (KeyError, TypeError):
-        return None
-    return current if isinstance(current, dict) else None
-
-
-def _success_schema(spec: OpenAPISpec, path: str, method: str) -> dict[str, Any] | None:
-    """Return the raw 200/201 response schema (pre-wrap, ``$ref`` intact)."""
-    paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths", {}))
-    path_item = paths.get(path)
-    if not isinstance(path_item, dict):
-        return None
-    operation = path_item.get(method.lower())
-    if not isinstance(operation, dict):
-        return None
-    responses = operation.get("responses", {})
-    if not isinstance(responses, dict):
-        return None
-    for code in ("200", "201"):
-        response = responses.get(code)
-        if not isinstance(response, dict):
-            continue
-        if "$ref" in response:
-            resolved = _resolve_ref(spec, response["$ref"])
-            if not isinstance(resolved, dict):
-                continue
-            response = resolved
-        content = response.get("content", {})
-        if not isinstance(content, dict):
-            continue
-        json_content = content.get("application/json", {})
-        if not isinstance(json_content, dict):
-            continue
-        schema = json_content.get("schema")
-        if isinstance(schema, dict):
-            return schema
-    return None
-
-
-def _primary_type(schema: dict[str, Any] | None) -> str | None:
-    """Extract the primary (element) type name from a response schema.
-
-    Handles array responses (``items.$ref``) and object responses (``$ref``,
-    including a root wrapped in ``allOf``/``anyOf``/``oneOf``).  Returns
-    ``None`` when the schema has no single primary type.
-    """
-    if not schema:
-        return None
-    type_ = schema.get("type")
-    if type_ == "array" or (isinstance(type_, list) and "array" in type_):
-        return extract_type_name(schema.get("items"))
-    return extract_type_name(schema)
-
-
 def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:
     """Return the property names of a named component schema, or ``None``.
 
@@ -354,7 +295,7 @@ def stamp_display_hints(openapi_spec: OpenAPISpec) -> None:
         for method, operation in path_item.items():
             if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
-            response_type = _primary_type(_success_schema(openapi_spec, path, method))
+            response_type = primary_type(success_schema(openapi_spec, path, method))
             if not response_type:
                 continue
             omitted = _VIEW_OMIT.get(response_type)

@@ -367,15 +367,23 @@ the text is a rendering of the page data.  Empty/out-of-range pages emit
 result carries a ``response_type`` and no bespoke formatter is registered for
 it, ``format.resolve_formatter`` returns the generic collection view
 (``format._generic_collection_view``): the bound type's schema properties, in
-declaration order, with scalars as table rows and ``$ref``-backed relations
-compacted to an identity.  A dict result (a single-resource read) renders the
-full payload dynamically.  The only curated knowledge is the converter-stamped
-deficiency list — ``x-mcp-view-omit`` / ``x-mcp-view-compact``, stamped
-pre-wrap by ``openapi_converter/display_hints.py`` and validated against the
-schema (an unknown property or type is logged as an error, never a silent
-skip).  A new or renamed schema field therefore appears automatically, and a
-stale hint fails loudly at startup.  ``tools/display.py`` holds only the
-bespoke ``labels`` view, which carries guidance the schema cannot express.
+declaration order, with scalars as table rows and **relations compacted to an
+identity**.  A relation is *derived from the schema* — a property whose schema
+references an object type (``$ref``, a combinator wrapping one, or an array of
+one), so a new or unknown type compacts its relations for free.  A combinator
+wrapping a scalar alias (``Issue.state`` → ``StateType``, a string) is not a
+relation.  A dict result (a single-resource read) renders the full payload
+dynamically.
+
+The only curated knowledge is the converter-stamped deficiency list —
+``x-mcp-view-omit`` (noise fields) and ``x-mcp-view-compact`` (identity-field
+*overrides* for relations whose object has no conventional identity, e.g.
+``base`` → ``ref``, ``pull_request`` → ``merged``), stamped pre-wrap by
+``openapi_converter/display_hints.py`` and validated against the schema (an
+unknown property or type is logged as an error, never a silent skip).  A new
+or renamed schema field therefore appears automatically, and a stale hint
+fails loudly at startup.  ``tools/display.py`` holds only the bespoke
+``labels`` view, which carries guidance the schema cannot express.
 
 The contract transform is **server-level**: registered via
 ``mcp.add_transform()`` (first in the chain) so it can wrap tools from every
@@ -973,25 +981,31 @@ from the parameter schema.
      response schema, not from a hand-written per-type field list.  The
      format layer's generic view (``format._generic_collection_view``) reads
      the bound type's properties in declaration order, renders scalars as
-     table rows, and compacts ``$ref``-backed relations to an identity
-     (``login`` → ``username`` → ``name`` → ``full_name`` → ``id``).  A dict
-     result (a single-resource read) renders the full payload dynamically, so
-     a detail read never drops a field.
+     table rows, and compacts **relations** to an identity (``login`` →
+     ``username`` → ``name`` → ``full_name`` → ``id``).  A relation is
+     derived from the schema — a property whose schema references an object
+     type (``$ref``, a combinator wrapping one, or an array of one) — so a
+     new or unknown type compacts its relations for free.  A combinator
+     wrapping a scalar alias (``Issue.state`` → ``StateType``, a string) is
+     not a relation.  A dict result (a single-resource read) renders the full
+     payload dynamically, so a detail read never drops a field.
 
      A schema cannot express every presentation decision, so the residual
-     knowledge — fields that are noise in a list view, relations that should
-     compact — is stamped by the converter
+     knowledge is stamped by the converter
      (``openapi_converter/display_hints.py``) as operation-level
-     ``x-mcp-view-omit`` / ``x-mcp-view-compact`` extensions, keyed by type
-     name.  This is the same principle as the normalization rules: **fix the
-     spec, keep the runtime generic**.  The hints are validated against the
-     schema at startup — an unknown property or type is logged as an error,
-     never a silent skip — so drift is loud (the systemic replacement for the
-     old per-whitelist drift guard).  ``tools/display.py`` holds only the
-     bespoke ``labels`` view, which carries guidance the schema cannot
-     express.  The ``x-mcp-*`` hints are stripped from the resolved
-     agent-facing output schema (``tools/schemas.deep_resolve_schema``), so
-     they never leak into ``tool_info``.
+     ``x-mcp-view-omit`` (noise fields) and ``x-mcp-view-compact``
+     (identity-field *overrides* for relations whose object has no
+     conventional identity, e.g. ``base`` → ``ref``, ``pull_request`` →
+     ``merged``), keyed by type name.  This is the same principle as the
+     normalization rules: **fix the spec, keep the runtime generic**.  The
+     hints are validated against the schema at startup — an unknown property
+     or type is logged as an error, never a silent skip — so drift is loud
+     (the systemic replacement for the old per-whitelist drift guard).
+     ``tools/display.py`` holds only the bespoke ``labels`` view, which
+     carries guidance the schema cannot express.  The ``x-mcp-*`` hints are
+     stripped from the resolved agent-facing output schema
+     (``tools/schemas.deep_resolve_schema``), so they never leak into
+     ``tool_info``.
 
 ---
 ## Response Content-Type Handling

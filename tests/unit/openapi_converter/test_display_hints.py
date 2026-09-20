@@ -15,10 +15,13 @@ from typing import TYPE_CHECKING, Any, cast
 from gitea_mcp_server.openapi_converter.display_hints import (
     VIEW_COMPACT_KEY,
     VIEW_OMIT_KEY,
-    _primary_type,
     _type_properties,
     _validate_hints,
     stamp_display_hints,
+)
+from gitea_mcp_server.openapi_converter.type_references import (
+    primary_type,
+    success_schema,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -64,16 +67,16 @@ def _object_op(op_id: str, ref: str) -> dict[str, Any]:
 class TestPrimaryType:
     def test_array_element_type(self) -> None:
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
-        assert _primary_type(schema) == "Issue"
+        assert primary_type(schema) == "Issue"
 
     def test_object_type(self) -> None:
-        assert _primary_type({"$ref": "#/components/schemas/Repository"}) == "Repository"
+        assert primary_type({"$ref": "#/components/schemas/Repository"}) == "Repository"
 
     def test_none_schema(self) -> None:
-        assert _primary_type(None) is None
+        assert primary_type(None) is None
 
     def test_inline_schema_no_type(self) -> None:
-        assert _primary_type({"type": "object", "properties": {}}) is None
+        assert primary_type({"type": "object", "properties": {}}) is None
 
 
 class TestTypeProperties:
@@ -97,24 +100,20 @@ class TestTypeProperties:
 
 class TestSuccessSchemaGuards:
     def test_missing_path_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
-        assert _success_schema(make_openapi_spec(), "/nope", "get") is None
+        assert success_schema(make_openapi_spec(), "/nope", "get") is None
 
     def test_non_dict_path_item_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(paths={"/x": "not-a-dict"})
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
     def test_missing_operation_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(paths={"/x": {"get": _list_op("x", "Widget")}})
-        assert _success_schema(spec, "/x", "post") is None
+        assert success_schema(spec, "/x", "post") is None
 
     def test_response_ref_resolved(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(
             paths={
@@ -135,11 +134,10 @@ class TestSuccessSchemaGuards:
                 }
             },
         )
-        schema = _success_schema(spec, "/x", "get")
+        schema = success_schema(spec, "/x", "get")
         assert schema == {"$ref": "#/components/schemas/Widget"}
 
     def test_unresolvable_response_ref_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(
             paths={
@@ -151,16 +149,14 @@ class TestSuccessSchemaGuards:
                 }
             }
         )
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
     def test_non_dict_responses_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(paths={"/x": {"get": {"operationId": "x", "responses": "nope"}}})
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
     def test_non_dict_content_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(
             paths={
@@ -172,10 +168,9 @@ class TestSuccessSchemaGuards:
                 }
             }
         )
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
     def test_non_dict_json_content_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(
             paths={
@@ -187,10 +182,9 @@ class TestSuccessSchemaGuards:
                 }
             }
         )
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
     def test_non_dict_schema_returns_none(self) -> None:
-        from gitea_mcp_server.openapi_converter.display_hints import _success_schema
 
         spec = make_openapi_spec(
             paths={
@@ -202,7 +196,7 @@ class TestSuccessSchemaGuards:
                 }
             }
         )
-        assert _success_schema(spec, "/x", "get") is None
+        assert success_schema(spec, "/x", "get") is None
 
 
 class TestStampDisplayHints:

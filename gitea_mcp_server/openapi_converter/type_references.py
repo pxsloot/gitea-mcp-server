@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
-def _resolve_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
+def resolve_ref(spec: OpenAPISpec, ref: str) -> dict[str, Any] | None:
     """Resolve a ``$ref`` pointer (e.g. ``#/components/schemas/Foo``) in a spec.
 
     Walks the spec tree using string path segments.  Returns ``None`` if
@@ -122,13 +122,13 @@ def _collect_transitive_refs(
         if ref in _seen:
             continue
         _seen.add(ref)
-        resolved = _resolve_ref(openapi_spec, f"#/components/schemas/{ref}")
+        resolved = resolve_ref(openapi_spec, f"#/components/schemas/{ref}")
         if isinstance(resolved, dict):
             result |= _collect_transitive_refs(resolved, openapi_spec, _seen)
     return result
 
 
-def _success_schema(openapi_spec: OpenAPISpec, path: str, method: str) -> dict[str, Any] | None:
+def success_schema(openapi_spec: OpenAPISpec, path: str, method: str) -> dict[str, Any] | None:
     """Return the raw 200/201 response schema (pre-wrap, ``$ref`` intact).
 
     The ``method`` parameter is normalised to lowercase internally.
@@ -150,7 +150,7 @@ def _success_schema(openapi_spec: OpenAPISpec, path: str, method: str) -> dict[s
         if not isinstance(response, dict):
             continue
         if "$ref" in response:
-            resolved = _resolve_ref(openapi_spec, response["$ref"])
+            resolved = resolve_ref(openapi_spec, response["$ref"])
             if not isinstance(resolved, dict):
                 continue
             response = resolved
@@ -166,7 +166,7 @@ def _success_schema(openapi_spec: OpenAPISpec, path: str, method: str) -> dict[s
     return None
 
 
-def _primary_type(schema: dict[str, Any] | None) -> str | None:
+def primary_type(schema: dict[str, Any] | None) -> str | None:
     """Extract the primary (element) type name from a response schema.
 
     Handles array responses (``items.$ref``) and object responses (``$ref``,
@@ -210,8 +210,8 @@ def stamp_type_references(openapi_spec: OpenAPISpec) -> None:
         for method, operation in path_item.items():
             if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
                 continue
-            schema = _success_schema(openapi_spec, path, method)
-            response_type = _primary_type(schema)
+            schema = success_schema(openapi_spec, path, method)
+            response_type = primary_type(schema)
             if response_type:
                 operation["x-response-type"] = response_type
             if method == "get":
@@ -222,11 +222,14 @@ def stamp_type_references(openapi_spec: OpenAPISpec) -> None:
             else:
                 modified = response_type
                 if modified is None:
-                    modified = _primary_type(_success_schema(openapi_spec, path, "GET"))
+                    modified = primary_type(success_schema(openapi_spec, path, "GET"))
                 if modified:
                     operation["x-modifies-type"] = modified
 
 
 __all__ = [
+    "primary_type",
+    "resolve_ref",
     "stamp_type_references",
+    "success_schema",
 ]

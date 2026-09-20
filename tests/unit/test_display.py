@@ -397,6 +397,49 @@ class TestGenericCollectionView:
 
         assert _type_schema(make_openapi_spec(), "Nope") is None
 
+    def test_ref_target_non_dict_schema(self) -> None:
+        """A non-dict property schema is not a relation."""
+        from gitea_mcp_server.format import _ref_target
+
+        assert _ref_target("not-a-dict", make_openapi_spec()) is None
+
+    def test_ref_target_unresolvable_ref_keeps_name(self) -> None:
+        """A ``$ref`` to a type absent from the spec still counts as a relation."""
+        from gitea_mcp_server.format import _ref_target
+
+        assert _ref_target({"$ref": "#/components/schemas/Ghost"}, make_openapi_spec()) == "Ghost"
+
+    def test_ref_target_no_spec_returns_name(self) -> None:
+        from gitea_mcp_server.format import _ref_target
+
+        assert _ref_target({"$ref": "#/components/schemas/User"}, None) == "User"
+
+    def test_collection_title_issues_filter(self) -> None:
+        """``type=issues`` labels the collection Issues."""
+        from gitea_mcp_server.format import _collection_title
+
+        assert _collection_title("Issue", 2, {"type": "issues"}) == "Issues - 2 items"
+
+    def test_pluralize_y_ending(self) -> None:
+        from gitea_mcp_server.format import _pluralize
+
+        assert _pluralize("Category") == "Categories"
+
+    def test_pluralize_sibilant(self) -> None:
+        from gitea_mcp_server.format import _pluralize
+
+        assert _pluralize("Box") == "Boxes"
+
+    def test_pluralize_default(self) -> None:
+        from gitea_mcp_server.format import _pluralize
+
+        assert _pluralize("Widget") == "Widgets"
+
+    def test_pluralize_explicit_label(self) -> None:
+        from gitea_mcp_server.format import _pluralize
+
+        assert _pluralize("PullRequest") == "Pull Requests"
+
     def test_identity_ref_marker_label(self) -> None:
         """A collapsed relation marker renders as its label (line 288)."""
         from gitea_mcp_server.format import _identity

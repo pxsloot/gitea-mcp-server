@@ -577,22 +577,31 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
 
    **Most types need no formatter at all (#771).**  The format layer derives
    the collection view from the response schema: the bound type's properties
-   in declaration order, scalars as table rows, `$ref`-backed relations
-   compacted to an identity.  A dict result renders the full payload.  So a
-   new type gets a sensible view for free — do **not** add a per-type field
-   list.  Register a bespoke formatter only when the view needs knowledge the
-   schema cannot express (the `labels` formatter carries accepted-format and
-   validation guidance).
+   in declaration order, scalars as table rows, and **relations** compacted
+   to an identity.  A relation is derived from the schema — a property whose
+   schema references an object type (`$ref`, a combinator wrapping one, or an
+   array of one) — so a new type gets a sensible view for free, including
+   relation compaction.  A dict result renders the full payload.  Do **not**
+   add a per-type field list.  Register a bespoke formatter only when the
+   view needs knowledge the schema cannot express (the `labels` formatter
+   carries accepted-format and validation guidance).
 
-   **Curating the generic view.**  When a field is noise in a list view, or a
-   relation should compact, add it to the deficiency list in
-   `openapi_converter/display_hints.py` (`_VIEW_OMIT` / `_VIEW_COMPACT`,
-   keyed by type name).  The converter stamps `x-mcp-view-omit` /
-   `x-mcp-view-compact` on every operation returning that type, and validates
-   every hint against the schema — an unknown property or type is logged as
-   an **error** at startup, so a stale hint fails loudly.  This is the
-   "fix the spec, keep the runtime generic" principle: the runtime renderer
-   never hardcodes a field name.
+   **Curating the generic view.**  Only two things need curating, both in
+   `openapi_converter/display_hints.py` (keyed by type name):
+
+   - `_VIEW_OMIT` — fields that are noise in a list view (URLs, internal
+     flags, the full `body`).
+   - `_VIEW_COMPACT` — identity-field **overrides** for relations whose
+     object has no conventional identity (`base` → `ref`, `milestone` →
+     `title`, `pull_request` → `merged`, `labels` → `name`).  A relation with
+     a conventional identity (`login`/`username`/`name`/`full_name`/`id`)
+     needs no entry.
+
+   The converter stamps `x-mcp-view-omit` / `x-mcp-view-compact` on every
+   operation returning that type, and validates every hint against the
+   schema — an unknown property or type is logged as an **error** at startup,
+   so a stale hint fails loudly.  This is the "fix the spec, keep the runtime
+   generic" principle: the runtime renderer never hardcodes a field name.
 
    **`types=` binds a bespoke formatter to tools by response type (#760).**
    The format layer's `resolve_formatter` dispatches in three tiers: an

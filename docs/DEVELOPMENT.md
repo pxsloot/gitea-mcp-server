@@ -571,17 +571,36 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    `detail` flag — collapsed *fields* arrive as the canonical `$ref` marker
    (`{"$ref": "TypeName"}`, or with `count` for a collapsed list; render via
     `is_ref_marker`/`ref_marker_label` from `marker.py`).  Root-list items
-    are never object markers — they are summarized when the item type
-    resolves, otherwise the list is left whole (#759, #763) — so formatters
-    must not branch on collapsed item shapes.
+   are never object markers — they are summarized when the item type
+   resolves, otherwise the list is left whole (#759, #763) — so formatters
+   must not branch on collapsed item shapes.
 
-   **`types=` binds the formatter to tools by response type (#760).** The
-   format layer's `resolve_formatter` dispatches in three tiers: an
+   **Most types need no formatter at all (#771).**  The format layer derives
+   the collection view from the response schema: the bound type's properties
+   in declaration order, scalars as table rows, `$ref`-backed relations
+   compacted to an identity.  A dict result renders the full payload.  So a
+   new type gets a sensible view for free — do **not** add a per-type field
+   list.  Register a bespoke formatter only when the view needs knowledge the
+   schema cannot express (the `labels` formatter carries accepted-format and
+   validation guidance).
+
+   **Curating the generic view.**  When a field is noise in a list view, or a
+   relation should compact, add it to the deficiency list in
+   `openapi_converter/display_hints.py` (`_VIEW_OMIT` / `_VIEW_COMPACT`,
+   keyed by type name).  The converter stamps `x-mcp-view-omit` /
+   `x-mcp-view-compact` on every operation returning that type, and validates
+   every hint against the schema — an unknown property or type is logged as
+   an **error** at startup, so a stale hint fails loudly.  This is the
+   "fix the spec, keep the runtime generic" principle: the runtime renderer
+   never hardcodes a field name.
+
+   **`types=` binds a bespoke formatter to tools by response type (#760).**
+   The format layer's `resolve_formatter` dispatches in three tiers: an
    explicit per-result `markdown_formatter` (the resource `format_hint`
-   path) → the formatter registered for the result's `response_type` →
-   the generic `format_as_markdown`.  So one registration gives the tool
+   path) → the bespoke formatter registered for the result's `response_type`
+   → the generic schema-anchored view.  So one registration gives the tool
    family the same domain view its resource sibling renders; unregistered
-   types keep the generic fallback.
+   types get the generic view.
 
    **The type name is first-class metadata, not read from the schema.**
    Response-schema wrapping inlines the root `$ref` and erases the type
@@ -607,10 +626,11 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    **Formatters must be shape-tolerant.** A bound type arrives in both
    shapes: list tools (`repo_list_*`) hand over lists, detail tools
    (`repo_get`, `issue_get_issue`, …) hand over dicts.  The convention is
-   list → *collection view* (curated field whitelist, per-item titles) and
+   list → *collection view* (schema-derived fields, per-item titles) and
    dict → *detail view* (the full payload — every field present in the data,
-   rendered without a whitelist, so a detail read never drops a payload
-   field).  `extra` context
+   so a detail read never drops a payload field).  The generic view already
+   implements both; a bespoke formatter should follow the same convention.
+   `extra` context
    (`owner`/`repo`/`org`/`type`) reaches formatters from the call args via
    the contract spine, or from resource content meta; always fall back
    gracefully when it is absent.  `org` is the owner-equivalent on

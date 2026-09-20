@@ -635,7 +635,7 @@ class TestMcpReadResourceTool:
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         content_part = ResourceContent(
             '{"name": "test"}',
-            meta={"response_schema": schema, "format_hint": "repository"},
+            meta={"response_schema": schema, "format_hint": "labels"},
         )
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)

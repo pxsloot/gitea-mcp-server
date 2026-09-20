@@ -1,45 +1,75 @@
 """Regression tests for issue #574: display pipeline mid-failure error recovery.
 
-The domain formatters must handle unexpected data shapes gracefully instead
-of crashing.  The pipeline-level try/except lives in the single result pipeline
+The display layer must handle unexpected data shapes gracefully instead of
+crashing.  The pipeline-level try/except lives in the single result pipeline
 (``tools/result_pipeline.py`` — see ``TestErrorRecovery`` there); these tests
-lock the formatter-side guards that make the recovery path reachable.
+lock the renderer-side guards that make the recovery path reachable.
 
-Scenarios covered:
-  1. Issues formatter with non-dict items (strings) → no AttributeError
-  2. Labels formatter with non-dict items (full detail) → no AttributeError
-  3. User formatter with non-dict input → no TypeError
-  4. Empty list to issues formatter → no TypeError
-  5. Pulls formatter with non-dict items → no crash (generic fallback)
-  6. Release formatter with non-dict items → no crash (generic fallback)
-  7. format_as_markdown edge cases (None, bool, mixed lists)
+Since #771 the collection view is generic (``format._generic_collection_view``)
+and the only bespoke formatter is ``labels``; the guards below cover both.
 """
 
-from typing import Any
-
-from gitea_mcp_server.format import format_as_markdown
-from gitea_mcp_server.tools.display import (
-    _format_issues_markdown,
-    _format_labels_markdown,
-    _format_user_markdown,
-)
+from gitea_mcp_server.format import _generic_collection_view, format_as_markdown
+from gitea_mcp_server.tools.display import _format_labels_markdown
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
-class TestFormatIssuesMarkdownGuard:
-    """Guard: _format_issues_markdown handles non-dict items."""
+class TestGenericCollectionViewGuard:
+    """Guard: the generic view handles unexpected data shapes."""
 
     def test_non_dict_items_no_crash(self) -> None:
-        """Non-dict items (strings) produce output, not AttributeError."""
-        data = ["string item", "another string"]
-        result = _format_issues_markdown(data)
+        """Non-dict items produce output, not AttributeError."""
+        spec = make_openapi_spec(
+            paths={
+                "/widgets": {
+                    "get": {
+                        "x-response-type": "Widget",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Widget"},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            },
+            components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
+        )
+        result = _generic_collection_view(
+            ["string item", "another string"], response_type="Widget", openapi_spec=spec
+        )
         assert result.strip() != ""
-        # Should contain the generic title since items aren't dicts
-        assert "Issues" in result or "Issues and Pull Requests" in result
 
     def test_empty_list_no_crash(self) -> None:
-        """Empty list produces output, not TypeError or crash."""
-        data: list[Any] = []
-        result = _format_issues_markdown(data)
+        spec = make_openapi_spec(
+            paths={
+                "/widgets": {
+                    "get": {
+                        "x-response-type": "Widget",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Widget"},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            },
+            components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
+        )
+        result = _generic_collection_view([], response_type="Widget", openapi_spec=spec)
         assert result.strip() != ""
         assert "_(empty)_" in result
 
@@ -48,7 +78,7 @@ class TestFormatLabelsMarkdownGuard:
     """Guard: _format_labels_markdown handles non-dict items."""
 
     def test_non_dict_items_no_crash(self) -> None:
-        """String items (collapsed shape) render compactly, not AttributeError."""
+        """String items render compactly, not AttributeError."""
         data = ["bug", "feature"]
         result = _format_labels_markdown(
             data,
@@ -60,14 +90,7 @@ class TestFormatLabelsMarkdownGuard:
         assert "- feature" in result
 
     def test_string_items_render_verbatim(self) -> None:
-        """Plain string items render verbatim, not crash.
-
-        Defensive shape guard: since #759 the concise contract summarizes
-        items as dicts, and since #763 a collapsed item is the dict marker
-        ``{"$ref": ...}`` (covered in ``test_display``), so a bare
-        ``"$ref:Label[2]"`` string is now just arbitrary string data — the
-        ``- <item>`` guard must still render it.
-        """
+        """Plain string items render verbatim, not crash."""
         data = ["$ref:Label[2]"]
         result = _format_labels_markdown(
             data,
@@ -77,11 +100,7 @@ class TestFormatLabelsMarkdownGuard:
         assert "$ref:Label[2]" in result
 
     def test_mixed_items_full_branch_guard(self) -> None:
-        """Mixed string+dict items hit the full-branch non-dict guard, no crash.
-
-        Not all items are strings, so the compact (all-strings) branch is
-        skipped; the full-detail branch then guards the non-dict item.
-        """
+        """Mixed string+dict items hit the full-branch non-dict guard, no crash."""
         data = ["$ref:Label", {"id": 1, "name": "bug", "color": "ff0000"}]
         result = _format_labels_markdown(
             data,
@@ -90,58 +109,6 @@ class TestFormatLabelsMarkdownGuard:
         assert "Labels for o/r" in result
         assert "- $ref:Label" in result
         assert "bug" in result
-
-
-class TestFormatUserMarkdownGuard:
-    """Guard: _format_user_markdown handles non-dict input."""
-
-    def test_non_dict_input_no_crash(self) -> None:
-        """Non-dict input produces output, not TypeError."""
-        data = "just a string"
-        result = _format_user_markdown(data)
-        assert result.strip() != ""
-
-    def test_list_input_no_crash(self) -> None:
-        """List input produces output, not TypeError."""
-        data = [{"login": "user1"}]
-        result = _format_user_markdown(data)
-        assert result.strip() != ""
-
-
-class TestFormatPullsMarkdownGuard:
-    """Guard: _format_pulls_markdown handles unexpected data shapes safely."""
-
-    def test_empty_list(self) -> None:
-        """Empty list produces output, not crash."""
-        from gitea_mcp_server.tools.display import _format_pulls_markdown
-
-        result = _format_pulls_markdown([])
-        assert "Pull Requests" in result
-
-    def test_non_dict_items_safe(self) -> None:
-        """Non-dict items render through generic fallback, no crash."""
-        from gitea_mcp_server.tools.display import _format_pulls_markdown
-
-        result = _format_pulls_markdown(["just", "strings"])
-        assert result.strip() != ""
-
-
-class TestFormatReleaseMarkdownGuard:
-    """Guard: _format_release_markdown handles unexpected data shapes safely."""
-
-    def test_empty_list(self) -> None:
-        """Empty list produces output, not crash."""
-        from gitea_mcp_server.tools.display import _format_release_markdown
-
-        result = _format_release_markdown([])
-        assert "Releases" in result
-
-    def test_non_dict_items_safe(self) -> None:
-        """Non-dict items render through generic fallback, no crash."""
-        from gitea_mcp_server.tools.display import _format_release_markdown
-
-        result = _format_release_markdown(["tag1", "tag2"])
-        assert result.strip() != ""
 
 
 class TestFormatAsMarkdownEdgeCases:

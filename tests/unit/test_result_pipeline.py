@@ -866,14 +866,55 @@ class TestResolveFormatter:
         # renders identically to calling the generic formatter with the schema.
         assert formatter(data) == format_as_markdown(data, schema=schema)
 
-    def test_response_type_binds_domain_formatter(self) -> None:
-        """Tier 2: the ``response_type`` argument binds the domain formatter."""
+    def test_response_type_binds_bespoke_formatter(self) -> None:
+        """Tier 2: a bespoke type-bound formatter (``labels``) is returned."""
         from gitea_mcp_server.format import get_formatter_for_type
 
-        result = ExecutionResult(data={"full_name": "o/r"}, shape="object")
-        assert _resolve_formatter(result, None, response_type="Repository") is (
-            get_formatter_for_type("Repository")
+        result = ExecutionResult(data=[{"id": 1, "name": "bug"}], shape="list")
+        assert _resolve_formatter(result, None, response_type="Label") is (
+            get_formatter_for_type("Label")
         )
+
+    def test_response_type_with_spec_uses_generic_view(self) -> None:
+        """Tier 2 (generic): a type with no bespoke formatter gets the schema view.
+
+        With an ``openapi_spec`` the format layer derives the collection view
+        from the bound type's schema (#771) instead of a hand-written list.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos": {
+                    "get": {
+                        "x-response-type": "Repository",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Repository"},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            },
+            components={
+                "schemas": {
+                    "Repository": {
+                        "type": "object",
+                        "properties": {"full_name": {}, "description": {}},
+                    }
+                }
+            },
+        )
+        result = ExecutionResult(data=[{"full_name": "o/r", "description": "d"}], shape="list")
+        formatter = _resolve_formatter(result, None, response_type="Repository", openapi_spec=spec)
+        rendered = formatter([{"full_name": "o/r", "description": "d"}])
+        assert "Repositories - 1 items" in rendered
+        assert "| Full Name | o/r |" in rendered
 
     def test_schema_ref_alone_does_not_bind(self) -> None:
         """The type is first-class metadata, not re-derived from the schema.
@@ -920,12 +961,36 @@ class TestResponseTypePrecedence:
 
     def test_result_response_type_wins_over_render_argument(self) -> None:
         """Per-URI ``read_resource`` type wins over the tool-level meta value."""
+        spec = make_openapi_spec(
+            paths={
+                "/issues": {
+                    "get": {
+                        "x-response-type": "Issue",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Issue"},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            },
+            components={
+                "schemas": {"Issue": {"type": "object", "properties": {"number": {}, "title": {}}}}
+            },
+        )
         result = ExecutionResult(
             data=[{"number": 1, "title": "T"}],
             shape="list",
             response_type="Issue",
         )
-        out = render(result, fmt="markdown", response_type="Repository")
+        out = render(result, fmt="markdown", response_type="Repository", openapi_spec=spec)
         text = extract_text_content(out.content)
         assert "Issues - 1 items" in text
         assert "Repositories" not in text

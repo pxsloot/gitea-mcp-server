@@ -1162,6 +1162,25 @@ class TestDeepResolveSchema:
         assert resolved["properties"]["id"]["type"] == "integer"
         assert resolved["properties"]["login"]["type"] == "string"
 
+    def test_strips_x_mcp_display_hints(self) -> None:
+        """Operation-level ``x-mcp-*`` display hints never reach the agent schema.
+
+        The converter stamps ``x-mcp-view-omit`` / ``x-mcp-view-compact`` for
+        the generic renderer (#771); they are pipeline metadata, not part of
+        the agent-facing schema, so the resolver strips them.
+        """
+        from gitea_mcp_server.tools.schemas import deep_resolve_schema
+
+        schema = {
+            "type": "object",
+            "x-mcp-view-omit": ["url"],
+            "properties": {"name": {"type": "string", "x-mcp-view-compact": True}},
+        }
+        resolved = deep_resolve_schema(schema, self.SPEC)
+        assert "x-mcp-view-omit" not in resolved
+        assert "x-mcp-view-compact" not in resolved["properties"]["name"]
+        assert resolved["properties"]["name"]["type"] == "string"
+
     def test_leaf_schema_unchanged(self) -> None:
         """A schema with no refs should return a copy unchanged."""
         from gitea_mcp_server.tools.schemas import deep_resolve_schema

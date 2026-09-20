@@ -74,45 +74,6 @@ def _lookup_string_example(prop_name: str | None) -> str | None:
     return None
 
 
-def _example_object(
-    schema: dict[str, Any],
-    depth: int,
-    max_depth: int,
-    max_properties: int,
-) -> dict[str, Any]:
-    """Generate an example value from an object schema."""
-
-    if depth >= max_depth:
-        return {}
-    properties = schema.get("properties", {})
-    if not properties:
-        return {}
-    example: dict[str, Any] = {}
-    for prop_name in list(properties.keys())[:max_properties]:
-        prop_schema = properties[prop_name]
-        example[prop_name] = _schema_to_example(
-            prop_schema if isinstance(prop_schema, dict) else {},
-            depth + 1,
-            max_depth,
-            max_properties,
-            prop_name=prop_name,
-        )
-    return example
-
-
-def _example_array(
-    schema: dict[str, Any],
-    depth: int,
-    max_depth: int,
-    max_properties: int,
-) -> list[Any]:
-    """Generate an example value from an array schema."""
-    items = schema.get("items", {})
-    if isinstance(items, dict) and items:
-        return [_schema_to_example(items, depth, max_depth, max_properties)]
-    return []
-
-
 def _example_string(schema: dict[str, Any], prop_name: str | None = None) -> str:
     """Generate an example value from a string schema (respects format, enum, property name)."""
     fmt = schema.get("format")
@@ -129,46 +90,6 @@ def _example_string(schema: dict[str, Any], prop_name: str | None = None) -> str
     if mapped is not None:
         return mapped
     return "example"
-
-
-def _schema_to_example(  # noqa: PLR0911, PLR0912
-    schema: dict[str, Any],
-    depth: int = 0,
-    max_depth: int = 3,
-    max_properties: int = 15,
-    prop_name: str | None = None,
-) -> Any:
-    """Generate an example value from any JSON schema (recursive)."""
-    for key in ("anyOf", "oneOf"):
-        options = schema.get(key)
-        if isinstance(options, list):
-            for opt in options:
-                if isinstance(opt, dict) and get_schema_type(opt) != "null":
-                    return _schema_to_example(
-                        opt, depth, max_depth, max_properties, prop_name=prop_name
-                    )
-
-    schema_type = schema.get("type")
-    if isinstance(schema_type, list):
-        for t in schema_type:
-            if t != "null":
-                schema_type = t
-                break
-        else:
-            schema_type = "null"
-
-    if "example" in schema:
-        return schema["example"]
-
-    if schema_type == "object":
-        return _example_object(schema, depth, max_depth, max_properties)
-    if schema_type == "array":
-        return _example_array(schema, depth, max_depth, max_properties)
-    if schema_type == "string":
-        return _example_string(schema, prop_name=prop_name)
-    if schema_type in ("integer", "number", "boolean", "null"):
-        return {"integer": 0, "number": 0.0, "boolean": True, "null": None}[schema_type]
-    return None
 
 
 def schema_to_compact_example(  # noqa: PLR0911, PLR0912
@@ -197,8 +118,8 @@ def schema_to_compact_example(  # noqa: PLR0911, PLR0912
 
     The markdown formatter recognises the marker via ``is_ref_marker`` and
     renders it as ``$ref:TypeName``.  All properties are included (no
-    ``max_properties`` truncation).  Leaf types use the same meaningful
-    example values as ``_schema_to_example``.
+    ``max_properties`` truncation).  Leaf types use the shared meaningful
+    example values.
 
     Designed to be called on the **raw** (unresolved) schema so that ``$ref``
     pointers are encountered naturally and serve as stop-recursion markers.

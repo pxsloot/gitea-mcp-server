@@ -31,7 +31,6 @@ mention is a one-line pointer, not a copy.
 
 | Doc | Audience | Type | Covers | Start here if... |
 |-----|----------|------|--------|------------------|
-| `gitea_mcp_server/docs/agent_instructions.md` | agent | reference + how-to | Welcome/quick start: tool/resource naming grammar, discovery flow, issue/PR workflow skeletons, reading-output essentials, annotations, troubleshooting; points to the `tool-output-format` guide for depth | You are an agent about to call a tool |
 | `README.md` | enduser | reference | Install, config env vars, transports (stdio/http/docker), quick start | You are installing or running the server |
 | `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content-type handling, runtime flows | You need to understand how the server is built |
@@ -63,7 +62,6 @@ truth. Other mentions point here.
 | Display-view hints (`omit` / `compact` / `flag`, `ViewHints`) | `openapi_converter/display_hints.py` (source, canonical) + `models.py` (`ViewHints`) + `ARCHITECTURE.md` (design decision #18) |
 | Agent-facing `$ref` marker shape | `gitea_mcp_server/marker.py` (source: `ref_marker`/`is_ref_marker`/`ref_marker_label`) + `ARCHITECTURE.md` (pipeline) |
 | Payload `$ref` chain resolution | `gitea_mcp_server/ref_resolver.py` (source: `resolve_ref_chain`) + `ARCHITECTURE.md` (module map) |
-| Reading tool output (formats, compact mode, paging, `$ref`, errors) | `gitea_mcp_server/docs/guides/tool-output-format.md` (agent-facing guide) + `agent_instructions.md` (essentials + pointer) |
 | Cache invalidation / response cache | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #6) |
 | OpenTelemetry | `DEVELOPMENT.md` |
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |

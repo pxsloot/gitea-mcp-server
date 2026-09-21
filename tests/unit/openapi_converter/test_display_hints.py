@@ -229,9 +229,21 @@ class TestViewHintsFor:
         assert view_hints_for(None) is None
         assert view_hints_for("") is None
 
-    def test_shared_constant_per_type(self) -> None:
-        """The resolver hands out one constant per type — read-only, no copies."""
-        assert view_hints_for("Issue") is view_hints_for("Issue")
+    def test_each_call_returns_an_independent_value(self) -> None:
+        """Callers own their hints; one entity never aliases another's."""
+        first = view_hints_for("Issue")
+        second = view_hints_for("Issue")
+        assert first is not None
+        assert second is not None
+        assert first == second
+        assert first is not second
+
+        first["omit"].append("sentinel")
+        first["compact"]["sentinel"] = None
+        first["flag"].append("sentinel")
+        assert "sentinel" not in second["omit"]
+        assert "sentinel" not in second["compact"]
+        assert "sentinel" not in second["flag"]
 
     def test_every_curated_type_is_resolvable(self) -> None:
         from gitea_mcp_server.openapi_converter.display_hints import (

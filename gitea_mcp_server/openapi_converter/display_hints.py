@@ -193,10 +193,9 @@ _VIEW_FLAG: dict[str, tuple[str, ...]] = {
     "Issue": ("pull_request",),
 }
 
-#: Resolved hints per type, materialized once at import from the curated
-#: tables.  This *is* the ``type → (omit, compact, flag)`` index: registration
-#: resolves each entity's entry from it, so the render path never rebuilds it
-#: and never touches the spec.  Shared read-only, like the tables themselves.
+#: Canonical resolved hints per type, materialized once at import from the
+#: curated tables.  Private: :func:`view_hints_for` returns a fresh copy per
+#: call, so this never escapes into a mutable ``tool.meta`` / content meta.
 _VIEW_HINTS: dict[str, ViewHints] = {
     type_name: ViewHints(
         omit=list(_VIEW_OMIT.get(type_name, ())),
@@ -208,15 +207,24 @@ _VIEW_HINTS: dict[str, ViewHints] = {
 
 
 def view_hints_for(response_type: str | None) -> ViewHints | None:
-    """Return the curated view hints for a response type, or ``None``.
+    """Return a fresh set of curated view hints for a response type, or ``None``.
 
     ``None`` means the type has no curated deficiency (or no type was bound):
     the generic view then derives everything from the schema, which is the
-    common case.  The returned dict is a shared read-only constant.
+    common case.
+
+    Each call returns a new value copied from the private canonical index, so
+    the caller owns it.  A tool or resource that mutates its ``view_hints``
+    cannot affect any other entity, nor a later call.
     """
-    if not response_type:
+    entry = _VIEW_HINTS.get(response_type) if response_type else None
+    if entry is None:
         return None
-    return _VIEW_HINTS.get(response_type)
+    return ViewHints(
+        omit=list(entry["omit"]),
+        compact=dict(entry["compact"]),
+        flag=list(entry["flag"]),
+    )
 
 
 def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:

@@ -913,51 +913,25 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
 
     if _has_uri_params:
 
-        async def handler(**kwargs: Any) -> ResourceResult:
+        async def handler(**kwargs: Any) -> ResourceResult:  # noqa: PLR0912 -- two-pass: concrete path before optional-param validation
             """Auto-generated resource handler from factory."""
-            query_kwargs: dict[str, Any] = {}
+            # Pass 1: collect path parameters and build the concrete API path
+            # first, so validation errors report the same concrete path as
+            # ``_request_and_wrap``'s NOT_FOUND/API errors.
+            #
+            # None means "not provided" — FastMCP passes the declared default
+            # for optional {?param} template entries.  Skip silently: path
+            # params are required (never None), and an absent optional
+            # query/context param must not warn as "unknown kwarg".
             path_params: dict[str, Any] = {}
             for key, value in kwargs.items():
-                # None means "not provided" — FastMCP passes the declared
-                # default for optional {?param} template entries.  Skip
-                # silently: path params are required (never None), and an
-                # absent optional query/context param must not fall through
-                # to the path-substitution branch below (which would warn
-                # "unknown kwarg" on every read).
                 if value is None:
                     continue
-                if query_params and key in query_params:
-                    # Validate against allowed values if a validator is registered.
-                    if (
-                        query_param_validators
-                        and key in query_param_validators
-                        and isinstance(value, str)
-                    ):
-                        _validate_optional_param(
-                            key,
-                            value,
-                            query_param_validators[key],
-                            resource_type=_resource_type,
-                            resource_id=api_path,
-                        )
-                    query_kwargs[key] = value
-                elif context_params and key in context_params:
-                    # Context-only param: validate but do NOT forward to API.
-                    if (
-                        context_param_validators
-                        and key in context_param_validators
-                        and isinstance(value, str)
-                    ):
-                        _validate_optional_param(
-                            key,
-                            value,
-                            context_param_validators[key],
-                            resource_type=_resource_type,
-                            resource_id=api_path,
-                        )
-                elif f"{{{key}}}" in api_path:
-                    # Any remaining kwarg that names a path placeholder is a
-                    # path parameter.
+                if (query_params and key in query_params) or (
+                    context_params and key in context_params
+                ):
+                    continue
+                if f"{{{key}}}" in api_path:
                     path_params[key] = value
                 else:
                     logger.warning(
@@ -972,6 +946,42 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             # the outbound API path is well-formed for any value — see
             # ``uri_utils`` for the encoding contract.
             formatted_path = expand_path_params(_api_path_template, path_params)
+
+            # Pass 2: route and validate query/context params against the
+            # concrete path.
+            query_kwargs: dict[str, Any] = {}
+            for key, value in kwargs.items():
+                if value is None:
+                    continue
+                if query_params and key in query_params:
+                    # Validate against allowed values if a validator is registered.
+                    if (
+                        query_param_validators
+                        and key in query_param_validators
+                        and isinstance(value, str)
+                    ):
+                        _validate_optional_param(
+                            key,
+                            value,
+                            query_param_validators[key],
+                            resource_type=_resource_type,
+                            resource_id=formatted_path,
+                        )
+                    query_kwargs[key] = value
+                elif context_params and key in context_params:
+                    # Context-only param: validate but do NOT forward to API.
+                    if (
+                        context_param_validators
+                        and key in context_param_validators
+                        and isinstance(value, str)
+                    ):
+                        _validate_optional_param(
+                            key,
+                            value,
+                            context_param_validators[key],
+                            resource_type=_resource_type,
+                            resource_id=formatted_path,
+                        )
 
             # Forward requested context keys as display metadata for
             # formatters that need extra context (e.g. ``type`` for

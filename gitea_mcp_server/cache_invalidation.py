@@ -395,8 +395,9 @@ async def invalidate_cached_resources(
 ) -> None:
     """Invalidate cached resource responses for the given URIs.
 
-    Deletes by the cache's own key format (raw URIs, with
-    query variants resolved inside the store).
+    Deletes by the cache's own key format (canonical URIs — percent-decoded
+    once by ``response_cache.ResponseCache`` — with query variants resolved
+    inside the store).
 
     Args:
         cache: The response cache.

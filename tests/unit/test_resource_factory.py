@@ -1375,6 +1375,36 @@ class TestMakeApiResourcePathEncoding:
         args, _ = client.request.call_args
         assert args[1] == "/repos/mcp-server/gitea-mcp-server"
 
+    @pytest.mark.asyncio
+    async def test_validation_error_reports_concrete_path(self) -> None:
+        """Query validation errors carry the concrete API path, not the template.
+
+        Matches ``_request_and_wrap``'s NOT_FOUND/API errors, which report the
+        concrete path the request targeted.
+        """
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                query_param_validators={"state": ["open", "closed"]},
+            ),
+            resource_type="issues",
+        )
+
+        assert handler is not None
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r", state="invalid")
+
+        assert exc.value.args[0]["resource_id"] == "/repos/o/r/issues"
+
 
 # ---------------------------------------------------------------------------
 # Tests: make_api_resource -- context_meta_keys (path + query params)

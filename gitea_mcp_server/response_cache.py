@@ -8,12 +8,15 @@ Design decisions:
 * **Single global key space.** Keys are the *canonical* resource URIs (see
   below); the format is defined here, so the writer and the invalidator can
   never drift apart.
-* **Canonical keys.** A URI is canonicalised by percent-decoding it once, so
-  equivalent spellings of the same resource (raw and percent-encoded) share
-  one entry.  FastMCP's resource matcher ``unquote``s captured path parameters,
-  so the decoded form is the logical resource identity; it is also what
-  ``cache_invalidation`` reconstructs from tool arguments.  Canonicalisation is
-  applied exactly once, at this store boundary (``unquote`` is not idempotent).
+* **Canonical keys.** A URI is canonicalised by percent-decoding its *path*
+  once, so raw and percent-encoded spellings of the same path share one entry.
+  FastMCP's resource matcher ``unquote``s captured path parameters, so the
+  decoded form is the logical resource identity; it is also what
+  ``cache_invalidation`` reconstructs from tool arguments.  The query string is
+  kept verbatim — query values are always encoded, and decoding them would
+  merge distinct queries (``labels=a%26b`` vs ``labels=a&b``).  Canonicalisation
+  is applied exactly once, at this store boundary (``unquote`` is not
+  idempotent).
 * **Per-resource TTL.** Each resource may declare a ``cache_ttl`` (via the
   resource surface, populated from ``make_api_resource(cache_ttl=...)``);
   resources without one fall back to ``CACHE_TTL_DEFAULT``.  Resource
@@ -70,13 +73,23 @@ _MAX_TRACKED_URIS = 50
 def _canonical_uri(uri: str) -> str:
     """Return the canonical cache key for a resource URI.
 
-    Percent-decodes the URI once so equivalent spellings of the same resource
-    (raw and percent-encoded) share one entry.  Applied exactly once, at the
-    store boundary: ``unquote`` is not idempotent (``unquote("a%2520b")`` is
-    ``"a%20b"``, and decoding again would yield ``"a b"``), so callers pass
-    the URI as received, never an already-decoded form.
+    Percent-decodes the **path** once so raw and percent-encoded spellings of
+    the same path share one entry.  The query string is left verbatim: query
+    values are always percent-encoded (httpx ``params=``), and decoding them
+    would make distinct queries collide (``labels=a%26b`` vs ``labels=a&b``).
+    Applied exactly once, at the store boundary: ``unquote`` is not idempotent
+    (``unquote("a%2520b")`` is ``"a%20b"``, and decoding again would yield
+    ``"a b"``), so callers pass the URI as received, never an already-decoded
+    form.
+
+    Caveat: a path value containing a literal ``?`` (arriving as ``%3F``)
+    decodes to ``?`` and is then structurally ambiguous against the query
+    delimiter in the variant-index base split.  That mirrors
+    ``cache_invalidation._substitute_template``'s raw substitution from tool
+    arguments; a query-aware cache key is out of scope here.
     """
-    return unquote(uri)
+    path, sep, query = uri.partition("?")
+    return unquote(path) + sep + query
 
 
 class _CacheEntry:

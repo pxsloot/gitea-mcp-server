@@ -132,6 +132,20 @@ class TestResponseCacheStore:
         assert cache.get("gitea://repos/org/repo/contents/a%2520b") == {"title": "x"}
         assert cache.get("gitea://repos/org/repo/contents/a%20b") is None
 
+    def test_query_is_not_canonicalized(self) -> None:
+        """The query is kept verbatim; decoding it would merge distinct queries.
+
+        ``labels=a%26b`` (value ``a&b``) and ``labels=a&b`` (``labels=a`` plus
+        a stray ``b``) are different requests and must not share an entry.
+        """
+        encoded = "gitea://repos/org/repo/issues?state=open&labels=a%26b"
+        raw = "gitea://repos/org/repo/issues?state=open&labels=a&b"
+        cache = ResponseCache()
+        cache.put(encoded, {"result": "encoded"}, ttl=30)
+
+        assert cache.get(raw) is None
+        assert cache.get(encoded) == {"result": "encoded"}
+
     def test_invalidate_query_uri_itself(self) -> None:
         """Invalidating a full query URI (not just the base) also works."""
         cache = ResponseCache()

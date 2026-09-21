@@ -350,6 +350,7 @@ class TestComputeUrisToInvalidate:
         cache = ResponseCache()
         cache.put("gitea://repos/org/repo/issues", {"title": "x"}, ttl=30)
         await invalidate_cached_resources(cache, ["gitea://repos/org/repo/pulls"], "test_tool")
+        assert cache.get("gitea://repos/org/repo/issues") == {"title": "x"}
 
     @pytest.mark.asyncio
     async def test_raw_target_invalidates_encoded_read(self) -> None:

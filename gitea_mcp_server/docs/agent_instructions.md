@@ -93,10 +93,9 @@ Confirm the rest -- optional fields, enums, the exact id name -- with
 ## Resources
 
 For a read-only operation, prefer `read_resource()` over calling a tool: it
-gives cached, pre-formatted reads. Tool and resource display are unified -- a
-tool bound by response type renders its resource sibling's view (curated for
-collections, full payload for a single resource); `format=json`/`raw` are always
-the raw API data. URIs follow `gitea://`:
+gives cached, pre-formatted reads. Resources are data addressed by `gitea://`
+URIs; ask for `format=json`/`raw` when you want the raw API data instead of the
+curated view:
 
 - `gitea://repos/{owner}/{repo}`        -> repository summary
 - `gitea://repos/{owner}/{repo}/issues` -> issues (Markdown)
@@ -139,33 +138,28 @@ accept names or IDs, validated against the repo's existing labels -- see
 `read_doc("labels")` for scoped labels and validation errors.
 
 Beyond tools, this server ships **workflow guides** -- explanations of how
-Gitea/Forgejo features and this server's output actually work. Find them with
-`search_docs("branch protection")` or browse `gitea://docs/guide/{topic}`. When
-a task touches a feature you do not fully understand, a guide is often faster
-than trial and error.
+Gitea/Forgejo features work and how to get the most out of tool results. Find
+them with `search_docs("branch protection")` or browse
+`gitea://docs/guide/{topic}`. When a task touches a feature you do not fully
+understand, a guide is often faster than trial and error.
 
-## Output format
+## Reading tool output
 
 Most tools and resources accept `format` (`markdown` default | `json` | `raw`)
-and `detail` (`full` default | `concise`). API tools and the synthetic tools
-`tool_info`, `resolve_type`, `list_resources`, and `read_resource` take both;
-search/discovery tools take `format` only, and `call_tool` takes neither.
+and `detail` (`full` default | `concise`); `tool_info` shows what a given tool
+accepts.
 
-- `markdown` -- curated, schema-aware rendering; best for reading.
-- `json` -- the complete API data as a `{"result": ...}` envelope; best for
-  programmatic extraction.
-- `raw` -- that same envelope as deterministic JSON text (never a Python
-  `repr`); always full detail.
-- `detail="concise"` summarizes root objects and list items, collapsing nested
-  `$ref`-backed fields to a marker -- `{"$ref": "TypeName"}`
-  (`{"$ref": "TypeName", "count": N}` for a list), rendered `$ref:TypeName`.
-- Content is the contract: the text channel is authoritative and mirrors
-  `structured_content`. Paginated `json`/`raw` carry
-  `has_more`/`next_offset`/`total_count` in the text. An empty or out-of-range
-  page is that envelope with an empty `result` -- not an error.
+- Use `markdown` to read, `json` to extract complete data, and `raw` for the
+  API payload as JSON text.
+- `detail="concise"` keeps each item's main fields but replaces nested objects
+  (user, milestone, repository, ...) with a `$ref` marker
+  (`{"$ref": "TypeName"}`, or `$ref:TypeName` in markdown); resolve one with
+  `resolve_type` or `gitea://types/{TypeName}`.
+- Paginated results carry `has_more`, `next_offset`, and `total_count`; an
+  empty or out-of-range page is not an error.
 
-The full contract -- markdown-vs-json, envelope shapes, `$ref` markers,
-`resolve_type`, and the error catalog -- is in `read_doc("output-format")`.
+The full guide to reading results -- formats, compact mode, paging, and error
+shapes -- is `read_doc("tool-output-format")`.
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema (hundreds
@@ -208,6 +202,6 @@ tells you who you are; the absence of a tool tells you what you cannot reach.
   scope, or is private; `{{TOOL_PREFIX}}user_current_list_repos` shows what you can see.
 - **Need full schema** -> `tool_info(name, detail="full")` or
   `read_resource("gitea://tool/{name}/schema")`.
-- **Deeper error and edge-case shapes** -> `read_doc("output-format")`.
+- **Deeper error and edge-case shapes** -> `read_doc("tool-output-format")`.
 
 {{GUIDES_LIST}}

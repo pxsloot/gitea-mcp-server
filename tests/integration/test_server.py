@@ -1095,7 +1095,7 @@ class TestServerEdgeCases:
         - 240 lines (served, incl. guide manifest): re-baselined 2026-09-21
           (#778). The doc was trimmed to orientation + naming grammar +
           workflow shapes; output-contract and error detail moved to the
-          `output-format` workflow guide. The guard now counts the served
+          `tool-output-format` workflow guide. The guard now counts the served
           size; the raises below counted the template only.
         - 200 lines: initial contract from #462 (proved too tight)
         - 300 lines: raised 2026-07-20 to accommodate the full doc with
@@ -1139,19 +1139,19 @@ class TestServerEdgeCases:
         )
 
     @pytest.mark.asyncio
-    async def test_output_format_guide_pointer(self) -> None:
-        """The injected doc points to read_doc("output-format"); it must exist.
+    async def test_tool_output_format_guide_pointer(self) -> None:
+        """The injected doc points to read_doc("tool-output-format"); it must exist.
 
         Guards the pointer against rotting if the guide is renamed or removed.
         """
         from gitea_mcp_server.server import _build_server_instructions
         from gitea_mcp_server.tools.docs_tools import DocManager
 
-        assert 'read_doc("output-format")' in _build_server_instructions()
+        assert 'read_doc("tool-output-format")' in _build_server_instructions()
 
-        guide = DocManager().get("output-format")
-        assert guide is not None, "output-format guide is missing"
-        assert guide.description, "output-format guide needs a manifest description"
+        guide = DocManager().get("tool-output-format")
+        assert guide is not None, "tool-output-format guide is missing"
+        assert guide.description, "tool-output-format guide needs a manifest description"
 
     @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:

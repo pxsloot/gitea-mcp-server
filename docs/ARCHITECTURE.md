@@ -1273,9 +1273,12 @@ explains how to discover and use tools/resources from the agent's perspective.
 
 Its size is guarded as the *served* document (template plus the workflow-guide
 manifest) by `test_served_instructions_line_budget`. The injected doc is
-orientation only -- naming grammar, discovery, workflow shapes. Reference depth
-lives in discoverable homes: tool schemas (`tool_info`), `TOOL_ANNOTATIONS.md`,
-`SCOPE_MODEL.md`, and the workflow guides -- including the agent-facing
-`output-format` guide (`gitea_mcp_server/docs/guides/output-format.md`) for the
-output/envelope/`$ref`/error contract. See `docs/AGENT_INSTRUCTIONS_STANDARDS.md`
-for the boundary and editing rules.
+orientation only -- welcome, feature introduction, quick start, and discovery.
+Reference depth lives in discoverable homes: tool schemas (`tool_info`),
+`TOOL_ANNOTATIONS.md`, `SCOPE_MODEL.md`, and the workflow guides -- including
+the agent-facing `tool-output-format` guide
+(`gitea_mcp_server/docs/guides/tool-output-format.md`) for reading results.
+Implementation internals (the dual-channel contract, deterministic `raw`,
+envelope location, base64 handling, skip-slice) stay in this document, never on
+the agent surface. See `docs/AGENT_INSTRUCTIONS_STANDARDS.md` for the boundary
+and editing rules.

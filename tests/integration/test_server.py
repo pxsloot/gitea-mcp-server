@@ -1084,12 +1084,19 @@ class TestServerEdgeCases:
     async def test_served_instructions_line_budget(self) -> None:
         """Served instructions respect the line-count budget (see history).
 
-        The budget protects the agent-context economy. Raise it deliberately
-        with a comment, not by 'tidying'.  The assertion below is the single
-        source of truth for the current number; the history explains every
-        raise.
+        The budget protects the agent-context economy. It measures the
+        **served** document -- template plus the real workflow-guide manifest
+        -- because that is what every agent actually receives. Raise it
+        deliberately with a comment, not by 'tidying'.  The assertion below is
+        the single source of truth for the current number; the history explains
+        every change.
 
         Budget history:
+        - 240 lines (served, incl. guide manifest): re-baselined 2026-09-21
+          (#778). The doc was trimmed to orientation + naming grammar +
+          workflow shapes; output-contract and error detail moved to the
+          `output-format` workflow guide. The guard now counts the served
+          size; the raises below counted the template only.
         - 200 lines: initial contract from #462 (proved too tight)
         - 300 lines: raised 2026-07-20 to accommodate the full doc with
           placeholders, workflow guide manifest, and edge-case catalog.
@@ -1113,13 +1120,38 @@ class TestServerEdgeCases:
           (#763).
         """
         from gitea_mcp_server.server import _build_server_instructions
+        from gitea_mcp_server.tools.docs_tools import DocManager
 
-        result = _build_server_instructions()
+        manifest = DocManager().get_manifest_markdown()
+        result = _build_server_instructions(
+            placeholder_values={
+                "TOOL_PREFIX": "gitea_",
+                "USER_LOGIN": "agent",
+                "TOKEN_SCOPES": "`read:repository`",
+                "SERVER_TYPE": "Gitea",
+                "GUIDES_LIST": manifest,
+            },
+        )
         line_count = len(result.splitlines())
-        assert line_count <= 342, (
-            f"Instructions are {line_count} lines (budget: 342). "
+        assert line_count <= 240, (
+            f"Served instructions are {line_count} lines (budget: 240). "
             "Increase the budget deliberately, not by trimming."
         )
+
+    @pytest.mark.asyncio
+    async def test_output_format_guide_pointer(self) -> None:
+        """The injected doc points to read_doc("output-format"); it must exist.
+
+        Guards the pointer against rotting if the guide is renamed or removed.
+        """
+        from gitea_mcp_server.server import _build_server_instructions
+        from gitea_mcp_server.tools.docs_tools import DocManager
+
+        assert 'read_doc("output-format")' in _build_server_instructions()
+
+        guide = DocManager().get("output-format")
+        assert guide is not None, "output-format guide is missing"
+        assert guide.description, "output-format guide needs a manifest description"
 
     @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:

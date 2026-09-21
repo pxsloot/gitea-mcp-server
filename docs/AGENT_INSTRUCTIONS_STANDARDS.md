@@ -14,7 +14,8 @@ that file. The machine-checkable invariants live as tests in
 the *why* and the judgment calls that a test cannot catch.
 
 Read this before changing `agent_instructions.md`. The review that shaped these
-rules is PR #461 (refs #460).
+rules is PR #461 (refs #460); the budget re-baseline and extraction boundary
+are from #778.
 
 ## Purpose
 
@@ -96,7 +97,8 @@ not grep patterns.
 ## What the doc must NOT do
 
 - Grow into a reference manual. If a section could be a `read_doc` guide or a
-  `tool_info` result, cut it and point there.
+  `tool_info` result, cut it and point there. The `output-format` guide is the
+  worked example: output/envelope/error detail lives there, the doc points.
 - Leak metadata into agent context. The doc is loaded verbatim; it must stay
   free of YAML frontmatter and unresolved `{{}}` placeholders.
 - Reference repo paths. The agent doc is shipped as a package resource and
@@ -109,9 +111,38 @@ not grep patterns.
 - Claim completeness it does not have, or omit the filtering that explains
   absence.
 
+## Budget and the extraction boundary
+
+The injected doc has a line budget, enforced by
+``test_served_instructions_line_budget``. The measurement is the **served**
+document -- the template plus the real workflow-guide manifest -- because that
+is what the agent receives on every connection. The current ceiling is **240
+lines**; the test's assertion and budget history are the single source of truth.
+
+The budget only works if the boundary is respected. The injected doc is
+*orientation*: what the surface is, how to name and discover things, and the
+shape of a workflow. Reference-grade content has a home that is discoverable on
+demand, and the doc points to it rather than re-teaching it:
+
+| If the content is... | It belongs in... |
+|----------------------|------------------|
+| A tool's parameters, output example, schema | ``tool_info`` (and the tool schema) |
+| ``format`` / ``detail`` / ``fetch_all`` / ``sudo`` semantics | the tool schema (``virtual_params.py``) + the ``output-format`` guide |
+| Output/pagination envelopes, ``$ref`` markers, ``resolve_type``, error shapes | the ``output-format`` workflow guide (``read_doc("output-format")``) |
+| A Gitea/Forgejo feature's mechanics | the matching workflow guide |
+| Annotation semantics | ``TOOL_ANNOTATIONS.md`` (the doc carries the condensed table) |
+| Scope/permission mechanics | ``SCOPE_MODEL.md`` (the doc carries the universal-filtering point) |
+
+When you add something to the injected doc, first ask whether it can be a
+``tool_info`` result, a guide, or a pointer. The default is *point*, not
+*re-teach*.
+
 ## Relationship to other docs
 
 - `docs/INDEX.md` -- the map of all docs and their audiences.
+- `gitea_mcp_server/docs/guides/output-format.md` -- agent-facing reference for
+  output formats, the markdown-vs-json contract, pagination envelopes, `$ref`
+  markers, and error shapes (the injected doc points here).
 - `docs/TOOL_ANNOTATIONS.md` -- canonical reference for annotation semantics
   (the agent doc carries only the condensed table).
 - `docs/SCOPE_MODEL.md` -- canonical reference for scope/permission mechanics.
@@ -127,8 +158,9 @@ The assertable invariants are guarded by these tests in
 |------|--------|
 | ``test_served_instructions_no_unresolved_placeholders`` | No ``{{}}`` remains after substitution |
 | ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
-| ``test_served_instructions_line_budget`` | Line-count budget — the test's assertion is the single source of truth for the current number; its history explains each raise |
+| ``test_served_instructions_line_budget`` | Served size (template + guide manifest) <= 240 — the assertion is the single source of truth; its history explains each change |
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
+| ``test_output_format_guide_pointer`` | The doc's ``read_doc("output-format")`` pointer resolves to a real, described guide |
 
 A regression in any of these fails ``make test``. This file guards the
 *intent* that a test cannot express. Both must be updated together when

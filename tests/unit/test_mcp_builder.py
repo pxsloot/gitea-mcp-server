@@ -12,6 +12,7 @@ from mcp.types import TextContent, ToolAnnotations
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from gitea_mcp_server.models import ToolCustomization
+from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
     _apply_fallback_schemas,
@@ -2584,6 +2585,59 @@ class TestBuildCustomizationMeta:
         )
 
         assert "response_type" not in component.meta
+
+    def test_view_hints_stored_in_meta(self) -> None:
+        """The curated hints are resolved at registration into tool.meta (#775)."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = {}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/repos/{owner}/{repo}",
+            route_method="GET",
+            response_type="Repository",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope="read:repository",
+            schema=schema,
+            has_labels=False,
+            has_no_content=False,
+        )
+
+        hints = component.meta["view_hints"]
+        assert hints == view_hints_for("Repository")
+        assert "clone_url" in hints["omit"]
+        assert hints["compact"]["owner"] is None
+
+    def test_absent_view_hints_omits_meta_key(self) -> None:
+        """An un-curated response type leaves the meta key absent."""
+        component = MagicMock(spec=OpenAPITool)
+        component.meta = {}
+        schema = _ComputedSchema(
+            output_schema={"type": "object"},
+            raw_schema=None,
+            is_text_response=False,
+            is_binary_response=False,
+            response_transform=None,
+            route_path="/widgets",
+            route_method="GET",
+            response_type="Widget",
+        )
+
+        _build_customization_meta(
+            component,
+            required_scope=None,
+            schema=schema,
+            has_labels=False,
+            has_no_content=False,
+        )
+
+        assert "view_hints" not in component.meta
 
     def test_tool_customization_fields_match_schema(self) -> None:
         """ToolCustomization fields are wired from _ComputedSchema."""

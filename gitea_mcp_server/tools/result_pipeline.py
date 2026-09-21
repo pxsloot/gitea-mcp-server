@@ -86,6 +86,9 @@ from gitea_mcp_server.format import (
     collapse_data,
     resolve_formatter,
 )
+from gitea_mcp_server.models import (
+    ViewHints,  # noqa: TC001 - pydantic resolves ExecutionResult's annotations at runtime
+)
 from gitea_mcp_server.pagination import add_pagination_metadata
 
 if TYPE_CHECKING:
@@ -152,6 +155,16 @@ class ExecutionResult:
     this over the tool-level ``response_type`` argument, the same precedence
     rule as ``schema`` and ``extra``.
     """
+    view_hints: ViewHints | None = None
+    """Curated display-view deficiencies for ``response_type``.
+
+    Resolved at registration (``display_hints.view_hints_for``) and carried
+    in ``tool.meta`` / resource content meta — the render path consumes the
+    hints as data and never scans or mutates the spec (#775).  ``None`` means
+    no curated deficiency (or unbound); the generic view derives everything
+    from the schema.  :func:`render` prefers this over the tool-level
+    ``view_hints`` argument, the same precedence rule as ``response_type``.
+    """
     schema: dict[str, Any] | None = None
     """Schema describing *data* for ``$ref``-aware collapse (``detail=concise``).
 
@@ -172,6 +185,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     schema: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
     response_type: str | None = None,
+    view_hints: ViewHints | None = None,
     openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
     """Render an ``ExecutionResult`` into a dual-channel ``ToolResult``.
@@ -199,6 +213,11 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
             ``tool.meta["response_type"]``.  When the ``ExecutionResult``
             carries its own ``response_type`` (per-URI ``read_resource``),
             that takes precedence.
+        view_hints: Optional curated display-view deficiencies for
+            ``response_type`` — read by the contract spine from
+            ``tool.meta["view_hints"]``.  When the ``ExecutionResult`` carries
+            its own ``view_hints`` (per-URI ``read_resource``), that takes
+            precedence.
         openapi_spec: Post-conversion OpenAPI 3.1 spec enabling root-list
             item summaries under ``detail="concise"`` (#759) — the collapse
             resolves a root list's item ``$ref`` one level so items keep
@@ -228,6 +247,9 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     effective_response_type = (
         result.response_type if result.response_type is not None else response_type
     )
+    # Same rule for the curated view hints: the per-result value (read_resource)
+    # wins over the tool-level one from tool.meta.
+    effective_view_hints = result.view_hints if result.view_hints is not None else view_hints
 
     envelope, effective_shape = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
     return _format(
@@ -238,6 +260,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         schema=effective_schema,
         extra=effective_extra,
         response_type=effective_response_type,
+        view_hints=effective_view_hints,
         effective_shape=effective_shape,
         openapi_spec=openapi_spec,
     )
@@ -354,6 +377,7 @@ def _resolve_formatter(
     result: ExecutionResult,
     schema: dict[str, Any] | None,
     response_type: str | None = None,
+    view_hints: ViewHints | None = None,
     *,
     openapi_spec: OpenAPISpec | None = None,
 ) -> MarkdownFormatter:
@@ -370,18 +394,19 @@ def _resolve_formatter(
     resource surface's ``format_hint`` resolution); the type-bound tier uses
     ``response_type``; when no bespoke formatter is registered the format
     layer derives the generic schema-anchored collection view from
-    *openapi_spec* (#771).  The pipeline is a single, uniform formatter call
-    site.
+    *openapi_spec* (#771), refined by *view_hints* (#775).  The pipeline is a
+    single, uniform formatter call site.
     """
     return resolve_formatter(
         schema,
         explicit=result.markdown_formatter,
         response_type=response_type,
+        view_hints=view_hints,
         openapi_spec=openapi_spec,
     )
 
 
-def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, extra, response_type, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render
+def _format(  # noqa: PLR0913 - the pipeline is the single display path; every display axis (envelope, result, fmt, detail, schema, extra, response_type, view_hints, effective_shape, openapi_spec) must be a parameter because executors return raw data only and never render
     envelope: dict[str, Any],
     result: ExecutionResult,
     *,
@@ -390,6 +415,7 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
     schema: dict[str, Any] | None,
     extra: dict[str, Any] | None = None,
     response_type: str | None = None,
+    view_hints: ViewHints | None = None,
     effective_shape: str,
     openapi_spec: OpenAPISpec | None = None,
 ) -> ToolResult:
@@ -449,7 +475,11 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
             # kwargs it declares, here ``extra`` (formatter context).
             text = call_markdown_formatter(
                 _resolve_formatter(
-                    result, schema, response_type=response_type, openapi_spec=openapi_spec
+                    result,
+                    schema,
+                    response_type=response_type,
+                    view_hints=view_hints,
+                    openapi_spec=openapi_spec,
                 ),
                 page_data,
                 extra=extra,

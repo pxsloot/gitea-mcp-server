@@ -4,9 +4,9 @@ Most agent-facing markdown is **derived from the response schema** by the
 format layer's generic collection view (``format._generic_collection_view``,
 #771): the bound type's properties, in declaration order, with ``$ref``-backed
 relations compacted to an identity.  The only curated knowledge is the
-converter-stamped deficiency list (``x-mcp-view-omit`` /
-``x-mcp-view-compact``, ``openapi_converter/display_hints.py``), so a new or
-renamed schema field appears automatically.
+converter's deficiency tables (``openapi_converter/display_hints.py``),
+resolved at registration and carried in the tool's ``view_hints`` meta (#775),
+so a new or renamed schema field appears automatically.
 
 This module holds the formatters that are genuinely *bespoke* — a view the
 schema cannot express.  Today that is one: ``labels``, which carries the

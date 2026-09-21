@@ -586,7 +586,7 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    view needs knowledge the schema cannot express (the `labels` formatter
    carries accepted-format and validation guidance).
 
-   **Curating the generic view.**  Only two things need curating, both in
+   **Curating the generic view.**  Only three things need curating, all in
    `openapi_converter/display_hints.py` (keyed by type name):
 
    - `_VIEW_OMIT` — fields that are noise in a list view (URLs, internal
@@ -598,11 +598,12 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    - `_VIEW_FLAG` — relations that are boolean flags, not identities
      (`pull_request`), rendered `Yes`/`No`.
 
-   The converter stamps `x-mcp-view-omit` / `x-mcp-view-compact` /
-   `x-mcp-view-flag` on every
-   operation returning that type, and validates every hint against the
-   schema — an unknown property or type is logged as an **error** at startup,
-   so a stale hint fails loudly.  This is the "fix the spec, keep the runtime
+   The converter validates every hint against the schema at conversion — an
+   unknown property or type is logged as an **error**, so a stale hint fails
+   loudly.  At registration each entity's hints are resolved once via
+   `display_hints.view_hints_for` and carried in `tool.meta["view_hints"]` /
+   resource content meta (#775); the render path consumes them as data and
+   never reads them off the spec.  This is the "fix the spec, keep the runtime
    generic" principle: the runtime renderer never hardcodes a field name.
 
    **`types=` binds a bespoke formatter to tools by response type (#760).**

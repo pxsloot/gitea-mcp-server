@@ -9,7 +9,7 @@ raw, the empty-json shape, and the shape variants.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import TypeAdapter
@@ -23,6 +23,9 @@ from tests.helpers.mcp_results import (
     parse_json_content,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
 
 
 def _items(n: int) -> list[dict[str, int]]:
@@ -1005,6 +1008,75 @@ class TestResponseTypePrecedence:
             extra={"owner": "o", "repo": "r"},
         )
         assert "# Labels for o/r" in extract_text_content(out.content)
+
+
+def _widget_spec() -> OpenAPISpec:
+    """A minimal spec with a Widget type carrying name/url properties."""
+    return make_openapi_spec(
+        paths={
+            "/widgets": {
+                "get": {
+                    "x-response-type": "Widget",
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {"$ref": "#/components/schemas/Widget"},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+        components={
+            "schemas": {"Widget": {"type": "object", "properties": {"name": {}, "url": {}}}}
+        },
+    )
+
+
+class TestViewHintsPrecedence:
+    """``ExecutionResult.view_hints`` beats ``render(view_hints=...)`` (#775)."""
+
+    def test_result_view_hints_win_over_render_argument(self) -> None:
+        """Per-URI hints (``read_resource``) win over the tool-level meta value."""
+        result = ExecutionResult(
+            data=[{"name": "a", "url": "http://x"}],
+            shape="list",
+            response_type="Widget",
+            view_hints={"omit": ["url"]},
+        )
+        out = render(
+            result,
+            fmt="markdown",
+            response_type="Widget",
+            view_hints={"omit": ["name"]},
+            openapi_spec=_widget_spec(),
+        )
+        text = extract_text_content(out.content)
+        assert "| Name | a |" in text
+        assert "| Url |" not in text
+
+    def test_render_view_hints_used_when_result_has_none(self) -> None:
+        """Tool-level ``render(view_hints=...)`` binds when the result has none."""
+        result = ExecutionResult(
+            data=[{"name": "a", "url": "http://x"}],
+            shape="list",
+            response_type="Widget",
+        )
+        out = render(
+            result,
+            fmt="markdown",
+            response_type="Widget",
+            view_hints={"omit": ["url"]},
+            openapi_spec=_widget_spec(),
+        )
+        text = extract_text_content(out.content)
+        assert "| Name | a |" in text
+        assert "| Url |" not in text
 
 
 class TestExtraForwarding:

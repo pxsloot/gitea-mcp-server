@@ -24,6 +24,7 @@ from gitea_mcp_server.format import (
     get_formatter_for_type,
     register_formatter,
 )
+from gitea_mcp_server.models import ViewHints
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -57,15 +58,13 @@ def _clean_formatters() -> Generator[None, None, None]:
 def _spec_with_type(
     type_name: str,
     properties: dict[str, Any],
-    *,
-    omit: list[str] | None = None,
-    compact: dict[str, str | None] | None = None,
 ) -> OpenAPISpec:
     """Build a spec with one component type and one operation returning it.
 
-    The operation carries the converter-stamped ``x-response-type`` and the
-    optional ``x-mcp-view-*`` hints, exactly as ``stamp_display_hints``
-    would leave them.
+    The operation carries the converter-stamped ``x-response-type`` — the
+    registration-time type-binding key.  Display-view hints are no longer
+    stamped on operations; they travel in ``view_hints`` (#775), built in
+    tests via :func:`_hints`.
     """
     operation: dict[str, Any] = {
         "operationId": f"list{type_name}s",
@@ -83,13 +82,49 @@ def _spec_with_type(
             }
         },
     }
-    if omit:
-        operation["x-mcp-view-omit"] = omit
-    if compact:
-        operation["x-mcp-view-compact"] = compact
     return make_openapi_spec(
         paths={f"/{type_name.lower()}s": {"get": operation}},
         components={"schemas": {type_name: {"type": "object", "properties": properties}}},
+    )
+
+
+def _hints(
+    *,
+    omit: list[str] | None = None,
+    compact: dict[str, str | None] | None = None,
+    flag: list[str] | None = None,
+) -> ViewHints:
+    """Build a ``ViewHints`` dict as registration would resolve it."""
+    return ViewHints(
+        omit=list(omit or []),
+        compact=dict(compact or {}),
+        flag=list(flag or []),
+    )
+
+
+def _render(
+    data: Any,
+    *,
+    response_type: str | None,
+    openapi_spec: OpenAPISpec | None,
+    extra: dict[str, Any] | None = None,
+    omit: list[str] | None = None,
+    compact: dict[str, str | None] | None = None,
+    flag: list[str] | None = None,
+) -> str:
+    """Call the generic view with the hints registration would pass.
+
+    ``view_hints`` is keyword-only and required on ``_generic_collection_view``
+    so each direct call site decides explicitly; this helper supplies it
+    (``None`` when the case has no curated deficiency).
+    """
+    hints = _hints(omit=omit, compact=compact, flag=flag) if (omit or compact or flag) else None
+    return _generic_collection_view(
+        data,
+        response_type=response_type,
+        openapi_spec=openapi_spec,
+        view_hints=hints,
+        extra=extra,
     )
 
 
@@ -162,7 +197,7 @@ class TestGenericCollectionView:
             {"name": {}, "count": {}, "active": {}},
         )
         data = [{"name": "a", "count": 2, "active": True}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(data, response_type="Widget", openapi_spec=spec)
         assert "Widgets - 1 items" in result
         assert "| Name | a |" in result
         assert "| Count | 2 |" in result
@@ -172,10 +207,14 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "url": {}, "internal_flag": {}},
-            omit=["url", "internal_flag"],
         )
         data = [{"name": "a", "url": "http://x", "internal_flag": True}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            omit=["url", "internal_flag"],
+        )
         assert "| Name | a |" in result
         assert "url" not in result.lower()
         assert "internal_flag" not in result.lower()
@@ -188,15 +227,13 @@ class TestGenericCollectionView:
         """
         spec = _spec_with_type("Issue", {"number": {}, "title": {}, "state": {}})
         data = [{"number": 1, "title": "Bug", "state": "open"}]
-        result = _generic_collection_view(
-            data, response_type="Issue", openapi_spec=spec, extra={"type": "pulls"}
-        )
+        result = _render(data, response_type="Issue", openapi_spec=spec, extra={"type": "pulls"})
         assert "Pull Requests - 1 items" in result
 
     def test_issue_detail_title_uses_number_and_title(self) -> None:
         """An Issue detail read gets an ``Issue #N: title`` heading."""
         spec = _spec_with_type("Issue", {"number": {}, "title": {}})
-        result = _generic_collection_view(
+        result = _render(
             {"number": 5, "title": "Bug", "body": "x"},
             response_type="Issue",
             openapi_spec=spec,
@@ -205,7 +242,7 @@ class TestGenericCollectionView:
 
     def test_issue_detail_title_is_pull_request_when_pr(self) -> None:
         spec = _spec_with_type("Issue", {"number": {}, "title": {}, "pull_request": {}})
-        result = _generic_collection_view(
+        result = _render(
             {"number": 3, "title": "Fix", "pull_request": {"merged": True}},
             response_type="Issue",
             openapi_spec=spec,
@@ -216,10 +253,14 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "owner": {"$ref": "#/components/schemas/User"}},
-            compact={"owner": None},
         )
         data = [{"name": "a", "owner": {"login": "dev2", "id": 1, "email": "x@y"}}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"owner": None},
+        )
         assert "| Owner | dev2 |" in result
         assert "## Owner" not in result
 
@@ -230,45 +271,49 @@ class TestGenericCollectionView:
                 "name": {},
                 "labels": {"type": "array", "items": {"$ref": "#/components/schemas/Label"}},
             },
-            compact={"labels": "name"},
         )
         data = [{"name": "a", "labels": [{"name": "bug"}, {"name": "feat"}]}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"labels": "name"},
+        )
         assert "| Labels | bug, feat |" in result
 
     def test_compact_identity_prefers_login_then_username(self) -> None:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "owner": {"$ref": "#/components/schemas/Organization"}},
-            compact={"owner": None},
         )
         data = [{"name": "a", "owner": {"username": "mcp-server", "name": "MCP"}}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"owner": None},
+        )
         assert "| Owner | mcp-server |" in result
 
     def test_unknown_type_falls_back_to_generic(self) -> None:
         """No schema for the type → the plain generic renderer, no crash."""
-        result = _generic_collection_view(
-            [{"name": "a"}], response_type="Unknown", openapi_spec=make_openapi_spec()
-        )
+        result = _render([{"name": "a"}], response_type="Unknown", openapi_spec=make_openapi_spec())
         assert "Unknowns - 1 items" in result
         assert "| Name | a |" in result
 
     def test_no_spec_falls_back_to_generic(self) -> None:
-        result = _generic_collection_view(
-            [{"name": "a"}], response_type="Widget", openapi_spec=None
-        )
+        result = _render([{"name": "a"}], response_type="Widget", openapi_spec=None)
         assert "Widgets - 1 items" in result
 
     def test_item_title_key_from_schema(self) -> None:
         spec = _spec_with_type("Widget", {"title": {}, "name": {}})
         data = [{"title": "The Title", "name": "n"}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(data, response_type="Widget", openapi_spec=spec)
         assert "# The Title" in result
 
     def test_empty_list(self) -> None:
         spec = _spec_with_type("Widget", {"name": {}})
-        result = _generic_collection_view([], response_type="Widget", openapi_spec=spec)
+        result = _render([], response_type="Widget", openapi_spec=spec)
         assert "Widgets" in result
         assert "_(empty)_" in result
 
@@ -280,15 +325,13 @@ class TestGenericCollectionView:
             ("Class", "Classes"),
         ):
             spec = _spec_with_type(type_name, {"name": {}})
-            result = _generic_collection_view(
-                [{"name": "a"}], response_type=type_name, openapi_spec=spec
-            )
+            result = _render([{"name": "a"}], response_type=type_name, openapi_spec=spec)
             assert f"{expected} - 1 items" in result
 
     def test_dict_result_renders_detail_not_collection(self) -> None:
         """A single-object read renders the full payload, never a collection."""
         spec = _spec_with_type("Repository", {"full_name": {}, "description": {}})
-        result = _generic_collection_view(
+        result = _render(
             {"full_name": "o/r", "description": "d", "private": True},
             response_type="Repository",
             openapi_spec=spec,
@@ -299,13 +342,11 @@ class TestGenericCollectionView:
         assert "| Private | True |" in result
 
     def test_dict_result_without_schema_uses_type_title(self) -> None:
-        result = _generic_collection_view(
-            {"a": 1}, response_type="Widget", openapi_spec=make_openapi_spec()
-        )
+        result = _render({"a": 1}, response_type="Widget", openapi_spec=make_openapi_spec())
         assert result.startswith("# Widget")
 
     def test_dict_result_no_type_title_fallback(self) -> None:
-        result = _generic_collection_view({"a": 1}, response_type=None, openapi_spec=None)
+        result = _render({"a": 1}, response_type=None, openapi_spec=None)
         assert result.startswith("# Result")
 
     def test_identity_without_identity_key_renders_compact_summary(self) -> None:
@@ -317,14 +358,18 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "owner": {"$ref": "#/components/schemas/User"}},
-            compact={"owner": None},
         )
         data = [{"name": "a", "owner": {"weird": "shape"}}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"owner": None},
+        )
         assert "weird=shape" in result
         assert "{'weird'" not in result
 
-    def test_compact_identity_uses_stamped_key(self) -> None:
+    def test_compact_identity_uses_identity_key(self) -> None:
         """A per-field identity key drives the compact value (``base`` → ref).
 
         Regression for the review of PR #774: ``base``/``head`` rendered as
@@ -333,10 +378,14 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "branch": {"$ref": "#/components/schemas/BranchInfo"}},
-            compact={"branch": "ref"},
         )
         data = [{"name": "a", "branch": {"label": "x", "ref": "main", "sha": "abc"}}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"branch": "ref"},
+        )
         assert "| Branch | main |" in result
         assert "'label'" not in result
 
@@ -345,10 +394,14 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "owner": {"$ref": "#/components/schemas/User"}},
-            compact={"owner": None},
         )
         data = [{"name": "a", "owner": {"$ref": "User"}}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"owner": None},
+        )
         assert "| Owner | $ref:User |" in result
 
     def test_identity_scalar_value(self) -> None:
@@ -356,54 +409,40 @@ class TestGenericCollectionView:
         spec = _spec_with_type(
             "Widget",
             {"name": {}, "owner": {"$ref": "#/components/schemas/User"}},
-            compact={"owner": None},
         )
         data = [{"name": "a", "owner": 42}]
-        result = _generic_collection_view(data, response_type="Widget", openapi_spec=spec)
+        result = _render(
+            data,
+            response_type="Widget",
+            openapi_spec=spec,
+            compact={"owner": None},
+        )
         assert "| Owner | 42 |" in result
 
-    def test_view_hints_no_spec_or_type(self) -> None:
-        from gitea_mcp_server.format import _view_hints
+    def test_curated_hints_resolve_by_type(self) -> None:
+        """``view_hints_for`` resolves the curated deficiency list by type.
 
-        assert _view_hints(None, "Issue") == (set(), {}, set())
-        assert _view_hints(make_openapi_spec(), None) == (set(), {}, set())
-
-    def test_view_hints_skips_non_dict_path_items(self) -> None:
-        from gitea_mcp_server.format import _view_hints
-
-        spec = make_openapi_spec(paths={"/x": "not-a-dict"})
-        assert _view_hints(spec, "Issue") == (set(), {}, set())
-
-    def test_view_hints_no_matching_operation(self) -> None:
-        from gitea_mcp_server.format import _view_hints
-
-        spec = _spec_with_type("Widget", {"name": {}})
-        assert _view_hints(spec, "Issue") == (set(), {}, set())
-
-    def test_hint_index_is_per_spec(self) -> None:
-        """Two specs get their own hints — no shared/global cache.
-
-        Regression for the review of PR #774: the index was cached in a
-        module-global keyed by ``id(spec)``, which CPython reuses after GC,
-        so one spec could silently receive another's hints.
+        The registration layer hands this to ``tool.meta["view_hints"]`` /
+        resource content meta; the render path never reads it off the spec.
         """
-        from gitea_mcp_server.format import _view_hints
+        from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 
-        spec_a = _spec_with_type("Widget", {"name": {}, "a": {}}, omit=["a"])
-        spec_b = _spec_with_type("Widget", {"name": {}, "b": {}}, omit=["b"])
-        assert _view_hints(spec_a, "Widget")[0] == {"a"}
-        assert _view_hints(spec_b, "Widget")[0] == {"b"}
-        # And again, after both are indexed, to prove no cross-talk.
-        assert _view_hints(spec_a, "Widget")[0] == {"a"}
-        assert _view_hints(spec_b, "Widget")[0] == {"b"}
+        issue = view_hints_for("Issue")
+        assert issue is not None
+        assert "body" in issue["omit"]
+        assert issue["compact"]["labels"] == "name"
+        assert "pull_request" in issue["flag"]
+        # Un-curated and unbound types carry no hints.
+        assert view_hints_for("Widget") is None
+        assert view_hints_for(None) is None
 
-    def test_hint_index_stored_on_spec(self) -> None:
-        """The index lives on the spec, not in module-global state."""
-        from gitea_mcp_server.format import _HINT_INDEX_KEY, _view_hints
+    def test_format_has_no_hint_index(self) -> None:
+        """The render path carries hints as data — no spec index/mutation."""
+        import gitea_mcp_server.format as format_module
 
-        spec = _spec_with_type("Widget", {"name": {}}, omit=["name"])
-        _view_hints(spec, "Widget")
-        assert _HINT_INDEX_KEY in spec
+        assert not hasattr(format_module, "_view_hints")
+        assert not hasattr(format_module, "_hint_index")
+        assert not hasattr(format_module, "_HINT_INDEX_KEY")
 
     def test_type_schema_no_spec_or_type(self) -> None:
         from gitea_mcp_server.format import _type_schema
@@ -477,18 +516,9 @@ class TestGenericCollectionView:
 
         assert _identity(42) == "42"
 
-    def test_view_hints_skips_non_dict_operation(self) -> None:
-        """A non-dict operation value is skipped (line 320)."""
-        from gitea_mcp_server.format import _view_hints
-
-        spec = make_openapi_spec(paths={"/x": {"get": "not-a-dict"}})
-        assert _view_hints(spec, "Issue") == (set(), {}, set())
-
     def test_fallback_title_for_list_without_schema(self) -> None:
         """A list with no type schema gets a collection title (line 368)."""
-        result = _generic_collection_view(
-            [{"name": "a"}], response_type="Widget", openapi_spec=None
-        )
+        result = _render([{"name": "a"}], response_type="Widget", openapi_spec=None)
         assert "Widgets - 1 items" in result
 
     def test_non_dict_properties_falls_back(self) -> None:
@@ -496,9 +526,7 @@ class TestGenericCollectionView:
         spec = make_openapi_spec(
             components={"schemas": {"Widget": {"type": "object", "properties": "nope"}}}
         )
-        result = _generic_collection_view(
-            [{"name": "a"}], response_type="Widget", openapi_spec=spec
-        )
+        result = _render([{"name": "a"}], response_type="Widget", openapi_spec=spec)
         assert "Widgets - 1 items" in result
 
     def test_item_title_key_none_when_no_known_key(self) -> None:

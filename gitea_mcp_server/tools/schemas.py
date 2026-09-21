@@ -73,12 +73,9 @@ def deep_resolve_schema(
 ) -> dict[str, Any]:
     """Recursively resolve all $ref pointers in a schema against the spec.
 
-    Operation-level ``x-mcp-*`` display hints (``x-mcp-view-omit`` /
-    ``x-mcp-view-compact``) are stripped: they are pipeline metadata for the
-    generic renderer, not part of the agent-facing schema.  (The hints live
-    on the *operation*, so they only appear here when a caller resolves an
-    operation-shaped node; the strip keeps the resolved schema clean either
-    way.)
+    ``x-mcp-*`` extensions are stripped from resolved schema nodes: they are
+    our own pipeline metadata, never part of the agent-facing schema.  Every
+    resolved schema a caller receives is therefore free of ``x-mcp-*`` keys.
 
     Args:
         schema: Schema tree (individual JSON Schema node, typed ``Any``

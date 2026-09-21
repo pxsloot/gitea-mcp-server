@@ -39,9 +39,10 @@ Formatter contract and registry:
     _generic_collection_view - the generic, schema-anchored markdown view
         (#771): the bound type's properties in declaration order, scalars as
         table rows, ``$ref``-backed relations compacted to an identity.  The
-        only curated knowledge is the converter-stamped deficiency list
-        (``x-mcp-view-omit`` / ``x-mcp-view-compact``,
-        ``openapi_converter/display_hints.py``).
+        only curated knowledge is the converter's deficiency tables
+        (``openapi_converter/display_hints.py``), resolved once at
+        registration and passed in as a ``ViewHints`` value (#775) — the
+        format layer never reads hints off the spec.
 
 The single result pipeline for tools and resources lives in
 ``tools/result_pipeline.py``; this module provides the shared formatting
@@ -68,7 +69,7 @@ from gitea_mcp_server.schema_utils import (
 )
 
 if TYPE_CHECKING:
-    from gitea_mcp_server.models import ToolSchemaResult
+    from gitea_mcp_server.models import ToolSchemaResult, ViewHints
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
@@ -274,10 +275,10 @@ def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None
 # hand-written per-type field list (#771).  The bound type's properties, in
 # declaration order, become the view; scalars render as table rows and
 # ``$ref``-backed relations compact to an identity.  The only curated
-# knowledge is the converter-stamped deficiency list (``x-mcp-view-omit`` /
-# ``x-mcp-view-compact``), read off the operation — so a new or renamed
-# schema field appears automatically and a stale hint fails loudly at
-# startup (``openapi_converter/display_hints.py``).
+# knowledge is the converter's deficiency tables, resolved at registration
+# and handed in as a ``ViewHints`` value (#775) — so a new or renamed schema
+# field appears automatically and a stale hint fails loudly at startup
+# (``openapi_converter/display_hints.py``).
 
 #: Identity fields tried in order when compacting a ``$ref``-backed object.
 _IDENTITY_KEYS: tuple[str, ...] = ("login", "username", "name", "full_name", "id")
@@ -286,7 +287,7 @@ _IDENTITY_KEYS: tuple[str, ...] = ("login", "username", "name", "full_name", "id
 def _identity(value: Any, key: str | None = None) -> str:
     """Render a ``$ref``-backed object as its identity.
 
-    *key* is the converter-stamped identity field for this relation (e.g.
+    *key* is the converter-curated identity field for this relation (e.g.
     ``base`` → ``ref``); ``None`` uses the generic policy (``login`` →
     ``username`` → ``name`` → ``full_name`` → ``id``).  A collapsed relation
     marker renders as its label.  A dict with no usable identity field
@@ -366,73 +367,6 @@ def _object_type_name(ref: str, openapi_spec: OpenAPISpec | None) -> str | None:
     return None
 
 
-def _view_hints(
-    openapi_spec: OpenAPISpec | None, response_type: str | None
-) -> tuple[set[str], dict[str, str | None], set[str]]:
-    """Read the converter-stamped view hints for a response type.
-
-    Returns ``(omit, compact, flag)`` — the property names to drop, a mapping
-    of property name to identity-field **override** (``None`` = generic
-    policy), and the property names to render as a boolean flag.  All are
-    empty when no spec/type is available, so the view degrades to the plain
-    schema derivation.
-
-    The hints are keyed by response type, so the whole spec is indexed once
-    (:func:`_hint_index`) rather than scanned per render.
-    """
-    if openapi_spec is None or not response_type:
-        return set(), {}, set()
-    return _hint_index(openapi_spec).get(response_type, (set(), {}, set()))
-
-
-#: Private spec key holding the built hint index.  The index is derived from
-#: the spec and stored *on* the spec, so there is no module-global cache and
-#: no ``id()``-keyed lookup (which is unsound — CPython reuses ``id()`` after
-#: garbage collection).  The key is stripped from agent-facing schemas by
-#: ``tools/schemas.deep_resolve_schema`` alongside the other ``x-mcp-*`` keys.
-_HINT_INDEX_KEY = "x-mcp-hint-index"
-
-#: One type's view hints: ``(omit, compact, flag)``.
-_ViewHints = tuple[set[str], dict[str, str | None], set[str]]
-
-
-def _hint_index(openapi_spec: OpenAPISpec) -> dict[str, _ViewHints]:
-    """Index the converter-stamped view hints by response type.
-
-    Built once per spec and stored on the spec itself, so a markdown render
-    does not scan every operation and no module-global state is shared
-    between specs.  When two operations share a response type, the first
-    wins — the hints are keyed by type in the converter, so they agree.
-    """
-    cached = openapi_spec.get(_HINT_INDEX_KEY)
-    if isinstance(cached, dict):
-        return cast("dict[str, _ViewHints]", cached)
-
-    index: dict[str, _ViewHints] = {}
-    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
-    for path_item in paths.values():
-        if not isinstance(path_item, dict):
-            continue
-        for operation in path_item.values():
-            if not isinstance(operation, dict):
-                continue
-            response_type = operation.get("x-response-type")
-            if not isinstance(response_type, str) or response_type in index:
-                continue
-            omit = operation.get("x-mcp-view-omit")
-            compact = operation.get("x-mcp-view-compact")
-            flag = operation.get("x-mcp-view-flag")
-            index[response_type] = (
-                set(omit) if isinstance(omit, list) else set(),
-                dict(compact) if isinstance(compact, dict) else {},
-                set(flag) if isinstance(flag, list) else set(),
-            )
-    # The spec is a TypedDict; the index key is dynamic, so write through a
-    # plain-dict view (the same escape hatch the converter uses for x-* keys).
-    cast("dict[str, Any]", openapi_spec)[_HINT_INDEX_KEY] = index
-    return index
-
-
 def _type_schema(
     openapi_spec: OpenAPISpec | None, response_type: str | None
 ) -> dict[str, Any] | None:
@@ -449,9 +383,7 @@ def _type_schema(
 
 def _build_field_filter(
     properties: dict[str, Any],
-    omit: set[str],
-    compact: dict[str, str | None],
-    flag: set[str],
+    view_hints: ViewHints | None,
     openapi_spec: OpenAPISpec | None,
 ) -> dict[str, dict]:
     """Build the collection view's field filter from the schema.
@@ -459,7 +391,8 @@ def _build_field_filter(
     A property is a **relation** when its schema references an object type
     (``$ref``, a combinator wrapping one, or an array of one) — derived from
     the schema, so a new or unknown type compacts its relations for free.
-    The converter-stamped hints refine that:
+    The converter-curated ``view_hints`` (resolved at registration, #775)
+    refine that:
 
     - ``compact`` supplies identity-field *overrides* for relations whose
       object has no conventional identity (``base`` → ``ref``, ``milestone``
@@ -468,6 +401,9 @@ def _build_field_filter(
       (``pull_request``) — rendered ``Yes``/``No``.
     - ``omit`` drops noise fields.
     """
+    omit: Sequence[str] = view_hints.get("omit", ()) if view_hints else ()
+    compact: dict[str, str | None] = view_hints.get("compact", {}) if view_hints else {}
+    flag: Sequence[str] = view_hints.get("flag", ()) if view_hints else ()
     field_filter: dict[str, dict] = {}
     for prop_name, prop_schema in properties.items():
         if prop_name in omit:
@@ -489,17 +425,24 @@ def _generic_collection_view(
     *,
     response_type: str | None,
     openapi_spec: OpenAPISpec | None,
+    view_hints: ViewHints | None,
     extra: dict[str, Any] | None = None,
 ) -> str:
     """Render API objects as a schema-anchored view.
 
     A **list** renders the collection view: the bound type's schema
-    properties in declaration order, minus the converter-stamped omissions,
+    properties in declaration order, minus the converter-curated omissions,
     with ``$ref``-backed relations compacted to an identity.  A **dict**
     (a single-resource read) renders the full payload dynamically — a detail
     read must never drop a field.  Falls back to the generic renderer when
     the type schema is unavailable, so an unknown type keeps today's
     behavior.
+
+    *view_hints* is the registration-resolved :class:`ViewHints` for
+    *response_type*, or ``None`` for a type with no curated deficiency.  The
+    parameter is keyword-only and required so each direct call site makes an
+    explicit decision; the result pipeline passes ``None`` when an entity
+    registered no hints, which renders the plain schema-derived view.
 
     *extra* carries the call context (``type`` for the issue/pull title);
     the formatter declares it so ``call_markdown_formatter`` forwards it.
@@ -516,8 +459,7 @@ def _generic_collection_view(
         # Detail view: the full payload, every field present in the data.
         return format_as_markdown(data, title=_detail_title(data, response_type, extra))
 
-    omit, compact, flag = _view_hints(openapi_spec, response_type)
-    field_filter = _build_field_filter(properties, omit, compact, flag, openapi_spec)
+    field_filter = _build_field_filter(properties, view_hints, openapi_spec)
 
     title = _collection_title(response_type, len(data), extra, data)
     return format_as_markdown(
@@ -637,6 +579,7 @@ def resolve_formatter(
     schema: dict[str, Any] | None,
     explicit: MarkdownFormatter | None = None,
     response_type: str | None = None,
+    view_hints: ViewHints | None = None,
     *,
     openapi_spec: OpenAPISpec | None = None,
 ) -> MarkdownFormatter:
@@ -656,6 +599,10 @@ def resolve_formatter(
        ``call_markdown_formatter`` dispatches only ``extra`` (never
        ``schema`` or ``detail``).
 
+    ``view_hints`` is threaded into the generic collection view; it is the
+    registration-resolved :class:`~gitea_mcp_server.models.ViewHints` for
+    *response_type* (#775).
+
     Centralising the choice here keeps the pipeline's ``_format`` a single,
     uniform formatter call site.  The function lives in the format layer so
     the pipeline never imports the domain formatter module.
@@ -670,6 +617,7 @@ def resolve_formatter(
             _generic_collection_view,
             response_type=response_type,
             openapi_spec=openapi_spec,
+            view_hints=view_hints,
         )
     return functools.partial(format_as_markdown, schema=schema)
 

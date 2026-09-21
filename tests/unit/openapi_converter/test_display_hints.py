@@ -1,10 +1,10 @@
 """Unit tests for display-view hints (openapi_converter.display_hints).
 
-Covers ``stamp_display_hints`` — the pre-wrap pass that stamps
-``x-mcp-view-omit`` / ``x-mcp-view-compact`` on operations, keyed by the
-response type, for the generic schema-anchored markdown view (#771).  The
-hints are a curated deficiency list; validation must fail loudly when a hint
-names a property the schema does not define.
+Covers the curated deficiency tables and their two consumers: the pre-wrap
+``validate_display_hints`` pass (validates every hint against the schema and
+fails loudly on drift) and ``view_hints_for`` (the registration-time resolver
+whose result travels in ``tool.meta["view_hints"]`` / resource content meta,
+#775).  The hints are not stamped on operations.
 """
 
 from __future__ import annotations
@@ -13,12 +13,9 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.display_hints import (
-    VIEW_COMPACT_KEY,
-    VIEW_FLAG_KEY,
-    VIEW_OMIT_KEY,
     _type_properties,
-    _validate_hints,
-    stamp_display_hints,
+    validate_display_hints,
+    view_hints_for,
 )
 from gitea_mcp_server.openapi_converter.type_references import (
     primary_type,
@@ -51,18 +48,21 @@ def _list_op(op_id: str, ref: str) -> dict[str, Any]:
     }
 
 
-def _object_op(op_id: str, ref: str) -> dict[str, Any]:
-    return {
-        "operationId": op_id,
-        "responses": {
-            "200": {
-                "description": "ok",
-                "content": {
-                    "application/json": {"schema": {"$ref": f"#/components/schemas/{ref}"}}
-                },
-            }
-        },
-    }
+def _x_mcp_keys(node: Any, path: str = "") -> list[str]:
+    """Dotted paths of every ``x-mcp-*`` key in a spec tree."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if not isinstance(key, str):
+                continue
+            child = f"{path}.{key}" if path else key
+            if key.startswith("x-mcp-"):
+                found.append(child)
+            found.extend(_x_mcp_keys(value, child))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found.extend(_x_mcp_keys(value, f"{path}[{index}]"))
+    return found
 
 
 class TestPrimaryType:
@@ -200,95 +200,64 @@ class TestSuccessSchemaGuards:
         assert success_schema(spec, "/x", "get") is None
 
 
-class TestStampDisplayHints:
-    def test_stamps_omit_and_compact_for_known_type(self) -> None:
-        spec = make_openapi_spec(
-            paths={"/issues": {"get": _list_op("issueListIssues", "Issue")}},
-            components={
-                "schemas": {
-                    "Issue": {
-                        "type": "object",
-                        "properties": {
-                            "number": {},
-                            "title": {},
-                            "url": {},
-                            "user": {"$ref": "#/components/schemas/User"},
-                        },
-                    }
-                }
-            },
-        )
-        stamp_display_hints(spec)
-        op = cast("dict[str, Any]", spec["paths"]["/issues"]["get"])
-        assert "url" in op[VIEW_OMIT_KEY]
-        assert "user" in op[VIEW_COMPACT_KEY]
+class TestViewHintsFor:
+    """``view_hints_for`` resolves the curated tables by type name.
 
-    def test_unknown_type_gets_no_hints(self) -> None:
-        spec = make_openapi_spec(
-            paths={"/widgets": {"get": _list_op("widgetList", "Widget")}},
-            components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
-        )
-        stamp_display_hints(spec)
-        op = spec["paths"]["/widgets"]["get"]
-        assert VIEW_OMIT_KEY not in op
-        assert VIEW_COMPACT_KEY not in op
+    The resolver is the registration-time lookup (#775); its result travels
+    in ``tool.meta["view_hints"]`` / resource content meta, so the render path
+    never reads hints off the spec.
+    """
 
-    def test_object_response_also_stamped(self) -> None:
-        spec = make_openapi_spec(
-            paths={"/repo": {"get": _object_op("repoGet", "Repository")}},
-            components={
-                "schemas": {
-                    "Repository": {
-                        "type": "object",
-                        "properties": {"name": {}, "url": {}, "owner": {}},
-                    }
-                }
-            },
-        )
-        stamp_display_hints(spec)
-        op = cast("dict[str, Any]", spec["paths"]["/repo"]["get"])
-        assert "url" in op[VIEW_OMIT_KEY]
-        assert "owner" in op[VIEW_COMPACT_KEY]
+    def test_issue_resolves_full_hint_set(self) -> None:
+        hints = view_hints_for("Issue")
+        assert hints is not None
+        assert "body" in hints["omit"]
+        assert hints["compact"]["labels"] == "name"
+        assert hints["compact"]["milestone"] == "title"
+        assert "pull_request" in hints["flag"]
 
-    def test_no_primary_type_not_stamped(self) -> None:
-        spec = make_openapi_spec(
-            paths={
-                "/ping": {
-                    "get": {
-                        "operationId": "ping",
-                        "responses": {
-                            "200": {
-                                "content": {
-                                    "application/json": {
-                                        "schema": {"type": "object", "properties": {}}
-                                    }
-                                }
-                            }
-                        },
-                    }
-                }
-            }
-        )
-        stamp_display_hints(spec)
-        assert VIEW_OMIT_KEY not in spec["paths"]["/ping"]["get"]
+    def test_repository_resolves(self) -> None:
+        hints = view_hints_for("Repository")
+        assert hints is not None
+        assert "clone_url" in hints["omit"]
+        assert hints["compact"]["owner"] is None
 
-    def test_non_dict_path_item_skipped(self) -> None:
-        """A malformed path item is skipped, not crashed on."""
-        spec = make_openapi_spec(paths={"/x": "not-a-dict"})
-        stamp_display_hints(spec)  # must not raise
+    def test_uncurated_type_returns_none(self) -> None:
+        assert view_hints_for("Widget") is None
 
-    def test_non_operation_keys_skipped(self) -> None:
-        """Non-HTTP-method keys (e.g. ``parameters``) are skipped."""
-        spec = make_openapi_spec(
-            paths={
-                "/x": {
-                    "parameters": [{"name": "p", "in": "query"}],
-                    "get": _list_op("x", "Widget"),
-                }
-            },
-            components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
+    def test_empty_or_none_type_returns_none(self) -> None:
+        assert view_hints_for(None) is None
+        assert view_hints_for("") is None
+
+    def test_each_call_returns_an_independent_value(self) -> None:
+        """Callers own their hints; one entity never aliases another's."""
+        first = view_hints_for("Issue")
+        second = view_hints_for("Issue")
+        assert first is not None
+        assert second is not None
+        assert first == second
+        assert first is not second
+
+        first["omit"].append("sentinel")
+        first["compact"]["sentinel"] = None
+        first["flag"].append("sentinel")
+        assert "sentinel" not in second["omit"]
+        assert "sentinel" not in second["compact"]
+        assert "sentinel" not in second["flag"]
+
+    def test_every_curated_type_is_resolvable(self) -> None:
+        from gitea_mcp_server.openapi_converter.display_hints import (
+            _VIEW_COMPACT,
+            _VIEW_FLAG,
+            _VIEW_OMIT,
         )
-        stamp_display_hints(spec)  # must not raise
+
+        for type_name in set(_VIEW_OMIT) | set(_VIEW_COMPACT) | set(_VIEW_FLAG):
+            hints = view_hints_for(type_name)
+            assert hints is not None, type_name
+            assert hints["omit"] == list(_VIEW_OMIT.get(type_name, ()))
+            assert hints["compact"] == dict(_VIEW_COMPACT.get(type_name, {}))
+            assert hints["flag"] == list(_VIEW_FLAG.get(type_name, ()))
 
 
 class TestValidateHints:
@@ -326,37 +295,28 @@ class TestValidateHints:
         with caplog.at_level(
             logging.ERROR, logger="gitea_mcp_server.openapi_converter.display_hints"
         ):
-            _validate_hints(spec)
+            validate_display_hints(spec)
         errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert errors == [], [r.getMessage() for r in errors]
 
-    def test_real_spec_stamps_issue_and_pull_hints(
+    def test_converted_spec_has_no_x_mcp_extensions(
         self, swagger_spec_fixture: dict[str, Any]
     ) -> None:
-        """The real spec stamps the curated hints on Issue/PullRequest ops."""
+        """The converted spec carries no ``x-mcp-*`` extensions."""
         from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
 
         spec = cast(
             "OpenAPISpec",
             convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", swagger_spec_fixture)),
         )
-        stamped = 0
-        for path_item in spec["paths"].values():
-            for operation in path_item.values():
-                if not isinstance(operation, dict):
-                    continue
-                if operation.get("x-response-type") == "Issue":
-                    assert "body" in operation[VIEW_OMIT_KEY]
-                    assert "pull_request" in operation[VIEW_FLAG_KEY]
-                    stamped += 1
-        assert stamped > 0
+        assert _x_mcp_keys(spec) == []
 
     def test_clean_spec_no_errors(self, caplog: pytest.LogCaptureFixture) -> None:
         spec = self._full_spec()
         with caplog.at_level(
             logging.ERROR, logger="gitea_mcp_server.openapi_converter.display_hints"
         ):
-            _validate_hints(spec)
+            validate_display_hints(spec)
         assert caplog.text == ""
 
     def test_unknown_property_logs_error(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -367,7 +327,7 @@ class TestValidateHints:
         with caplog.at_level(
             logging.ERROR, logger="gitea_mcp_server.openapi_converter.display_hints"
         ):
-            _validate_hints(spec)
+            validate_display_hints(spec)
         assert "unknown property 'url'" in caplog.text
 
     def test_undefined_type_logs_error(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -375,5 +335,5 @@ class TestValidateHints:
         with caplog.at_level(
             logging.ERROR, logger="gitea_mcp_server.openapi_converter.display_hints"
         ):
-            _validate_hints(spec)
+            validate_display_hints(spec)
         assert "undefined type" in caplog.text

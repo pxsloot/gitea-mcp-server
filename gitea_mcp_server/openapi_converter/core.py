@@ -14,7 +14,7 @@ from gitea_mcp_server.exceptions import SpecError
 from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 from gitea_mcp_server.schema_utils import schema_type_matches
 
-from .display_hints import stamp_display_hints
+from .display_hints import validate_display_hints
 from .schema import (
     OptionalPropertyTransformer,
     PropertyRequiredCollector,
@@ -990,11 +990,13 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     # for cache invalidation.  Must run BEFORE _wrap_success_response_schemas:
     # the wrapping inlines top-level $refs, which would lose the type names.
     stamp_type_references(cast("OpenAPISpec", result))
-    # Stamp display-view hints (x-mcp-view-omit / x-mcp-view-compact) for the
-    # generic markdown renderer.  Same pre-wrap requirement: the hints are
-    # keyed by the response type name, which wrapping erases.
-    stamp_display_hints(cast("OpenAPISpec", result))
     _wrap_success_response_schemas(cast("OpenAPISpec", result))
+    # Validate the curated display-view hint tables against the component
+    # schemas.  Response wrapping does not modify ``components/schemas``, so
+    # this is independent of the wrapping step.  The hints themselves are
+    # resolved per entity at registration (``display_hints.view_hints_for``),
+    # not stamped here.
+    validate_display_hints(cast("OpenAPISpec", result))
 
     logger.info("OpenAPI conversion completed successfully")
     return result

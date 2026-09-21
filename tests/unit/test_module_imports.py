@@ -278,3 +278,41 @@ class TestLayerDependencies:
             check=False,
         )
         assert result.returncode == 0, result.stderr
+
+    def test_format_carries_no_hint_index_or_converter_import(self) -> None:
+        """The display layer carries hints as data, never derived from the spec.
+
+        #775 moved the hint index to registration: ``format`` has no hint
+        lookup, no spec mutation, and no direct ``openapi_converter`` import.
+
+        A module-level ``sys.modules`` guard is deliberately *not* used here —
+        ``format`` reaches the converter transitively via ``ref_resolver``, so
+        such a guard would be false.  This locks the direct act (an AST scan),
+        not the transitive graph.
+        """
+        import ast
+        import inspect
+
+        from gitea_mcp_server import format as format_module
+
+        source = inspect.getsource(format_module)
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert not (node.module or "").startswith("gitea_mcp_server.openapi_converter"), (
+                    f"format.py must not import openapi_converter (line {node.lineno})"
+                )
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("gitea_mcp_server.openapi_converter"), (
+                        f"format.py must not import openapi_converter (line {node.lineno})"
+                    )
+
+        for symbol in (
+            "_hint_index",
+            "_HINT_INDEX_KEY",
+            "_view_hints",
+            "x-mcp-view",
+            "x-mcp-hint-index",
+        ):
+            assert symbol not in source, f"format.py still references {symbol!r}"

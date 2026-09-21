@@ -304,7 +304,7 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        text, schema, hint, extra, response_type = await _mcp_read_resource_impl(
+        text, schema, hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -313,11 +313,12 @@ class TestMcpReadResourceImpl:
         assert hint is None
         assert extra is None
         assert response_type is None
+        assert view_hints is None
         ctx.read_resource.assert_awaited_once_with("gitea://test")
 
     @pytest.mark.asyncio
     async def test_extracts_meta_from_content(self) -> None:
-        """Should extract schema, format_hint, response_type, and extra from content meta."""
+        """Should extract schema, format_hint, response_type, view_hints, extra."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         ctx = MagicMock(spec=Context)
@@ -327,13 +328,14 @@ class TestMcpReadResourceImpl:
                 "response_schema": {"type": "object"},
                 "format_hint": "repository",
                 "response_type": "Repository",
+                "view_hints": {"omit": ["url"]},
                 "custom_key": "custom_val",
             },
         )
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(
+        raw, schema, format_hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -341,6 +343,7 @@ class TestMcpReadResourceImpl:
         assert schema == {"type": "object"}
         assert format_hint == "repository"
         assert response_type == "Repository"
+        assert view_hints == {"omit": ["url"]}
         assert extra == {"custom_key": "custom_val"}
 
     @pytest.mark.asyncio
@@ -353,7 +356,7 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(
+        raw, schema, format_hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -362,10 +365,11 @@ class TestMcpReadResourceImpl:
         assert format_hint is None
         assert extra is None
         assert response_type is None
+        assert view_hints is None
 
     @pytest.mark.asyncio
     async def test_extracts_meta_known_only_returns_none_extra(self) -> None:
-        """Known pipeline keys (schema/hint/type) are not leaked into extra."""
+        """Known pipeline keys (schema/hint/type/hints) are not leaked into extra."""
         from fastmcp.resources import ResourceContent, ResourceResult
 
         ctx = MagicMock(spec=Context)
@@ -375,12 +379,13 @@ class TestMcpReadResourceImpl:
                 "response_schema": {"type": "object"},
                 "format_hint": "repository",
                 "response_type": "Repository",
+                "view_hints": {"omit": ["url"]},
             },
         )
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(
+        raw, schema, format_hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -388,6 +393,7 @@ class TestMcpReadResourceImpl:
         assert schema == {"type": "object"}
         assert format_hint == "repository"
         assert response_type == "Repository"
+        assert view_hints == {"omit": ["url"]}
         assert extra is None
 
     @pytest.mark.asyncio
@@ -403,7 +409,7 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(
+        raw, schema, format_hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -411,6 +417,7 @@ class TestMcpReadResourceImpl:
         assert schema is None
         assert format_hint is None
         assert response_type is None
+        assert view_hints is None
         assert extra == {"owner": "acme", "repo": "widgets"}
 
     @pytest.mark.asyncio
@@ -426,7 +433,7 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        raw, schema, format_hint, extra, response_type = await _mcp_read_resource_impl(
+        raw, schema, format_hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -435,6 +442,7 @@ class TestMcpReadResourceImpl:
         assert format_hint is None
         assert extra is None
         assert response_type is None
+        assert view_hints is None
 
     @pytest.mark.asyncio
     async def test_raises_for_missing_resource(self) -> None:
@@ -467,7 +475,7 @@ class TestMcpReadResourceImpl:
         result = ResourceResult(contents=[content_part])
         ctx.read_resource = AsyncMock(return_value=result)
 
-        text, schema, hint, extra, response_type = await _mcp_read_resource_impl(
+        text, schema, hint, extra, response_type, view_hints = await _mcp_read_resource_impl(
             ctx, "gitea://test"
         )
 
@@ -476,6 +484,7 @@ class TestMcpReadResourceImpl:
         assert hint is None
         assert extra is None
         assert response_type is None
+        assert view_hints is None
         ctx.read_resource.assert_awaited_once_with("gitea://test")
 
 
@@ -1513,7 +1522,7 @@ class TestReadResourceToolBase64Decode:
             patch(
                 "gitea_mcp_server.tools.mcp_tools._mcp_read_resource_impl",
                 new_callable=AsyncMock,
-                return_value=(raw_json, None, None, None, None),
+                return_value=(raw_json, None, None, None, None, None),
             ),
             patch(
                 "gitea_mcp_server.tools.mcp_tools._maybe_decode_base64",

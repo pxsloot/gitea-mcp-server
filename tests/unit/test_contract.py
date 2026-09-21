@@ -10,7 +10,7 @@ post-hook formatting.
 from __future__ import annotations
 
 import base64
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp.tools.base import Tool, ToolResult
@@ -19,11 +19,15 @@ from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from tests.helpers.spec_fixtures import make_openapi_spec
 
+if TYPE_CHECKING:
+    from gitea_mcp_server.models import ViewHints
+
 
 def _make_tool(
     *,
     raw_schema: dict[str, Any] | None = None,
     response_type: str | None = None,
+    view_hints: ViewHints | None = None,
 ) -> Tool:
     """Minimal Tool whose meta optionally carries display pipeline metadata."""
     meta: dict[str, Any] = {}
@@ -31,6 +35,8 @@ def _make_tool(
         meta["output_schema_raw"] = raw_schema
     if response_type is not None:
         meta["response_type"] = response_type
+    if view_hints is not None:
+        meta["view_hints"] = view_hints
     return Tool(
         name="test_tool",
         description="A test tool.",
@@ -383,6 +389,21 @@ class TestDisplayExtraDerivation:
         """The spine reads ``tool.meta["response_type"]`` into ``render``."""
         seen = await self._run_transform(tool=_make_tool(response_type="Repository"), format="json")
         assert seen["response_type"] == "Repository"
+
+    @pytest.mark.asyncio
+    async def test_view_hints_forwarded_from_tool_meta(self) -> None:
+        """The spine reads ``tool.meta["view_hints"]`` into ``render`` (#775)."""
+        hints: ViewHints = {"omit": ["url"]}
+        seen = await self._run_transform(
+            tool=_make_tool(response_type="Repository", view_hints=hints), format="json"
+        )
+        assert seen["view_hints"] == hints
+
+    @pytest.mark.asyncio
+    async def test_absent_view_hints_is_none(self) -> None:
+        """A tool without the meta key passes ``None`` — plain schema view."""
+        seen = await self._run_transform(format="json")
+        assert seen["view_hints"] is None
 
     @pytest.mark.asyncio
     async def test_absent_response_type_is_none(self) -> None:

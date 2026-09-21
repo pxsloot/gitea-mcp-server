@@ -1163,11 +1163,12 @@ class TestDeepResolveSchema:
         assert resolved["properties"]["login"]["type"] == "string"
 
     def test_strips_x_mcp_display_hints(self) -> None:
-        """Operation-level ``x-mcp-*`` display hints never reach the agent schema.
+        """Our own ``x-mcp-*`` metadata never reaches the agent schema.
 
-        The converter stamps ``x-mcp-view-omit`` / ``x-mcp-view-compact`` for
-        the generic renderer (#771); they are pipeline metadata, not part of
-        the agent-facing schema, so the resolver strips them.
+        Since #775 the display-view hints travel in ``tool.meta`` /
+        resource content meta rather than as operation extensions, so this is
+        a defensive guard: any ``x-mcp-*`` key on a schema node is pipeline
+        metadata, not part of the agent-facing schema.
         """
         from gitea_mcp_server.tools.schemas import deep_resolve_schema
 

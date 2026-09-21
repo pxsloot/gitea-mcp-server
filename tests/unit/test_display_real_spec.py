@@ -20,6 +20,7 @@ import pytest
 
 from gitea_mcp_server.format import _generic_collection_view
 from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
@@ -42,8 +43,13 @@ def _render(
     spec: OpenAPISpec,
     extra: dict[str, Any] | None = None,
 ) -> str:
+    """Render exactly as registration does: resolve hints, then pass them in."""
     return _generic_collection_view(
-        data, response_type=response_type, openapi_spec=spec, extra=extra
+        data,
+        response_type=response_type,
+        openapi_spec=spec,
+        view_hints=view_hints_for(response_type),
+        extra=extra,
     )
 
 

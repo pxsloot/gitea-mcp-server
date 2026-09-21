@@ -45,6 +45,7 @@ from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_converter.core import resolve_spec_ref
+from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import (
     MESSAGE_SCHEMA_PROPERTY,
@@ -444,8 +445,8 @@ def _build_customization_meta(
     """Build and attach the ``component.meta`` dict consumed by runtime transforms.
 
     Mutates ``component.meta`` in-place.  Sets ``required_scope``,
-    ``output_schema_raw``, ``response_type``, ``_customization``, and
-    ``_WRAP_ME``.
+    ``output_schema_raw``, ``response_type``, ``view_hints``,
+    ``_customization``, and ``_WRAP_ME``.
 
     All per-tool metadata comes from ``schema`` (:class:`_ComputedSchema`)
     — no direct ``route`` or ``openapi_spec`` access needed.
@@ -462,6 +463,15 @@ def _build_customization_meta(
     # is erased when the schema is wrapped/inlined.
     if schema.response_type is not None:
         component_meta["response_type"] = schema.response_type
+
+    # Curated display-view deficiencies (omit/compact/flag) for this response
+    # type, resolved once here at registration (#775) so the render path
+    # carries them as data — it neither scans nor mutates the spec.  ``None``
+    # for an un-curated type; the generic view then derives everything from
+    # the schema.
+    view_hints = view_hints_for(schema.response_type)
+    if view_hints is not None:
+        component_meta["view_hints"] = view_hints
 
     component_meta["_customization"] = ToolCustomization(
         has_labels=has_labels,

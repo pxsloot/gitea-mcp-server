@@ -30,11 +30,12 @@ for both tool families:
        (data, total_count, result shape).  The single result pipeline
        (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
        shape → paginate → format → ``ToolResult``.
-    5. Attach ``_raw_schema`` and ``response_type`` (both read from
-       ``tool.meta``) so the pipeline can render schema-aware output
-       (``detail=concise``) and dispatch a type-bound domain markdown
-       formatter, and derive the formatter context (``extra``) from the
-       call's path/query args so the formatter sees repo/type context.
+    5. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
+       from ``tool.meta``) so the pipeline can render schema-aware output
+       (``detail=concise``), dispatch a type-bound domain markdown formatter,
+       and refine the generic schema-anchored view with the curated
+       display-view deficiencies, and derive the formatter context (``extra``)
+       from the call's path/query args so the formatter sees repo/type context.
     6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
@@ -198,6 +199,11 @@ def build_transform_fn(
         # formatter; absent means the generic renderer.
         response_type = (tool.meta or {}).get("response_type")
 
+        # Curated display-view deficiencies for the response type, resolved at
+        # registration and carried in tool.meta — the render path consumes them
+        # as data and never scans or mutates the spec (#775).
+        view_hints = (tool.meta or {}).get("view_hints")
+
         # Executors return raw data; the single result pipeline renders it.
         # Run post-hooks on the rendered ToolResult and return.
         return apply_to(
@@ -211,6 +217,7 @@ def build_transform_fn(
                 schema=virtual_values.get("_raw_schema"),
                 extra=display_extra,
                 response_type=response_type,
+                view_hints=view_hints,
                 openapi_spec=openapi_spec,
             ),
             virtual_values,

@@ -1,4 +1,4 @@
-"""Display-view hints for the generic markdown renderer (pre-wrap).
+"""Display-view hints for the generic markdown renderer.
 
 The agent-facing markdown *collection* view is derived from the response
 schema: the bound type's properties, in declaration order, with scalars as
@@ -9,62 +9,44 @@ types this server has never seen.
 A schema cannot express every presentation decision, though.  Some fields
 are noise in a list view (URLs, internal flags, nested trackers); some
 relations should compact to a specific identity rather than the generic
-one.  Those are *deficiencies of the spec*, and this module fixes them the
-same way the other converter rules fix swagger deficiencies: by stamping
-operation-level extensions, so the runtime stays generic.
+one.  Those are *deficiencies of the spec*, and this module holds them as
+curated tables keyed by type name.
 
-Three extensions are stamped on every operation whose success response has a
-primary type:
+The tables serve two consumers:
 
-* ``x-mcp-view-omit`` — property names to drop from the collection view.
-* ``x-mcp-view-compact`` — a mapping of property name to the identity field
-  to read from the nested object (``{"base": "ref"}``), or ``null`` for the
-  generic identity policy (``login`` → ``username`` → ``name`` →
-  ``full_name`` → ``id``).  A relation whose object has no identity field
-  must name one here, or it would render as a Python repr.
-* ``x-mcp-view-flag`` — property names to render as a boolean flag
-  (``Yes``/``No``).  A flag relation is not an identity: ``pull_request``
-  carries ``{draft, merged, html_url, merged_at}``, so the agent wants "is
-  this a PR?", not a compacted field.
+* :func:`validate_display_hints` — the pre-wrap validation pass, run once at
+  conversion against the schema.  **Fail loud.**  Every hint is validated:
+  an unknown property name, or a hint for a type the spec does not define,
+  is logged as an error.  A stale hint is a bug, not a silent no-op — this
+  is the systemic form of the drift guard the old hand-written whitelists
+  lacked.
+* :func:`view_hints_for` — the runtime lookup.  The registration layers
+  resolve a response type's hints once into ``tool.meta["view_hints"]`` /
+  resource content meta (a :class:`~gitea_mcp_server.models.ViewHints`
+  dict), so the render path never scans or mutates the spec.
 
-The hints are keyed by **type name**, not by operation: every operation
-returning ``Issue`` gets the same view, so a tool and its resource sibling
-can never disagree.  The runtime renderer reads the hints off the operation
-(``x-mcp-view-*``) and the properties off the type's schema.
+The hints are keyed by **type name**, not by operation: every tool returning
+``Issue`` gets the same view, so a tool and its resource sibling can never
+disagree.  The runtime renderer reads the properties off the type's schema
+and the deficiencies off the resolved ``ViewHints``.
 
-**Fail loud.**  Every hint is validated against the resolved type schema:
-an unknown property name, or a hint for a type the spec does not define, is
-logged as an error.  A stale hint is a bug, not a silent no-op — this is the
-systemic form of the drift guard the old hand-written whitelists lacked.
-
-The response-schema helpers (``success_schema`` / ``primary_type``) are
-shared with :mod:`~gitea_mcp_server.openapi_converter.type_references` — the
-same pre-wrap pass that stamps ``x-response-type`` — so the two can never
-disagree about an operation's primary type.
+The response-schema helpers (``success_schema`` / ``primary_type``, in
+:mod:`~gitea_mcp_server.openapi_converter.type_references`) are what stamp
+``x-response-type`` pre-wrap; the display view is keyed by that same type
+name, so the two can never disagree about an operation's primary type.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from gitea_mcp_server.constants import HTTP_METHODS_ALL
-from gitea_mcp_server.openapi_converter.type_references import (
-    primary_type,
-    success_schema,
-)
+from gitea_mcp_server.models import ViewHints
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 
 logger = logging.getLogger(__name__)
-
-# Operation-level extension keys.  ``x-mcp-`` marks them as our own metadata
-# (like ``x-response-type``), not a Gitea leak; they are stripped from the
-# agent-facing resolved output schema by ``tools/schemas.deep_resolve_schema``.
-VIEW_OMIT_KEY = "x-mcp-view-omit"
-VIEW_COMPACT_KEY = "x-mcp-view-compact"
-VIEW_FLAG_KEY = "x-mcp-view-flag"
 
 # ---------------------------------------------------------------------------
 # Curated hints — a deficiency list, not a view definition.
@@ -211,6 +193,31 @@ _VIEW_FLAG: dict[str, tuple[str, ...]] = {
     "Issue": ("pull_request",),
 }
 
+#: Resolved hints per type, materialized once at import from the curated
+#: tables.  This *is* the ``type → (omit, compact, flag)`` index: registration
+#: resolves each entity's entry from it, so the render path never rebuilds it
+#: and never touches the spec.  Shared read-only, like the tables themselves.
+_VIEW_HINTS: dict[str, ViewHints] = {
+    type_name: ViewHints(
+        omit=list(_VIEW_OMIT.get(type_name, ())),
+        compact=dict(_VIEW_COMPACT.get(type_name, {})),
+        flag=list(_VIEW_FLAG.get(type_name, ())),
+    )
+    for type_name in set(_VIEW_OMIT) | set(_VIEW_COMPACT) | set(_VIEW_FLAG)
+}
+
+
+def view_hints_for(response_type: str | None) -> ViewHints | None:
+    """Return the curated view hints for a response type, or ``None``.
+
+    ``None`` means the type has no curated deficiency (or no type was bound):
+    the generic view then derives everything from the schema, which is the
+    common case.  The returned dict is a shared read-only constant.
+    """
+    if not response_type:
+        return None
+    return _VIEW_HINTS.get(response_type)
+
 
 def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:
     """Return the property names of a named component schema, or ``None``.
@@ -231,17 +238,25 @@ def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:
     return set(props.keys())
 
 
-def _validate_hints(spec: OpenAPISpec) -> None:
+def validate_display_hints(openapi_spec: OpenAPISpec) -> None:
     """Validate every curated hint against the spec; log errors on drift.
 
-    An unknown property name or an undefined type is a bug in the curated
-    table — it is reported at ERROR level so it is loud at startup, never a
-    silent no-op.  This is the systemic replacement for the old per-whitelist
-    drift guard.
+    The pre-wrap pass run once at conversion.  An unknown property name or an
+    undefined type is a bug in the curated table — it is reported at ERROR
+    level so it is loud at startup, never a silent no-op.  This is the
+    systemic replacement for the old per-whitelist drift guard.
+
+    Must run *before* ``_wrap_success_response_schemas``: the wrapping inlines
+    the root ``$ref`` and erases the type name the curated tables are keyed
+    on.  Never raises: drift is logged, not thrown.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (pre-wrap, ``$ref``
+            intact).  Not mutated.
     """
-    _validate_table(spec, _VIEW_OMIT, VIEW_OMIT_KEY)
-    _validate_table(spec, _VIEW_COMPACT, VIEW_COMPACT_KEY)
-    _validate_table(spec, _VIEW_FLAG, VIEW_FLAG_KEY)
+    _validate_table(openapi_spec, _VIEW_OMIT, "omit")
+    _validate_table(openapi_spec, _VIEW_COMPACT, "compact")
+    _validate_table(openapi_spec, _VIEW_FLAG, "flag")
 
 
 def _validate_table(
@@ -271,51 +286,7 @@ def _validate_table(
                 )
 
 
-def stamp_display_hints(openapi_spec: OpenAPISpec) -> None:
-    """Stamp ``x-mcp-view-*`` hints on operations, keyed by response type.
-
-    For every operation whose success response has a primary type, the
-    curated omit/compact lists for that type are stamped onto the operation
-    (only when non-empty).  The runtime renderer reads them off the
-    operation; the properties themselves are read from the type's schema, so
-    the view stays schema-anchored.
-
-    Must run *before* ``_wrap_success_response_schemas`` — the wrapping
-    inlines the root ``$ref`` and erases the type name this function keys on.
-
-    Mutates ``openapi_spec`` in place.  Never raises: hint validation logs
-    errors, and a malformed operation is skipped.
-
-    Args:
-        openapi_spec: Post-conversion OpenAPI 3.1 spec (pre-wrap, ``$ref``
-            intact).  Mutated in place.
-    """
-    _validate_hints(openapi_spec)
-
-    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    for path, path_item in paths.items():
-        if not isinstance(path_item, dict):
-            continue
-        for method, operation in path_item.items():
-            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
-                continue
-            response_type = primary_type(success_schema(openapi_spec, path, method))
-            if not response_type:
-                continue
-            omitted = _VIEW_OMIT.get(response_type)
-            if omitted:
-                operation[VIEW_OMIT_KEY] = list(omitted)
-            compacted = _VIEW_COMPACT.get(response_type)
-            if compacted:
-                operation[VIEW_COMPACT_KEY] = dict(compacted)
-            flagged = _VIEW_FLAG.get(response_type)
-            if flagged:
-                operation[VIEW_FLAG_KEY] = list(flagged)
-
-
 __all__ = [
-    "VIEW_COMPACT_KEY",
-    "VIEW_FLAG_KEY",
-    "VIEW_OMIT_KEY",
-    "stamp_display_hints",
+    "validate_display_hints",
+    "view_hints_for",
 ]

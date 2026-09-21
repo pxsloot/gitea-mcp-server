@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -22,6 +22,9 @@ from gitea_mcp_server.resources.factory import (
     make_api_resource,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.models import ViewHints
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -2183,6 +2186,17 @@ class TestBuildHandlerMeta:
         """``None`` response_type is omitted, not stored as null."""
         meta = _build_handler_meta(format_hint="repository")
         assert meta == {"format_hint": "repository"}
+
+    def test_view_hints_included(self) -> None:
+        """Registration-resolved hints are content metadata (#775)."""
+        hints: ViewHints = {"omit": ["url"], "compact": {"owner": None}, "flag": []}
+        meta = _build_handler_meta(response_type="Repository", view_hints=hints)
+        assert meta == {"response_type": "Repository", "view_hints": hints}
+
+    def test_absent_view_hints_omitted(self) -> None:
+        """``None`` view_hints is omitted, not stored as null."""
+        meta = _build_handler_meta(response_type="Repository")
+        assert meta == {"response_type": "Repository"}
 
     def test_empty_meta_returns_none(self) -> None:
         assert _build_handler_meta() is None

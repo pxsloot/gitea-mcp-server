@@ -42,7 +42,10 @@ class TestGenericCollectionViewGuard:
             components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
         )
         result = _generic_collection_view(
-            ["string item", "another string"], response_type="Widget", openapi_spec=spec
+            ["string item", "another string"],
+            response_type="Widget",
+            openapi_spec=spec,
+            view_hints=None,
         )
         assert result.strip() != ""
 
@@ -69,7 +72,9 @@ class TestGenericCollectionViewGuard:
             },
             components={"schemas": {"Widget": {"type": "object", "properties": {"name": {}}}}},
         )
-        result = _generic_collection_view([], response_type="Widget", openapi_spec=spec)
+        result = _generic_collection_view(
+            [], response_type="Widget", openapi_spec=spec, view_hints=None
+        )
         assert result.strip() != ""
         assert "_(empty)_" in result
 

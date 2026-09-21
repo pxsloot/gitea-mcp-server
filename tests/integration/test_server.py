@@ -12,6 +12,34 @@ from tests.conftest import SimpleConfig
 from tests.helpers.tool_names import extract_tool_names
 from tests.integration.conftest import BASE_TEST_URL
 
+_INSTRUCTION_PLACEHOLDERS: dict[str, str] = {
+    "TOOL_PREFIX": "gitea_",
+    "USER_LOGIN": "agent",
+    "TOKEN_SCOPES": "`read:repository`",
+    "SERVER_TYPE": "Gitea",
+}
+"""Production placeholder values for ``agent_instructions.md``.
+
+A placeholder added to the doc without a value here (and in
+``create_server``) stays unresolved, so
+``test_served_instructions_no_unresolved_placeholders`` fails loudly.
+``GUIDES_LIST`` is filled from the real guide manifest by the helper.
+"""
+
+
+def _served_instructions() -> str:
+    """Build the served instructions with every placeholder resolved.
+
+    ``GUIDES_LIST`` comes from the real ``DocManager`` manifest so the test
+    exercises the same content the agent receives.
+    """
+    from gitea_mcp_server.server import _build_server_instructions
+    from gitea_mcp_server.tools.docs_tools import DocManager
+
+    values = dict(_INSTRUCTION_PLACEHOLDERS)
+    values["GUIDES_LIST"] = DocManager().get_manifest_markdown()
+    return _build_server_instructions(values)
+
 
 class TestServerIntegration:
     """Integration tests for the server setup."""
@@ -1042,35 +1070,16 @@ class TestServerEdgeCases:
 
         After substitution, every ``{{PLACEHOLDER}}`` must be resolved.
         This guards against a placeholder being added to the doc without
-        a corresponding entry in the substitution values.
+        a corresponding entry in ``_INSTRUCTION_PLACEHOLDERS`` (and in
+        ``create_server``).
 
-        Uses a realistic GUIDES_LIST to catch conflicts between the
-        placeholder syntax (``{{TOOL_PREFIX}}``) and FastMCP URI template
-        syntax (``{topic}``) in the guide manifest.
+        Uses the real guide manifest, which exercises the placeholder syntax
+        (``{{TOOL_PREFIX}}``) alongside FastMCP URI template syntax
+        (``{topic}``).
         """
-        from gitea_mcp_server.server import _build_server_instructions
-
-        realistic_guides = (
-            "## Workflow Guides\n\n"
-            "| Guide | Description |\n"
-            "|-------|-------------|\n"
-            "| `labels` | How labels work |\n\n"
-            "Use `search_docs(query)` to find guides, or `read_doc(topic)` "
-            "to read one.\n"
-            "Guides are also available as resources at "
-            "`gitea://docs/guide/{topic}`.\n"
-        )
-
-        result = _build_server_instructions(
-            placeholder_values={
-                "TOOL_PREFIX": "gitea_",
-                "USER_LOGIN": "agent",
-                "TOKEN_SCOPES": "`read:repository`",
-                "SERVER_TYPE": "Gitea",
-                "GUIDES_LIST": realistic_guides,
-            },
-        )
+        result = _served_instructions()
         assert "{{" not in result, f"Unresolved placeholder found in: {result}"
+        assert "}}" not in result, f"Unresolved placeholder found in: {result}"
 
     @pytest.mark.asyncio
     async def test_served_instructions_no_frontmatter(self) -> None:
@@ -1081,13 +1090,16 @@ class TestServerEdgeCases:
         assert result.startswith("#"), f"Instructions must start with '#', got: {result[:50]}"
 
     @pytest.mark.asyncio
-    async def test_served_instructions_line_budget(self) -> None:
-        """Served instructions respect the line-count budget (see history).
+    async def test_agent_instructions_line_budget(self) -> None:
+        """Agent instructions template respects the line-count budget (history).
 
-        The budget protects the agent-context economy. Raise it deliberately
-        with a comment, not by 'tidying'.  The assertion below is the single
-        source of truth for the current number; the history explains every
-        raise.
+        The budget protects how much prose every agent session pays for. It
+        measures the **template** -- ``agent_instructions.md`` with placeholders
+        unresolved -- because the generated workflow-guide manifest is a
+        catalog whose size tracks the guide count, not the prose we author.
+        Raise the budget deliberately with a comment, not by 'tidying'.  The
+        assertion below is the single source of truth for the current number;
+        the history explains every change.
 
         Budget history:
         - 200 lines: initial contract from #462 (proved too tight)
@@ -1111,14 +1123,37 @@ class TestServerEdgeCases:
           marker shape (``{"$ref": "TypeName"}``, with ``count`` for a
           collapsed list) on the output-shape and ``resolve_type`` surfaces
           (#763).
+        - 210 lines: re-baselined 2026-09-21 (#778). The doc was trimmed to
+          orientation + naming grammar + workflow shapes; output-contract and
+          error detail moved to the `tool-output-format` workflow guide. The
+          budget bounds the authored template; the generated guide manifest is
+          deliberately not counted.
         """
         from gitea_mcp_server.server import _build_server_instructions
 
-        result = _build_server_instructions()
-        line_count = len(result.splitlines())
-        assert line_count <= 342, (
-            f"Instructions are {line_count} lines (budget: 342). "
+        line_count = len(_build_server_instructions().splitlines())
+        assert line_count <= 210, (
+            f"Agent instructions are {line_count} lines (budget: 210). "
             "Increase the budget deliberately, not by trimming."
+        )
+
+    @pytest.mark.asyncio
+    async def test_tool_output_format_guide_pointer(self) -> None:
+        """The injected doc points to read_doc("tool-output-format"); it must exist.
+
+        Guards the pointer against rotting if the guide is renamed or removed,
+        and against the guide dropping out of the served manifest.
+        """
+        from gitea_mcp_server.server import _build_server_instructions
+        from gitea_mcp_server.tools.docs_tools import DocManager
+
+        assert 'read_doc("tool-output-format")' in _build_server_instructions()
+
+        guide = DocManager().get("tool-output-format")
+        assert guide is not None, "tool-output-format guide is missing"
+        assert guide.description, "tool-output-format guide needs a manifest description"
+        assert "| `tool-output-format` |" in DocManager().get_manifest_markdown(), (
+            "tool-output-format guide is missing from the served manifest"
         )
 
     @pytest.mark.asyncio

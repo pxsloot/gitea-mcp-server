@@ -14,7 +14,8 @@ that file. The machine-checkable invariants live as tests in
 the *why* and the judgment calls that a test cannot catch.
 
 Read this before changing `agent_instructions.md`. The review that shaped these
-rules is PR #461 (refs #460).
+rules is PR #461 (refs #460); the budget re-baseline and extraction boundary
+are from #778.
 
 ## Purpose
 
@@ -31,6 +32,16 @@ high-leverage:
 It is NOT a reference manual. Depth belongs in `tool_info`, the workflow
 guides (`read_doc`), and the developer docs. The agent doc points; it does not
 re-teach.
+
+Read it as **welcome + feature introduction + quick start + how to discover
+more**, written for the agent as a *user* of the server, not as its
+implementer. The agent needs to know how to drive the server, not how it was
+built. Implementation internals -- the dual-channel contract
+(``content``/``structured_content``), deterministic ``raw``, where the
+pagination envelope lives, base64 decoding, skip-slice mechanics -- belong in
+`docs/ARCHITECTURE.md`, never on the agent surface. If a sentence explains a
+decision *we* made rather than something the agent must *do*, it is in the
+wrong doc.
 
 ## Voice and tone
 
@@ -96,7 +107,13 @@ not grep patterns.
 ## What the doc must NOT do
 
 - Grow into a reference manual. If a section could be a `read_doc` guide or a
-  `tool_info` result, cut it and point there.
+  `tool_info` result, cut it and point there. The `tool-output-format` guide is
+  the worked example: output/envelope/error detail lives there, the doc points.
+- Document implementation internals. The dual-channel contract, deterministic
+  ``raw``, envelope location, base64 handling, and skip-slice mechanics are
+  developer facts (see `docs/ARCHITECTURE.md`), not user guidance. State the
+  observable behaviour, never the machinery -- and never a defensive "it is not
+  X" claim (e.g. "never a Python ``repr``").
 - Leak metadata into agent context. The doc is loaded verbatim; it must stay
   free of YAML frontmatter and unresolved `{{}}` placeholders.
 - Reference repo paths. The agent doc is shipped as a package resource and
@@ -109,9 +126,46 @@ not grep patterns.
 - Claim completeness it does not have, or omit the filtering that explains
   absence.
 
+## Budget and the extraction boundary
+
+The injected doc has a line budget, enforced by
+``test_agent_instructions_line_budget``. The measurement is the **template** --
+``agent_instructions.md`` with placeholders unresolved. The generated
+workflow-guide manifest is deliberately excluded: that catalog tracks the guide
+count, not the prose we author, and agents use the guides better when they can
+see what to expect from them. The test's assertion and budget history are the
+single source of truth for the current ceiling (210 lines at the time of
+writing).
+
+The budget exists to keep the pressure on every agent's context low while still
+being useful in getting the agent up to speed. That means the doc earns its
+place by orienting and pointing, not by enumerating: every line it carries is
+paid for on every connection. The budget only works if the boundary below is
+respected. The injected doc is *orientation*: what the surface is, how to name
+and discover things, and the shape of a workflow. Reference-grade content has a
+home that is discoverable on demand, and the doc points to it rather than
+re-teaching it:
+
+| If the content is... | It belongs in... |
+|----------------------|------------------|
+| A tool's parameters, output example, schema | ``tool_info`` (and the tool schema) |
+| ``format`` / ``detail`` / ``fetch_all`` / ``sudo`` usage | the ``tool-output-format`` guide (+ the tool schema for per-tool availability) |
+| Paging, compact mode, ``$ref`` markers, ``resolve_type``, error shapes | the ``tool-output-format`` workflow guide (``read_doc("tool-output-format")``) |
+| A Gitea/Forgejo feature's mechanics | the matching workflow guide |
+| Annotation semantics | ``TOOL_ANNOTATIONS.md`` (the doc carries the condensed table) |
+| Scope/permission mechanics | ``SCOPE_MODEL.md`` (the doc carries the universal-filtering point) |
+| Implementation contracts (dual channel, deterministic ``raw``, envelope location, base64, skip-slice) | ``ARCHITECTURE.md`` (developer docs) -- never the agent surface |
+
+When you add something to the injected doc, first ask whether it can be a
+``tool_info`` result, a guide, or a pointer. The default is *point*, not
+*re-teach*.
+
 ## Relationship to other docs
 
 - `docs/INDEX.md` -- the map of all docs and their audiences.
+- `gitea_mcp_server/docs/guides/tool-output-format.md` -- agent-facing guide to
+  reading results: formats, compact mode, paging, `$ref` markers, and error
+  shapes (the injected doc points here).
 - `docs/TOOL_ANNOTATIONS.md` -- canonical reference for annotation semantics
   (the agent doc carries only the condensed table).
 - `docs/SCOPE_MODEL.md` -- canonical reference for scope/permission mechanics.
@@ -127,8 +181,9 @@ The assertable invariants are guarded by these tests in
 |------|--------|
 | ``test_served_instructions_no_unresolved_placeholders`` | No ``{{}}`` remains after substitution |
 | ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
-| ``test_served_instructions_line_budget`` | Line-count budget — the test's assertion is the single source of truth for the current number; its history explains each raise |
+| ``test_agent_instructions_line_budget`` | Template size <= 210 — the assertion is the single source of truth; its history explains each change |
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
+| ``test_tool_output_format_guide_pointer`` | The doc's ``read_doc("tool-output-format")`` pointer resolves to a real, described guide |
 
 A regression in any of these fails ``make test``. This file guards the
 *intent* that a test cannot express. Both must be updated together when

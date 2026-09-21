@@ -223,7 +223,7 @@ class DocManager:
         lines = [
             "## Workflow Guides",
             "",
-            "These guides explain Forgejo workflows and concepts beyond individual API tools:",
+            "These guides explain Forgejo workflows, concepts, and this server's output beyond individual API tools:",
             "",
             "| Guide | Description |",
             "|-------|-------------|",

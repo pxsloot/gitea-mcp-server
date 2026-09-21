@@ -1270,3 +1270,16 @@ Agent: call_tool("gitea_issue_create_issue", {...})
 The file `gitea_mcp_server/docs/agent_instructions.md` is loaded as FastMCP
 server instructions and served as context to agents at connection time.  It
 explains how to discover and use tools/resources from the agent's perspective.
+
+Its size is guarded as the *template* (``agent_instructions.md`` with
+placeholders unresolved) by `test_agent_instructions_line_budget`; the
+generated workflow-guide manifest is not counted. The injected doc is
+orientation only -- welcome, feature introduction, quick start, and discovery.
+Reference depth lives in discoverable homes: tool schemas (`tool_info`),
+`TOOL_ANNOTATIONS.md`, `SCOPE_MODEL.md`, and the workflow guides -- including
+the agent-facing `tool-output-format` guide
+(`gitea_mcp_server/docs/guides/tool-output-format.md`) for reading results.
+Implementation internals (the dual-channel contract, deterministic `raw`,
+envelope location, base64 handling, skip-slice) stay in this document, never on
+the agent surface. See `docs/AGENT_INSTRUCTIONS_STANDARDS.md` for the boundary
+and editing rules.

@@ -1,53 +1,45 @@
 # Gitea MCP Server
 
 Welcome. You are a first-class user of this server, not an afterthought. The
-tools and resources here are built for agents like you: discoverable,
-predictable, and honest about what they can and cannot do. This short guide
-gets you productive in minutes -- and tells you where to look when something
-is not where you expect it.
+tools and resources are built for agents like you: discoverable, predictable,
+and honest about what they can and cannot do. This guide gets you productive in
+minutes -- and says where to look when something is not where you expect it.
 
 ## What you get
 
 The tools and resources are generated directly from *this host's* Gitea/Forgejo
 Swagger/OpenAPI spec. They mirror the underlying API one-to-one: no invented
-abstractions, no reimagined endpoints. What you call is as close to the raw API
-as it gets, wrapped only with discovery, annotations, and caching.
+abstractions, no reimagined endpoints -- as close to the raw API as it gets,
+wrapped only with discovery, annotations, and caching.
 
 Two filters shape the set you actually see:
 
 1. **Your token scopes** -- tools and resources your token cannot use are
-   hidden from you. This is universal: *every* tool and resource is scope-
-   filtered, not just admin ones.
-2. **Server config** -- an optional exclusion/include config can further hide
-   or reveal specific tools or resources.
+   hidden. This is universal: *every* tool and resource is scope-filtered, not
+   just admin ones.
+2. **Server config** -- an optional exclusion/include config can further hide or
+   reveal specific tools or resources.
 
 So the surface you see is the *complete* set for your token. If a tool is not
-listed, it is filtered -- not missing. Do not go on a wild-goose hunt for a
-tool your token cannot reach; `search_tools` will confirm what exists for you.
+listed, it is filtered -- not missing; `search_tools` confirms what exists.
 
 ## Tool naming and prefix
 
-Every tool name carries the server's configured prefix (default `{{TOOL_PREFIX}}`).
-Use that prefix when you call. The rest of the name follows a predictable
-grammar derived from the Gitea API operationId (camelCase -> snake_case):
+Every tool name carries the server's configured prefix (default
+`{{TOOL_PREFIX}}`). The rest follows a predictable grammar derived from the
+Gitea API operationId (camelCase -> snake_case):
 
-- `{prefix}{domain}_{action}_{resource?}`  e.g. `{{TOOL_PREFIX}}issue_create_issue`, `{{TOOL_PREFIX}}repo_delete`
-- `{prefix}{domain}_list_{resource}`       e.g. `{{TOOL_PREFIX}}user_list_orgs`, `{{TOOL_PREFIX}}org_list_repos`
-- `{prefix}{domain}_search_{resource}`     e.g. `{{TOOL_PREFIX}}repo_search`, `{{TOOL_PREFIX}}issue_search_issues`
+- `{prefix}{domain}_{action}_{resource?}`  -- e.g. `{{TOOL_PREFIX}}issue_create_issue`
+- `{prefix}{domain}_list_{resource}`       -- e.g. `{{TOOL_PREFIX}}user_list_orgs`
+- `{prefix}{domain}_search_{resource}`     -- e.g. `{{TOOL_PREFIX}}repo_search`
 
-Domains: `issue`, `repo`/`repository`, `pull_request`, `user`, `org`,
-`team`, `milestone`, `label`, `comment`, `release`, `tag`, `branch`,
-`protected_branch`, `key`, `webhook`, `admin`, `topic`, `gpg_key`.
+Discovery tools (`search`, `search_tools`, `tool_info`, `call_tool`,
+`list_resources`, `read_resource`, `read_doc`, `resolve_type`, and more) are
+prefixed the same way and tagged `synthetic` in search results.
 
-Synthetic (discovery) tools are prefixed the same way: `{{TOOL_PREFIX}}search`,
-`{{TOOL_PREFIX}}search_tools`, `{{TOOL_PREFIX}}tool_info`, `{{TOOL_PREFIX}}call_tool`, `{{TOOL_PREFIX}}list_resources`,
-`{{TOOL_PREFIX}}read_resource`, `{{TOOL_PREFIX}}search_resources`, `{{TOOL_PREFIX}}read_doc`, `{{TOOL_PREFIX}}search_docs`,
-`{{TOOL_PREFIX}}resolve_type`, `{{TOOL_PREFIX}}list_hidden_tools`.
-They carry the `synthetic` tag in search results.
-
-**Workflow**: form a guess from the grammar, then confirm with `search_tools`
-before calling. Example: "list an org's teams" -> guess `{{TOOL_PREFIX}}org_list_teams`
--> `search_tools("org list teams")` to confirm.
+**Workflow**: form a guess from the grammar, then confirm with `search_tools`.
+Example: "list an org's teams" -> guess `{{TOOL_PREFIX}}org_list_teams` ->
+`search_tools("org list teams")` to confirm.
 
 ## Discovery and calling
 
@@ -58,285 +50,154 @@ Tools are lazy-loaded: `list_tools()` does not return them. Discover instead:
 - `tool_info("{{TOOL_PREFIX}}issue_get_issue")`  -> parameters, output example, annotations
 - `search("create issue")`       -> unified search across tools, docs, resources
 
-All search tools accept `min_score` (0.0-1.0, default 0.1) to tune relevance.
+Searches take `min_score` (0.0-1.0, default 0.1). An empty query lists all
+(paginated, no relevance score); `{{TOOL_PREFIX}}list_hidden_tools` enumerates
+tools hidden from your token (scope-restricted, config-excluded, deprecated).
 
-**Empty query = list all.** Every search tool treats an empty/whitespace query
-as a "list all" path (paginated, no relevance score); `{{TOOL_PREFIX}}list_hidden_tools`
-enumerates the tools hidden from your token (scope-restricted, config-excluded,
-deprecated).
-
-Call any tool via `call_tool(name, args)`. Both the prefixed name
-(`{{TOOL_PREFIX}}call_tool`) and the bare name (`call_tool`) reach the same proxy, and
-it resolves unprefixed tool names too (e.g. `search_tools`). `name` is always
-the **target** tool — never `call_tool` itself: the proxy is a normal tool
-like any other and is invoked directly, not through itself. Do not take my
-word for the mechanics -- run `tool_info("{{TOOL_PREFIX}}call_tool")` and try both forms; the
-schema and behavior are right there for you to read.
+Call any tool via `call_tool(name, args)`. The prefixed name
+(`{{TOOL_PREFIX}}call_tool`) and the bare name (`call_tool`) reach the same
+proxy, and it resolves unprefixed names too. `name` is always the **target**
+tool -- never `call_tool` itself; the proxy is invoked directly, not through
+itself. Run `tool_info("{{TOOL_PREFIX}}call_tool")` and try both forms.
 
 ```
-call_tool("{{TOOL_PREFIX}}user_get_current")
 call_tool("{{TOOL_PREFIX}}issue_get_issue", {"owner": "org", "repo": "repo", "index": 1})
-call_tool("{{TOOL_PREFIX}}issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug", "body": "details"})
+call_tool("{{TOOL_PREFIX}}issue_create_issue", {"owner": "org", "repo": "repo", "title": "Bug"})
 ```
 
-If a tool is not available (scope-restricted, config-excluded, or deprecated),
-both `call_tool` and direct MCP calls return a helpful error message
-explaining why — no silent failures.
+A tool that is not available (scope-restricted, config-excluded, or deprecated)
+returns a helpful error explaining why -- no silent failures.
 
 ## Parameters: never guess, always confirm
 
 There are ~400 tools and the exact parameters differ per tool. **Do not guess a
-parameter name or type from memory.** The authoritative contract for any tool
-is one call away:
+parameter name or type from memory.** The authoritative contract is one call
+away: `tool_info("{{TOOL_PREFIX}}issue_create_issue")`.
 
-```
-tool_info("{{TOOL_PREFIX}}issue_create_issue")
-```
-
-`tool_info` returns a parseable markdown structure with a consistent
-parameter table (``Parameter | Type | Required | Description``), a compact
-``output_example``, annotations, and tags. The markdown output is designed
-to be parsed reliably -- you do not need ``format="json"`` for structured
-extraction. Use ``tool_info(name, detail="full")`` when you need the complete
-JSON Schema; it can be paginated with the ``page`` and ``limit`` parameters for
-large schemas.
-
-That said, a handful of parameters recur across almost every tool because they
-mirror Gitea's API. Knowing these removes most of the uncertainty cheaply:
+A handful of parameters recur because they mirror Gitea's API -- knowing these
+removes most of the uncertainty cheaply:
 
 | Parameter   | Type    | Notes |
 |-------------|---------|-------|
-| `owner`     | string  | repo owner; pattern `^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$`, 1-50 chars |
+| `owner`     | string  | repo owner; `^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$`, 1-50 chars |
 | `repo`      | string  | repo name; same pattern rules, 1-100 chars |
-| `index`/`id`| integer | the resource id (int64) -- `index` for issues/PRs, `id` elsewhere |
-| `page`      | integer | 1-based page number for list/search tools (minimum 1) |
+| `index`/`id`| integer | resource id (int64) -- `index` for issues/PRs, `id` elsewhere |
+| `page`      | integer | 1-based page for list/search tools (minimum 1) |
 | `limit`     | integer | page size for list/search tools |
-| `fetch_all`   | boolean | When true, return all matching results without page slicing (synthetic search/list tools only). Default `false` — single page only. See Pagination edge case below. |
-| `format`    | string  | `json` \| `markdown` (default) \| `raw` -- see Output format below |
-| `detail`    | string  | `"full"` (default) \| `"concise"` -- output detail; `"concise"` summarizes root items (scalars intact) and replaces nested objects with the `$ref` marker `{"$ref": "TypeName"}` (`{"$ref": "TypeName", "count": N}` for a collapsed list), rendered as `$ref:TypeName` in markdown (affects both `json` and `markdown` output) |
-| `sudo`      | (virtual) | appears only if your token has the admin/`sudo` scope |
 
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
-strings. If it lists or searches, it almost certainly takes `page`+`limit`.
-Confirm the rest -- especially optional fields, enums, and the exact resource
-id parameter name -- with `tool_info`.
+strings; if it lists or searches, it almost certainly takes `page`+`limit`.
+Confirm the rest -- optional fields, enums, the exact id name -- with
+`tool_info`, the canonical description of every parameter, including the
+virtual ones (`format`, `detail`, `sudo`). This guide points; `tool_info` is
+the truth.
 
 ## Resources
 
-Resources give cached, pre-formatted reads. For any read-only operation, prefer
-`read_resource()` over calling a tool. Tool and resource display are unified: a
-tool bound by response type renders its resource sibling's view — curated for
-collections (`issue_list_issues`), full payload for a single resource
-(`repo_get`); `format=json` / `format=raw` are always the raw API data.
-URI pattern:
+For a read-only operation, prefer `read_resource()` over calling a tool: it
+gives cached, pre-formatted reads. Resources are data addressed by `gitea://`
+URIs; ask for `format=json`/`raw` when you want the raw API data instead of the
+curated view:
 
-- `gitea://repos/{owner}/{repo}`            -> repository summary
-- `gitea://repos/{owner}/{repo}/issues`     -> issues (Markdown)
-- `gitea://repos/{owner}/{repo}/labels`     -> labels (names, IDs, scoped flags)
-- `gitea://repos/{owner}/{repo}/readme`     -> README (text)
-- `gitea://users/{username}`                -> user profile
-- `gitea://version`                         -> server version
-- `gitea://server/info`                     -> server metadata
-- `gitea://tool/{name}/schema`              -> full tool schema (JSON)
-- `gitea://types/{typeName}`                -> resolved type schema (JSON with full details)
+- `gitea://repos/{owner}/{repo}`        -> repository summary
+- `gitea://repos/{owner}/{repo}/issues` -> issues (Markdown)
+- `gitea://repos/{owner}/{repo}/labels` -> labels (names, IDs, scoped flags)
+- `gitea://repos/{owner}/{repo}/readme` -> README (text)
+- `gitea://users/{username}`            -> user profile
+- `gitea://version`                     -> server version
+- `gitea://tool/{name}/schema`          -> full tool schema (JSON)
+- `gitea://types/{typeName}`            -> resolved type schema (JSON)
 
-Resources carry discoverable metadata you can inspect before reading:
+List with `list_resources(tag=..., type=...)`; search with
+`search_resources(query)`. Inspect a resource's metadata before reading it:
 
-- **``size_hint``**: ``"tiny"`` \| ``"small"`` \| ``"medium"`` \| ``"large"``
-  — estimated token cost. Check this before reading expensive resources.
-  Resources marked ``"large"`` (e.g. issues, pulls lists) can produce 300KB+
-  output; prefer ``read_resource(uri, detail="concise")`` for those.
-- **``default_detail``**: ``"full"`` \| ``"concise"`` — the recommended
-  detail level for this resource. ``large`` resources default to ``concise``.
-- **``optional_params``**: List of available query parameters (e.g.
-  ``state`` for issues/pulls) and their valid values.
-
-Some resources accept optional query parameters to filter results (e.g.
-``?state=open`` on issues or pulls). The URIs shown in ``list_resources``
-are clean — no ``{?state}`` syntax. Instead, each resource's metadata
-carries an ``optional_params`` field listing available parameters and
-their valid values. Check that field before reading to discover filters.
-
-List with `list_resources(tag=..., type=...)`; search with `search_resources(query)`.
+- `size_hint` (`tiny`/`small`/`medium`/`large`) -- estimated token cost. Large
+  resources (issues, pulls) can exceed 300KB; prefer `detail="concise"`.
+- `default_detail` -- the recommended detail level (`large` defaults to
+  `concise`).
+- `optional_params` -- query filters the resource accepts (e.g. `state` on
+  issues/pulls) and their valid values. URIs in `list_resources` are clean (no
+  `{?state}` syntax); check this field to discover filters.
 
 ## A common workflow
 
-The tools compose into the loop you will use most. Read it as a sequence, not
-a menu -- each step is a real call you would make in a session:
+The tools compose into the loop you will use most:
 
-1. **Planning** creates the work item:
-   `search_tools("issue")` -> `{{TOOL_PREFIX}}issue_create_issue` with `labels`
-   (e.g. `Kind/Feature`, `Priority/High`).
-2. **Research/review** reads it and adds context:
-   `{{TOOL_PREFIX}}issue_get_issue` -> `{{TOOL_PREFIX}}issue_create_comment` with findings.
-3. **Planning** revises based on that:
-   `{{TOOL_PREFIX}}issue_edit_issue` to update title, body, or labels.
-4. **Development** reads the issue, does the work, and opens a PR:
-   `{{TOOL_PREFIX}}issue_get_issue` -> commit and push -> `{{TOOL_PREFIX}}repo_create_pull_request`
-   (`head` = your branch, `base` = target).
-5. **PR review** reads the PR and comments:
-   `{{TOOL_PREFIX}}repo_get_pull_request` -> `{{TOOL_PREFIX}}issue_create_comment` (PRs are issues
-   in Gitea, so the same comment tool works).
+1. **Planning** creates the work item: `search_tools("issue")` ->
+   `{{TOOL_PREFIX}}issue_create_issue` with `labels` (e.g. `Kind/Feature`).
+2. **Research/review** reads it and adds context: `{{TOOL_PREFIX}}issue_get_issue` ->
+   `{{TOOL_PREFIX}}issue_create_comment`.
+3. **Planning** revises: `{{TOOL_PREFIX}}issue_edit_issue` to update title, body, or
+   labels.
+4. **Development** reads the issue, does the work, opens a PR:
+   `{{TOOL_PREFIX}}issue_get_issue` -> commit and push ->
+   `{{TOOL_PREFIX}}repo_create_pull_request` (`head` = your branch, `base` = target).
+5. **PR review** reads the PR and comments: `{{TOOL_PREFIX}}repo_get_pull_request` ->
+   `{{TOOL_PREFIX}}issue_create_comment` (PRs are issues in Gitea).
 
-That is the whole rhythm: issue to track, PR to deliver, comments to discuss.
-Labels accept names (strings) or IDs (integers), validated against the repo's
-existing labels -- see the `labels` guide (`read_doc("labels")`) for scoped
-labels and validation errors.
+That is the rhythm: issue to track, PR to deliver, comments to discuss. Labels
+accept names or IDs, validated against the repo's existing labels -- see
+`read_doc("labels")` for scoped labels and validation errors.
 
 Beyond tools, this server ships **workflow guides** -- explanations of how
-Gitea/Forgejo features actually work (token scopes, branch protection, labels,
-permissions, pull requests, and more). Find them with `search_docs("branch protection")`
-or `read_doc("pull-requests")`, or browse `gitea://docs/guide/{topic}`. When a
-task touches a feature you do not fully understand, a guide is often faster
-than trial and error.
+Gitea/Forgejo features work and how to get the most out of tool results. Find
+them with `search_docs("branch protection")` or browse
+`gitea://docs/guide/{topic}`. When a task touches a feature you do not fully
+understand, a guide is often faster than trial and error.
 
-## Output format
+## Reading tool output
 
-Most tools and resources accept a `format` parameter and a `detail`
-parameter:
+Most tools and resources accept `format` (`markdown` default | `json` | `raw`)
+and `detail` (`full` default | `concise`); `tool_info` shows what a given tool
+accepts. Use `markdown` to read, `json` to extract complete data, and `raw`
+for the API payload as JSON text. In `json` and `raw`, paginated results carry
+`has_more`, `next_offset`, and `total_count`; an empty or out-of-range page is
+not an error.
 
-- **API tools** (auto-generated from the Gitea spec) accept both
-  `format` and `detail`.
-- **Synthetic tools** (`tool_info`, `resolve_type`, `list_resources`,
-  `read_resource`, `read_doc`) accept them too — except `call_tool`.
-- **Search/discovery tools** (`search_tools`, `search_resources`,
-  `search_docs`, `search`) accept `format` only. Their output is flat
-  metadata (names, descriptions, scores) — `detail` has no effect.
-- Note: `read_doc` supports ``markdown``, ``json``, and ``raw`` but
-  not ``detail``.
-
-| Format    | When to use |
-|-----------|-------------|
-| `markdown`| Default. Schema-aware tables, best for reading. |
-| `json`    | Programmatic extraction (e.g. `result["owner"]["id"]`). |
-| `raw`     | The data in the ``{"result": ...}`` envelope — deterministic JSON text. ``read_resource`` always decodes base64 ContentsResponse in the executor, so raw shows the decoded text, not the base64 JSON. |
-
-| `detail`  | Effect on output |
-|-----------|------------------|
-| `"full"` (default) | Complete information, full object expansion. |
-| `"concise"` | Compact view: root objects and root-list items are **summarized** -- their scalar fields (title, state, dates, body, ...) stay intact while nested `$ref`-backed fields (user, milestone, repository, ...) are replaced by the marker `{"$ref": "TypeName"}`. `$ref`-backed lists *inside* an item are replaced by `{"$ref": "TypeName", "count": N}`. In ``markdown`` the marker renders as `$ref:TypeName` (a collapsed list as `$ref:TypeName[N]`). Affects ``json`` and ``markdown`` output. ``raw`` always returns full detail. |
-
-**Content is the contract.** The text channel (`content`) is authoritative
-and always present; `structured_content` mirrors it. For `format=json` and
-`format=raw` the text is the serialized envelope dict — `{"result": ...}`
-plus, on paginated tools, `has_more` / `next_offset` / `total_count` — so
-the two channels never disagree. `format=raw` returns valid JSON text
-content (deterministic — not a Python repr). Empty or out-of-range pages
-emit `{"result": [], "message": "...", "has_more": false, "next_offset":
-null, "total_count": N}` as JSON text.
+The full guide to reading results -- formats, compact mode (`$ref` markers),
+paging, and error shapes -- is `read_doc("tool-output-format")`.
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
-call. `tool_info(name, detail="full")` adds the complete JSON Schema, which is
-large (hundreds of lines on big tools). Use `page` and `limit` to page through
-large schemas. Run `tool_info` once on a small tool to get a feel for the
-shape, then trust the compact example day to day.
-
-`read_doc(topic)` also supports `page` and `limit` for line-based pagination
-through long guides. Each page is `limit` lines (default 50; the accepted
-maximum is server-enforced — discover the exact bound with
-`tool_info("read_doc")`).
-For ``json`` format, the pagination envelope (``has_more``, ``next_offset``, ``total_count``) is included in the text alongside the guide content.
-An out-of-range page keeps the object-shaped `result` (empty `content`) and
-adds a `message` (e.g. "Page N is out of range (total results: M)").
-
-Note on output shape: `output_example` and `format=json, detail=concise` results
-mark nested objects with `{"$ref": "TypeName"}`. A nested list is
-`{"$ref": "TypeName", "count": N}` (`output_example` shows `count: 1` as an
-example). `markdown` renders both as `$ref:TypeName` (`$ref:TypeName[N]`). The
-marker is not inline — read the real fields at `detail=full`; scalar-result
-tools show a bare primitive instead (`true`, `0`, `"example"`).
-
-When you see a `$ref` marker, pass its `$ref` value as the name to
-``call_tool("{{TOOL_PREFIX}}resolve_type", {"name": "TypeName"})`` or read
-``gitea://types/{TypeName}`` for a cached JSON read. The ``resolve_type`` tool
-also shows which tools return or accept each type. Run
-``tool_info("{{TOOL_PREFIX}}resolve_type")`` for the full parameter and output schema.
+call. `tool_info(name, detail="full")` adds the complete JSON Schema (hundreds
+of lines on big tools), pageable with `page`/`limit`; use it rarely, and run it
+once on a small tool to get a feel for the shape.
 
 ## Tool annotations
 
-Every tool carries four hints. Inspect them via `tool_info(name)` -- the
-response includes the annotations object. These server instructions are the
-only doc injected at connection; everything else you need is reachable through
-the discovery tools (`search_tools`, `search`, `tool_info`) and the workflow
-guides (`read_doc`).
+Every tool carries four hints. Inspect them via `tool_info(name)`:
 
-| Hint             | Meaning                                  | Use for |
-|------------------|------------------------------------------|---------|
-| `readOnlyHint`   | Reads only, no side effects              | Safe to call anytime |
-| `destructiveHint`| Can delete/destroy data                  | Warn / confirm first |
-| `idempotentHint` | Repeat = same effect                     | Safe to retry on failure |
-| `openWorldHint`  | Calls the external Gitea server          | All API tools are open-world |
+| Hint             | Meaning                          | Use for |
+|------------------|----------------------------------|---------|
+| `readOnlyHint`   | Reads only, no side effects      | Safe to call anytime |
+| `destructiveHint`| Can delete/destroy data          | Warn / confirm first |
+| `idempotentHint` | Repeat = same effect             | Safe to retry on failure |
+| `openWorldHint`  | Calls the external Gitea server  | All API tools are open-world |
 
 ## Authentication and scope
 
 Auth is set via environment variables at startup; you cannot change it. Verify
 identity with `call_tool("{{TOOL_PREFIX}}user_get_current")`.
 
-You are authenticated as **{{USER_LOGIN}}** on a **{{SERVER_TYPE}}** server
-with scopes: **{{TOKEN_SCOPES}}**.
+You are authenticated as **{{USER_LOGIN}}** on a **{{SERVER_TYPE}}** server with
+scopes: **{{TOKEN_SCOPES}}**.
 
 All tools and resources are filtered by your token's scopes -- this is the
 normal state, not a special case. `sudo` is simply one scope among others:
 powerful, and ordinary in mechanism. If a tool or the `sudo` virtual param is
-not visible, your token lacks the relevant scope; `{{TOOL_PREFIX}}user_get_current`
-tells you who you are, and the absence of a tool tells you what you cannot reach.
-
-## Edge cases you will hit (and how they look)
-
-These are the real shapes returned by this server. Knowing them saves a round-
-trip of confusion:
-
-- **Empty list is `[]`, not an error.** A list/search tool that matches nothing
-  returns `result: []` (an empty Markdown section, or for `format=json` the
-  envelope `{"result": [], "message": "...", "has_more": false,
-  "next_offset": null, "total_count": 0}` as JSON text). That means *no
-  matching items* — not a scope-hidden tool. Don't treat `[]` as "I'm
-  filtered out."
-
-- **`APINotFound` means the target doesn't exist -- or is out of scope.**
-  Example:
-  ```
-  Error calling tool '{{TOOL_PREFIX}}issue_get_issue': APINotFound is a not found error response
-  Details: The target couldn't be found.
-  ```
-  This same error fires for a non-existent repo, a wrong issue `index`, or a
-  repo your token cannot see. The error does **not** tell you which -- reason
-  about it: if `{{TOOL_PREFIX}}user_current_list_repos` shows the repo, the 404 is a bad
-  `index`; if the repo isn't listed there, it's scope/visibility.
-
-- **Bad label names fail loudly with a helpful message.** Creating an issue or
-  PR with a label that doesn't exist in the repo returns:
-  ```
-  Error calling tool '{{TOOL_PREFIX}}issue_create_issue': Unknown label name(s): ['NonExistentLabelXYZ'].
-  Available labels for docker/docker_python:
-  <empty -- repo has no labels yet>
-  Use `{{TOOL_PREFIX}}issue_list_labels(docker, docker_python)` or read gitea://repos/docker/docker_python/labels to see details.
-  ```
-  Prefer integer label **IDs** over names for reliability, and confirm valid
-  labels via `{{TOOL_PREFIX}}issue_list_labels` or the `gitea://repos/{owner}/{repo}/labels`
-  resource before creating.
-
-- **`search` returns typed, cross-cutting results.** Unlike `search_tools`,
-  `search("create issue")` returns a mixed list tagged `tool` / `doc` /
-  `resource`, each with an `Access Uri`. Route each hit to the right access
-  path: `call_tool` for tools, `read_doc` for guides, `read_resource` for data.
-
-- **Pagination: explicit or automatic.** List/search tools take `page`
-  (1-based) and `limit`. On synthetic search/list tools, `fetch_all=true` returns all
-  matching results in one response (in-memory skip-slice — no HTTP loop).
-  Without `fetch_all`, loop `page` upward until you get `[]`. A short page
-  is not necessarily the last one unless the next page is empty.
+not visible, your token lacks the relevant scope. `{{TOOL_PREFIX}}user_get_current`
+tells you who you are; the absence of a tool tells you what you cannot reach.
 
 ## Troubleshooting
 
 - **"Unknown tool"** -> the name is wrong; `search_tools(...)` to find it.
-- **"'call_tool' cannot call itself"** -> you passed `name='call_tool'`; `name` must be the *target* tool (e.g. `{{TOOL_PREFIX}}issue_get_issue`). The proxy is invoked directly, never through itself — there is no nested form.
-- **No search results** -> simplify to one keyword; or the tool is scope-filtered out.
-- **Tool/resource not visible** -> expected if your token lacks the scope; it is filtered, not missing.
-- **Empty resource** -> reflects permissions; use `{{TOOL_PREFIX}}user_current_list_repos` for private repos.
-- **"Only administrators allowed to sudo"** -> your token lacks the `sudo`/`all` scope; the `sudo` param is correctly hidden.
-- **Need full schema** -> `tool_info(name, detail="full")` or `read_resource("gitea://tool/{name}/schema")`.
-
-## Workflow Guides
+- **"`call_tool` cannot call itself"** -> `name` must be the *target* tool, not
+  `call_tool`; the proxy is invoked directly, never through itself.
+- **Tool/resource not visible** -> expected if your token lacks the scope; it is
+  filtered, not missing.
+- **`APINotFound` / empty resource** -> the target does not exist, is out of
+  scope, or is private; `{{TOOL_PREFIX}}user_current_list_repos` shows what you can see.
+- **Need full schema** -> `tool_info(name, detail="full")` or
+  `read_resource("gitea://tool/{name}/schema")`.
+- **Deeper error and edge-case shapes** -> `read_doc("tool-output-format")`.
 
 {{GUIDES_LIST}}

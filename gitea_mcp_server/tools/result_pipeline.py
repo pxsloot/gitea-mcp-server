@@ -79,7 +79,7 @@ from mcp.types import TextContent
 from pydantic import ConfigDict
 from pydantic.json_schema import SkipJsonSchema  # noqa: TC002 - runtime use via get_type_hints
 
-from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
+from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE, RESPONSE_FORMATS
 from gitea_mcp_server.format import (
     MarkdownFormatter,
     call_markdown_formatter,
@@ -96,7 +96,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_VALID_FORMATS = frozenset({"raw", "json", "markdown"})
+_VALID_FORMATS = frozenset(RESPONSE_FORMATS)
 
 # Last-resort fallback when the data is nested too deeply for even ``repr()``
 # to render — the C stack overflows (environment-dependent: an 8 MB stack

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gitea_mcp_server.constants import RESPONSE_FORMATS
 from gitea_mcp_server.exceptions import ConfigError
 
 
@@ -194,6 +195,23 @@ class Config(BaseSettings):
         normalized = v.lower()
         if normalized not in valid_types:
             msg = f"TRANSPORT_TYPE must be 'stdio' or 'http', got '{v}'"
+            raise ConfigError(msg)
+        return normalized
+
+    @field_validator("response_format")
+    @classmethod
+    def validate_response_format(cls, v: str) -> str:
+        """Validate the server-wide default response format.
+
+        The value becomes the ``default`` of every tool's ``format`` parameter,
+        so it must be one of the formats the result pipeline can render.
+        Without this check an invalid value would be injected into every tool
+        schema and only surface at call time as "Unsupported format".
+        """
+        valid_formats = set(RESPONSE_FORMATS)
+        normalized = v.strip().lower()
+        if normalized not in valid_formats:
+            msg = f"DEFAULT_RESPONSE_FORMAT must be one of {sorted(valid_formats)}, got '{v}'"
             raise ConfigError(msg)
         return normalized
 

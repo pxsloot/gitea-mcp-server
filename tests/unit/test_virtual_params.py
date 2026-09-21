@@ -39,6 +39,23 @@ _DETAIL_VP = VirtualParam(
 )
 
 
+class TestFormatEnumSource:
+    """The agent-facing ``format`` enum derives from the shared constant."""
+
+    def test_format_enum_matches_shared_constant(self) -> None:
+        """The injected ``format`` enum equals ``RESPONSE_FORMATS`` in order.
+
+        Locks the single source of truth (#785 direction): the virtual-param
+        schema, the config validator, the result pipeline, and ``read_doc`` all
+        read the same constant.
+        """
+        from gitea_mcp_server.constants import RESPONSE_FORMATS
+
+        params: dict[str, Any] = {}
+        inject_into(params)
+        assert params["properties"]["format"]["enum"] == list(RESPONSE_FORMATS)
+
+
 # ---------------------------------------------------------------------------
 # inject_into
 # ---------------------------------------------------------------------------

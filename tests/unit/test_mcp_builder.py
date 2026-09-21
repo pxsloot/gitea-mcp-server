@@ -33,7 +33,7 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     create_openapi_provider,
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
-from tests.helpers.mcp_results import get_structured
+from tests.helpers.mcp_results import get_structured, parse_json_content
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ---------------------------------------------------------------------------
@@ -1337,6 +1337,27 @@ class TestToolWrappingTransform:
             mock_validate.assert_called_once()
             mock_run.assert_called_once()
             assert output.structured_content == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_configured_response_format_honored_when_omitted(self) -> None:
+        """An omitted `format` renders with the configured default, end to end.
+
+        ``test_response_format_propagates_to_tool_schema`` asserts the injected
+        default statically. This locks the behavior that default drives:
+        ``response_format`` -> schema ``default`` -> FastMCP fills the missing
+        argument -> the pipeline renders that format (#781).
+        """
+        transform = self.make_transform(response_format="json")
+        tool = self.make_tool(customized=True)
+
+        async def fake_pipeline(*_args: Any, **_kwargs: Any) -> ExecutionResult:
+            return ExecutionResult(data={"a": 1}, shape="object")
+
+        with patch.object(_ToolWrappingTransform, "_pipeline_with_context", new=fake_pipeline):
+            [wrapped] = await transform.list_tools([tool])
+            output = await wrapped.run(arguments={})
+
+        assert parse_json_content(output) == {"result": {"a": 1}}
 
     @pytest.mark.asyncio
     async def test_validation_error_blocks_execution(self) -> None:

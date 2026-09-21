@@ -86,6 +86,47 @@ class TestConfig:
         with pytest.raises(ConfigError, match="Invalid LOG_LEVEL"):
             Config.get()
 
+    def test_response_format_default_markdown(self) -> None:
+        """DEFAULT_RESPONSE_FORMAT defaults to markdown."""
+        with patch.dict(
+            os.environ, {"GITEA_URL": "https://git.example.com", "GITEA_TOKEN": "test"}, clear=True
+        ):
+            Config._instance = None
+            assert Config.get().response_format == "markdown"
+
+    def test_response_format_normalized_lowercase(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DEFAULT_RESPONSE_FORMAT is normalized to lowercase."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("DEFAULT_RESPONSE_FORMAT", "JSON")
+
+        Config._instance = None
+        assert Config.get().response_format == "json"
+
+    def test_response_format_strips_whitespace(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DEFAULT_RESPONSE_FORMAT is stripped before validation (matches token)."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("DEFAULT_RESPONSE_FORMAT", " json ")
+
+        Config._instance = None
+        assert Config.get().response_format == "json"
+
+    def test_response_format_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An unsupported DEFAULT_RESPONSE_FORMAT fails fast at startup.
+
+        The value becomes every tool's ``format`` default, so an invalid value
+        must not be accepted and then break every call with "Unsupported
+        format" (#781).
+        """
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("DEFAULT_RESPONSE_FORMAT", "xml")
+
+        Config._instance = None
+        with pytest.raises(ConfigError, match="DEFAULT_RESPONSE_FORMAT must be one of"):
+            Config.get()
+
     def test_base_url_construction(self) -> None:
         """Test that base_url is correctly constructed."""
         with patch.dict(

@@ -101,8 +101,12 @@ not grep patterns.
    and is hundreds of lines on big tools. Tell the agent to use it rarely and
    to run it once on a small tool to get a feel for the shape.
 
-8. **Mention `format` for resources and docs too.** `read_resource` and
-   `read_doc` accept `format` (markdown/json/raw), not just tools.
+8. **Mention `format` for resources and docs too, but never restate its
+   default.** `read_resource` and `read_doc` accept `format`
+   (json/markdown/raw), not just tools. The *default* is server config
+   (`DEFAULT_RESPONSE_FORMAT`, threaded into every tool's schema); the doc
+   must not claim a specific format. Point at the schema for the exact value
+   — the tool schema is the per-tool source of truth.
 
 ## What the doc must NOT do
 
@@ -125,6 +129,10 @@ not grep patterns.
   "these server instructions", never by filename.
 - Claim completeness it does not have, or omit the filtering that explains
   absence.
+- State a config-derived default (e.g. the `format` default) as a fixed
+  value. Config-driven values live in the tool schema; prose points, it does
+  not pin. The same rule applies to the agent workflows guides and synthetic
+  tool descriptions, which are agent-facing too (#781).
 
 ## Budget and the extraction boundary
 
@@ -183,6 +191,7 @@ The assertable invariants are guarded by these tests in
 | ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
 | ``test_agent_instructions_line_budget`` | Template size <= 210 — the assertion is the single source of truth; its history explains each change |
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
+| ``test_agent_surfaces_do_not_hardcode_format_default`` | No agent-facing surface (instructions, ``tool-output-format`` guide, synthetic ``read_resource``/``list_resources`` descriptions) claims a fixed ``format`` default; the default is server config (#781) |
 | ``test_tool_output_format_guide_pointer`` | The doc's ``read_doc("tool-output-format")`` pointer resolves to a real, described guide |
 
 A regression in any of these fails ``make test``. This file guards the

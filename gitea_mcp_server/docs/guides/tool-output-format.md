@@ -11,30 +11,19 @@ Every tool and resource hands you back data. This guide shows how to read it
 well: which format to ask for, how to keep results small, how paging works, and
 what errors look like.
 
-## Three formats
+## Reading vs extracting
 
 `format` picks the shape of the result. The default is `markdown`.
 
-| Format | Use it to |
-|--------|-----------|
-| `markdown` | Read. A compact view of the important fields. |
-| `json` | Extract. Structured data you can index into. |
-| `raw` | Get the API payload as JSON text. |
+- `markdown` — read. It shows the key fields of each item, not every field, and
+  collection views are more compact than single-item views.
+- `json` — extract. It gives you the complete API data; prefer it when you need
+  specific fields or will feed a result to code.
+- `raw` — the API payload as JSON text.
 
-Start with the default. Reach for `json` when you want to pull specific fields,
-and `raw` when you need the payload exactly as the API sent it.
-
-## Reading vs extracting
-
-- `markdown` is the reading format. It shows the key fields of each item --
-  not every field -- and collection views are more compact than single-item
-  views.
-- `json` gives you the complete API data. Prefer it when you need to extract
-  fields or feed a result to code.
-- `raw` gives you the API payload as JSON text.
-
-For file resources such as a README, `read_resource` returns the decoded text
-directly.
+Start with the default; reach for `json` when you want to pull specific fields,
+and `raw` when you need the payload exactly as the API sent it. For file
+resources such as a README, `read_resource` returns the decoded text directly.
 
 ## Keeping results small
 
@@ -62,10 +51,10 @@ automatically the last one.
 On the search and discovery tools, `fetch_all=true` returns every match in one
 go. That is convenient for small result sets; for large ones, page instead.
 
-Paginated results tell you where you are: `has_more`, `next_offset`, and
-`total_count`. Reading a page past the end is not an error -- you get an empty
-page with a message saying so. (`read_doc` pages a guide in line chunks the same
-way.)
+In `json` and `raw`, paginated results tell you where you are: `has_more`,
+`next_offset`, and `total_count`. Reading a page past the end is not an error
+-- you get an empty page with a message saying so. (`read_doc` pages a guide in
+line chunks the same way.)
 
 ## Reading errors
 

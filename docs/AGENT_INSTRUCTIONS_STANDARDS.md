@@ -129,15 +129,22 @@ not grep patterns.
 ## Budget and the extraction boundary
 
 The injected doc has a line budget, enforced by
-``test_served_instructions_line_budget``. The measurement is the **served**
-document -- the template plus the real workflow-guide manifest -- because that
-is what the agent receives on every connection. The current ceiling is **240
-lines**; the test's assertion and budget history are the single source of truth.
+``test_agent_instructions_line_budget``. The measurement is the **template** --
+``agent_instructions.md`` with placeholders unresolved. The generated
+workflow-guide manifest is deliberately excluded: that catalog tracks the guide
+count, not the prose we author, and agents use the guides better when they can
+see what to expect from them. The test's assertion and budget history are the
+single source of truth for the current ceiling (210 lines at the time of
+writing).
 
-The budget only works if the boundary is respected. The injected doc is
-*orientation*: what the surface is, how to name and discover things, and the
-shape of a workflow. Reference-grade content has a home that is discoverable on
-demand, and the doc points to it rather than re-teaching it:
+The budget exists to keep the pressure on every agent's context low while still
+being useful in getting the agent up to speed. That means the doc earns its
+place by orienting and pointing, not by enumerating: every line it carries is
+paid for on every connection. The budget only works if the boundary below is
+respected. The injected doc is *orientation*: what the surface is, how to name
+and discover things, and the shape of a workflow. Reference-grade content has a
+home that is discoverable on demand, and the doc points to it rather than
+re-teaching it:
 
 | If the content is... | It belongs in... |
 |----------------------|------------------|
@@ -174,7 +181,7 @@ The assertable invariants are guarded by these tests in
 |------|--------|
 | ``test_served_instructions_no_unresolved_placeholders`` | No ``{{}}`` remains after substitution |
 | ``test_served_instructions_no_frontmatter`` | First line is ``# ...`` |
-| ``test_served_instructions_line_budget`` | Served size (template + guide manifest) <= 240 — the assertion is the single source of truth; its history explains each change |
+| ``test_agent_instructions_line_budget`` | Template size <= 210 — the assertion is the single source of truth; its history explains each change |
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
 | ``test_tool_output_format_guide_pointer`` | The doc's ``read_doc("tool-output-format")`` pointer resolves to a real, described guide |
 

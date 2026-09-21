@@ -88,7 +88,9 @@ removes most of the uncertainty cheaply:
 If a tool takes `owner`/`repo`, it almost certainly takes them as required
 strings; if it lists or searches, it almost certainly takes `page`+`limit`.
 Confirm the rest -- optional fields, enums, the exact id name -- with
-`tool_info`; `format`, `detail`, `fetch_all`, and `sudo` are on every schema too.
+`tool_info`, the canonical description of every parameter, including the
+virtual ones (`format`, `detail`, `sudo`). This guide points; `tool_info` is
+the truth.
 
 ## Resources
 
@@ -147,19 +149,13 @@ understand, a guide is often faster than trial and error.
 
 Most tools and resources accept `format` (`markdown` default | `json` | `raw`)
 and `detail` (`full` default | `concise`); `tool_info` shows what a given tool
-accepts.
+accepts. Use `markdown` to read, `json` to extract complete data, and `raw`
+for the API payload as JSON text. In `json` and `raw`, paginated results carry
+`has_more`, `next_offset`, and `total_count`; an empty or out-of-range page is
+not an error.
 
-- Use `markdown` to read, `json` to extract complete data, and `raw` for the
-  API payload as JSON text.
-- `detail="concise"` keeps each item's main fields but replaces nested objects
-  (user, milestone, repository, ...) with a `$ref` marker
-  (`{"$ref": "TypeName"}`, or `$ref:TypeName` in markdown); resolve one with
-  `resolve_type` or `gitea://types/{TypeName}`.
-- Paginated results carry `has_more`, `next_offset`, and `total_count`; an
-  empty or out-of-range page is not an error.
-
-The full guide to reading results -- formats, compact mode, paging, and error
-shapes -- is `read_doc("tool-output-format")`.
+The full guide to reading results -- formats, compact mode (`$ref` markers),
+paging, and error shapes -- is `read_doc("tool-output-format")`.
 
 `tool_info(name)` returns a compact `output_example` -- enough for almost every
 call. `tool_info(name, detail="full")` adds the complete JSON Schema (hundreds

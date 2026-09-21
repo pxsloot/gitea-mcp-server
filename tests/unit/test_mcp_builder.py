@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from fastmcp.exceptions import ResourceError
+from fastmcp.resources.template import match_uri_template
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent, ToolAnnotations
@@ -2843,6 +2844,30 @@ class TestBooleanCheckResourceUri:
             {"owner": "org", "repo": "repo", "index": 1},
         )
         assert uri == "gitea://repos/org/repo/pulls/1"
+
+    def test_path_param_values_are_percent_encoded(self) -> None:
+        """A value needing encoding is percent-encoded in the concrete URI.
+
+        Gitea's current charset never needs encoding, so this pins the
+        future-proofing contract: the derived URI round-trips through the same
+        FastMCP resource matcher that routes it.
+        """
+        spec = self._spec_with_fetch(
+            "/repos/{owner}/{repo}/pulls/{index}",
+            params=["owner", "repo", "index"],
+        )
+        transform = self.make_transform(spec)
+        uri = transform._boolean_check_resource_uri(
+            "/repos/{owner}/{repo}/pulls/{index}/merge",
+            {"owner": "foo bar", "repo": "a/b", "index": 1},
+        )
+        assert uri == "gitea://repos/foo%20bar/a%2Fb/pulls/1"
+
+        assert match_uri_template(uri, "gitea://repos/{owner}/{repo}/pulls/{index}") == {
+            "owner": "foo bar",
+            "repo": "a/b",
+            "index": "1",
+        }
 
 
 class TestFindHttpStatusError:

@@ -76,6 +76,7 @@ from gitea_mcp_server.tools.schemas import (
 )
 from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
 from gitea_mcp_server.tools.virtual_params import inject_into
+from gitea_mcp_server.uri_utils import expand_path_params
 from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
 
 if TYPE_CHECKING:
@@ -1093,7 +1094,8 @@ class _ToolWrappingTransform(Transform):
         means "the answer is no" → returns ``None``.
 
         The returned URI is concrete: path parameters are substituted from
-        ``kwargs`` so it can be read directly via ``ctx.read_resource``.
+        ``kwargs`` (percent-encoded via ``uri_utils.expand_path_params``) so it
+        can be read directly via ``ctx.read_resource``.
 
         Returns the ``gitea://`` resource URI to check for existence, or
         ``None`` when the spec provides no distinct resource prefix.
@@ -1129,15 +1131,11 @@ class _ToolWrappingTransform(Transform):
             return None
 
         # Substitute path parameters from kwargs to get a concrete URI.
-        # Values are substituted raw (no URL-encoding): Gitea owner/repo/user
-        # names are restricted to ``[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*`` and
-        # numeric ids, so no segment ever needs percent-encoding.  If the
-        # charset ever widens, quote each segment (see follow-up issue #736).
-        for key, value in kwargs.items():
-            placeholder = "{" + key + "}"
-            if placeholder in resource_path:
-                resource_path = resource_path.replace(placeholder, str(value))
-        return f"gitea://{resource_path.lstrip('/')}"
+        # Values are percent-encoded by ``expand_path_params`` so the URI
+        # round-trips through FastMCP's resource matcher (which unquotes
+        # captured groups) for any value — not just the current restricted
+        # owner/repo/id charset.
+        return expand_path_params(f"gitea://{resource_path.lstrip('/')}", kwargs)
 
     async def _try_handle_boolean_check(
         self,

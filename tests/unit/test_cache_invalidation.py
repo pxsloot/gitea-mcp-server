@@ -306,6 +306,19 @@ class TestComputeUrisToInvalidate:
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
         assert "gitea://repos/org/repo/contents/README.md" in uris
 
+    def test_file_operation_substitutes_raw_not_encoded(self) -> None:
+        """Targets stay raw; the cache canonicalises them (see #736).
+
+        Encoding here would double-encode relative to the cache's canonical
+        (percent-decoded) keys.
+        """
+        TOOL_INVALIDATION_MAP["repo_create_content"] = [
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        ]
+        arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
+        uris = compute_uris_to_invalidate("repo_create_content", arguments)
+        assert uris == ["gitea://repos/org/repo/contents/my file.txt"]
+
     def test_missing_parameters_skipped(self) -> None:
         """If required parameters are missing, template is skipped gracefully."""
         TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
@@ -338,6 +351,19 @@ class TestComputeUrisToInvalidate:
         cache.put("gitea://repos/org/repo/issues", {"title": "x"}, ttl=30)
         await invalidate_cached_resources(cache, ["gitea://repos/org/repo/pulls"], "test_tool")
         assert cache.get("gitea://repos/org/repo/issues") == {"title": "x"}
+
+    @pytest.mark.asyncio
+    async def test_raw_target_invalidates_encoded_read(self) -> None:
+        """A raw invalidation target clears a read the agent spelled encoded."""
+        TOOL_INVALIDATION_MAP["repo_create_content"] = [
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        ]
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/contents/my%20file.txt", {"title": "x"}, ttl=30)
+        arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
+        uris = compute_uris_to_invalidate("repo_create_content", arguments)
+        await invalidate_cached_resources(cache, uris, "repo_create_content")
+        assert cache.get("gitea://repos/org/repo/contents/my%20file.txt") is None
 
 
 class TestDeriveTargets:

@@ -856,6 +856,16 @@ The ``{?param}`` suffix in the URI template serves double duty:
 
 A param **cannot** be declared in both ``query_params`` and ``context_params`` — the factory raises ``ValueError`` at registration time if you do.
 
+#### Percent-encoding
+
+Path parameter values are percent-encoded when substituted: a simple ``{param}``
+segment encodes ``/``, while a wildcard ``{param*}`` preserves it so
+multi-segment file paths route as path separators.  The contract and the
+audited sweep of every substitution site live in
+``gitea_mcp_server/uri_utils.py`` (``expand_path_params``) — the single source
+of truth.  Query parameters are never string-concatenated; they travel via
+httpx ``params=`` and are encoded there.
+
 ### Decision guide: which param category?
 
 | Your kwarg... | Use | Because |

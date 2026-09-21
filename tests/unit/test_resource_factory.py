@@ -1305,6 +1305,108 @@ class TestMakeApiResourceQueryParams:
 
 
 # ---------------------------------------------------------------------------
+# Tests: make_api_resource -- path parameter percent-encoding
+# ---------------------------------------------------------------------------
+
+
+class TestMakeApiResourcePathEncoding:
+    """Path parameter values are percent-encoded in the outbound API path."""
+
+    @pytest.mark.asyncio
+    async def test_wildcard_path_param_keeps_slash_and_encodes_rest(self) -> None:
+        """A wildcard filepath keeps ``/`` but encodes space and ``%``."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"result": "ok"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/contents/{filepath*}",
+            api_path="/repos/{owner}/{repo}/contents/{filepath}",
+        )
+
+        assert handler is not None
+        await handler(owner="o", repo="r", filepath="src/a b/%c.py")
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/repos/o/r/contents/src/a%20b/%25c.py"
+
+    @pytest.mark.asyncio
+    async def test_simple_path_param_encodes_slash(self) -> None:
+        """A non-wildcard path param is a single segment — ``/`` is encoded."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"result": "ok"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/branches/{branch}",
+            api_path="/repos/{owner}/{repo}/branches/{branch}",
+        )
+
+        assert handler is not None
+        await handler(owner="o", repo="r", branch="feature/x")
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/repos/o/r/branches/feature%2Fx"
+
+    @pytest.mark.asyncio
+    async def test_unreserved_values_unchanged(self) -> None:
+        """The current restricted charset is unchanged — no behavior change."""
+        mcp = _make_mock_mcp()
+        client = _make_mock_client(json_response={"result": "ok"})
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}",
+            api_path="/repos/{owner}/{repo}",
+        )
+
+        assert handler is not None
+        await handler(owner="mcp-server", repo="gitea-mcp-server")
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/repos/mcp-server/gitea-mcp-server"
+
+    @pytest.mark.asyncio
+    async def test_validation_error_reports_concrete_path(self) -> None:
+        """Query validation errors carry the concrete API path, not the template.
+
+        Matches ``_request_and_wrap``'s NOT_FOUND/API errors, which report the
+        concrete path the request targeted.
+        """
+        mcp = _make_mock_mcp()
+        client = _make_mock_client()
+        spec = _make_mock_openapi_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://repos/{owner}/{repo}/issues",
+            api_path="/repos/{owner}/{repo}/issues",
+            param_config=ResourceParamConfig(
+                query_params=["state"],
+                query_param_validators={"state": ["open", "closed"]},
+            ),
+            resource_type="issues",
+        )
+
+        assert handler is not None
+        with pytest.raises(ResourceError) as exc:
+            await handler(owner="o", repo="r", state="invalid")
+
+        assert exc.value.args[0]["resource_id"] == "/repos/o/r/issues"
+
+
+# ---------------------------------------------------------------------------
 # Tests: make_api_resource -- context_meta_keys (path + query params)
 # ---------------------------------------------------------------------------
 

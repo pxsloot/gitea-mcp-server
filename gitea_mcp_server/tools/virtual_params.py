@@ -41,6 +41,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from gitea_mcp_server.constants import RESPONSE_FORMATS
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -230,7 +232,7 @@ _VIRTUAL_PARAMS["detail"] = VirtualParam(
 )
 
 _VIRTUAL_PARAMS["format"] = VirtualParam(
-    schema={"type": "string", "enum": ["json", "markdown", "raw"]},
+    schema={"type": "string", "enum": list(RESPONSE_FORMATS)},
     default="markdown",
     description=(
         "Response format control.  "

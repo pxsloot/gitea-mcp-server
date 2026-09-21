@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gitea_mcp_server.constants import RESPONSE_FORMATS
 from gitea_mcp_server.exceptions import ConfigError
 
 
@@ -207,8 +208,8 @@ class Config(BaseSettings):
         Without this check an invalid value would be injected into every tool
         schema and only surface at call time as "Unsupported format".
         """
-        valid_formats = {"json", "markdown", "raw"}
-        normalized = v.lower()
+        valid_formats = set(RESPONSE_FORMATS)
+        normalized = v.strip().lower()
         if normalized not in valid_formats:
             msg = f"DEFAULT_RESPONSE_FORMAT must be one of {sorted(valid_formats)}, got '{v}'"
             raise ConfigError(msg)

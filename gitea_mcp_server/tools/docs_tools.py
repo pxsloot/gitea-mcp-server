@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 import yaml
 from fastmcp.exceptions import ResourceError
 
-from gitea_mcp_server.constants import SEARCH_MIN_SCORE
+from gitea_mcp_server.constants import RESPONSE_FORMATS, SEARCH_MIN_SCORE
 from gitea_mcp_server.models import DocEntry
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
 from gitea_mcp_server.resources.meta import ResourceMeta
@@ -40,7 +40,7 @@ _DESC_TRUNCATE = 80
 _FRONTMATTER_SPLIT_LIMIT = 2
 """Maximum number of splits when parsing frontmatter (---/content/--- -> 3 expected parts)."""
 
-_VALID_FORMATS = frozenset({"markdown", "raw", "json"})
+_VALID_FORMATS = frozenset(RESPONSE_FORMATS)
 """Accepted format parameter values for doc tools."""
 
 _SEARCH_DOCS_OUTPUT_SCHEMA: dict[str, Any] = {

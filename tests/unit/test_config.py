@@ -103,6 +103,15 @@ class TestConfig:
         Config._instance = None
         assert Config.get().response_format == "json"
 
+    def test_response_format_strips_whitespace(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DEFAULT_RESPONSE_FORMAT is stripped before validation (matches token)."""
+        monkeypatch.setenv("GITEA_URL", "https://git.example.com")
+        monkeypatch.setenv("GITEA_TOKEN", "test_token")
+        monkeypatch.setenv("DEFAULT_RESPONSE_FORMAT", " json ")
+
+        Config._instance = None
+        assert Config.get().response_format == "json"
+
     def test_response_format_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An unsupported DEFAULT_RESPONSE_FORMAT fails fast at startup.
 

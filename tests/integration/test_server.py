@@ -1155,12 +1155,25 @@ class TestServerEdgeCases:
         guide = DocManager().get("tool-output-format")
         assert guide is not None, "tool-output-format guide is missing"
 
-        # "markdown default", "default is markdown", "``markdown`` (default)".
+        # "markdown default", "default is markdown", "``markdown`` (default)",
+        # "rendered as Markdown by default".
         default_claim = re.compile(
             r"(?:markdown|json|raw)`*\s*(?:\(default\)|default)"
+            r"|(?:markdown|json|raw)`*\s+by\s+default"
             r"|default\s+is\s+`*(?:markdown|json|raw)",
             re.IGNORECASE,
         )
+        # Self-check: the guard must catch every phrasing we have had to remove,
+        # including the "by default" form (review of #786).
+        known_bad = (
+            "markdown default",
+            "``markdown`` (default)",
+            "default is markdown",
+            "rendered as Markdown by default via the display pipeline",
+        )
+        for sample in known_bad:
+            assert default_claim.search(sample), f"guard misses phrasing: {sample!r}"
+
         surfaces = {
             "injected instructions": _served_instructions(),
             "tool-output-format guide": guide.full_content,

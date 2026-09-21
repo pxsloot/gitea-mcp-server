@@ -11,6 +11,14 @@ maintainability and make configuration easier.
 RESPONSE_PREVIEW_LIMIT = 100
 """Maximum length for error response previews in logs (characters)."""
 
+RESPONSE_FORMATS: tuple[str, ...] = ("json", "markdown", "raw")
+"""Supported ``format`` values, in agent-facing schema order.
+
+Single source of truth for the ``format`` virtual-param enum, the result
+pipeline's render check, the ``read_doc`` format check, and the
+``DEFAULT_RESPONSE_FORMAT`` config validator.  Adding a format here makes it
+accepted everywhere at once."""
+
 
 # ============================================================================
 # Detail Parameter Schema (shared by all tools)

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.display_hints import (
     VIEW_COMPACT_KEY,
+    VIEW_FLAG_KEY,
     VIEW_OMIT_KEY,
     _type_properties,
     _validate_hints,
@@ -295,13 +296,15 @@ class TestValidateHints:
         """A spec defining every curated type with all hinted properties."""
         from gitea_mcp_server.openapi_converter.display_hints import (
             _VIEW_COMPACT,
+            _VIEW_FLAG,
             _VIEW_OMIT,
         )
 
         schemas: dict[str, Any] = {}
-        for type_name in set(_VIEW_OMIT) | set(_VIEW_COMPACT):
+        for type_name in set(_VIEW_OMIT) | set(_VIEW_COMPACT) | set(_VIEW_FLAG):
             props: dict[str, Any] = {p: {} for p in _VIEW_OMIT.get(type_name, ())}
             props.update({p: {} for p in _VIEW_COMPACT.get(type_name, ())})
+            props.update({p: {} for p in _VIEW_FLAG.get(type_name, ())})
             schemas[type_name] = {"type": "object", "properties": props}
         return make_openapi_spec(components={"schemas": schemas})
 
@@ -344,7 +347,7 @@ class TestValidateHints:
                     continue
                 if operation.get("x-response-type") == "Issue":
                     assert "body" in operation[VIEW_OMIT_KEY]
-                    assert operation[VIEW_COMPACT_KEY]["pull_request"] == "merged"
+                    assert "pull_request" in operation[VIEW_FLAG_KEY]
                     stamped += 1
         assert stamped > 0
 

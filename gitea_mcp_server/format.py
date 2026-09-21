@@ -347,7 +347,13 @@ def _ref_target(schema: Any, openapi_spec: OpenAPISpec | None) -> str | None:
 
 
 def _object_type_name(ref: str, openapi_spec: OpenAPISpec | None) -> str | None:
-    """Return the type name for *ref* if it resolves to an object schema."""
+    """Return the type name for *ref* if it resolves to an object schema.
+
+    An unresolvable ``$ref`` (no spec, or a type absent from the spec) still
+    returns the ref's name — it is treated as a relation and compacts to a
+    ``key=value`` summary rather than expanding.  That is the safe default:
+    a missing schema should not dump a nested object into a list view.
+    """
     name = ref.rsplit("/", 1)[-1]
     if openapi_spec is None:
         return name
@@ -362,44 +368,47 @@ def _object_type_name(ref: str, openapi_spec: OpenAPISpec | None) -> str | None:
 
 def _view_hints(
     openapi_spec: OpenAPISpec | None, response_type: str | None
-) -> tuple[set[str], dict[str, str | None]]:
+) -> tuple[set[str], dict[str, str | None], set[str]]:
     """Read the converter-stamped view hints for a response type.
 
-    Returns ``(omit, compact)`` — the property names to drop and a mapping of
-    property name to identity-field **override** (``None`` = generic policy).
-    Both are empty when no spec/type is available, so the view degrades to
-    the plain schema derivation.
+    Returns ``(omit, compact, flag)`` — the property names to drop, a mapping
+    of property name to identity-field **override** (``None`` = generic
+    policy), and the property names to render as a boolean flag.  All are
+    empty when no spec/type is available, so the view degrades to the plain
+    schema derivation.
 
     The hints are keyed by response type, so the whole spec is indexed once
     (:func:`_hint_index`) rather than scanned per render.
     """
     if openapi_spec is None or not response_type:
-        return set(), {}
-    return _hint_index(openapi_spec).get(response_type, (set(), {}))
+        return set(), {}, set()
+    return _hint_index(openapi_spec).get(response_type, (set(), {}, set()))
 
 
-#: Cache of ``id(spec) -> {response_type: (omit, compact)}``.  The spec is
-#: built once at startup and never mutated after registration, so an
-#: identity-keyed cache is safe; it is bounded by the number of live specs
-#: (one per server, plus test fixtures).
-_HINT_INDEX_CACHE: dict[int, dict[str, tuple[set[str], dict[str, str | None]]]] = {}
+#: Private spec key holding the built hint index.  The index is derived from
+#: the spec and stored *on* the spec, so there is no module-global cache and
+#: no ``id()``-keyed lookup (which is unsound — CPython reuses ``id()`` after
+#: garbage collection).  The key is stripped from agent-facing schemas by
+#: ``tools/schemas.deep_resolve_schema`` alongside the other ``x-mcp-*`` keys.
+_HINT_INDEX_KEY = "x-mcp-hint-index"
+
+#: One type's view hints: ``(omit, compact, flag)``.
+_ViewHints = tuple[set[str], dict[str, str | None], set[str]]
 
 
-def _hint_index(
-    openapi_spec: OpenAPISpec,
-) -> dict[str, tuple[set[str], dict[str, str | None]]]:
+def _hint_index(openapi_spec: OpenAPISpec) -> dict[str, _ViewHints]:
     """Index the converter-stamped view hints by response type.
 
-    Built once per spec (identity-keyed) so a markdown render does not scan
-    every operation.  When two operations share a response type, the first
+    Built once per spec and stored on the spec itself, so a markdown render
+    does not scan every operation and no module-global state is shared
+    between specs.  When two operations share a response type, the first
     wins — the hints are keyed by type in the converter, so they agree.
     """
-    key = id(openapi_spec)
-    cached = _HINT_INDEX_CACHE.get(key)
-    if cached is not None:
-        return cached
+    cached = openapi_spec.get(_HINT_INDEX_KEY)
+    if isinstance(cached, dict):
+        return cast("dict[str, _ViewHints]", cached)
 
-    index: dict[str, tuple[set[str], dict[str, str | None]]] = {}
+    index: dict[str, _ViewHints] = {}
     paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
     for path_item in paths.values():
         if not isinstance(path_item, dict):
@@ -412,11 +421,15 @@ def _hint_index(
                 continue
             omit = operation.get("x-mcp-view-omit")
             compact = operation.get("x-mcp-view-compact")
+            flag = operation.get("x-mcp-view-flag")
             index[response_type] = (
                 set(omit) if isinstance(omit, list) else set(),
                 dict(compact) if isinstance(compact, dict) else {},
+                set(flag) if isinstance(flag, list) else set(),
             )
-    _HINT_INDEX_CACHE[key] = index
+    # The spec is a TypedDict; the index key is dynamic, so write through a
+    # plain-dict view (the same escape hatch the converter uses for x-* keys).
+    cast("dict[str, Any]", openapi_spec)[_HINT_INDEX_KEY] = index
     return index
 
 
@@ -438,6 +451,7 @@ def _build_field_filter(
     properties: dict[str, Any],
     omit: set[str],
     compact: dict[str, str | None],
+    flag: set[str],
     openapi_spec: OpenAPISpec | None,
 ) -> dict[str, dict]:
     """Build the collection view's field filter from the schema.
@@ -445,16 +459,22 @@ def _build_field_filter(
     A property is a **relation** when its schema references an object type
     (``$ref``, a combinator wrapping one, or an array of one) — derived from
     the schema, so a new or unknown type compacts its relations for free.
-    The converter-stamped ``compact`` map supplies identity-field
-    *overrides* for relations whose object has no conventional identity
-    (``base`` → ``ref``, ``milestone`` → ``title``, ``pull_request`` →
-    ``merged``).  ``omit`` drops noise fields.
+    The converter-stamped hints refine that:
+
+    - ``compact`` supplies identity-field *overrides* for relations whose
+      object has no conventional identity (``base`` → ``ref``, ``milestone``
+      → ``title``).
+    - ``flag`` marks a relation that is a boolean flag, not an identity
+      (``pull_request``) — rendered ``Yes``/``No``.
+    - ``omit`` drops noise fields.
     """
     field_filter: dict[str, dict] = {}
     for prop_name, prop_schema in properties.items():
         if prop_name in omit:
             continue
-        if _ref_target(prop_schema, openapi_spec) is not None:
+        if prop_name in flag:
+            field_filter[prop_name] = {"render": "badge"}
+        elif _ref_target(prop_schema, openapi_spec) is not None:
             field_filter[prop_name] = {
                 "render": "compact_identity",
                 "identity_key": compact.get(prop_name),
@@ -496,8 +516,8 @@ def _generic_collection_view(
         # Detail view: the full payload, every field present in the data.
         return format_as_markdown(data, title=_detail_title(data, response_type, extra))
 
-    omit, compact = _view_hints(openapi_spec, response_type)
-    field_filter = _build_field_filter(properties, omit, compact, openapi_spec)
+    omit, compact, flag = _view_hints(openapi_spec, response_type)
+    field_filter = _build_field_filter(properties, omit, compact, flag, openapi_spec)
 
     title = _collection_title(response_type, len(data), extra, data)
     return format_as_markdown(

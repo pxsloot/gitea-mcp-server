@@ -593,11 +593,13 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
      flags, the full `body`).
    - `_VIEW_COMPACT` — identity-field **overrides** for relations whose
      object has no conventional identity (`base` → `ref`, `milestone` →
-     `title`, `pull_request` → `merged`, `labels` → `name`).  A relation with
-     a conventional identity (`login`/`username`/`name`/`full_name`/`id`)
-     needs no entry.
+     `title`, `labels` → `name`).  A relation with a conventional identity
+     (`login`/`username`/`name`/`full_name`/`id`) needs no entry.
+   - `_VIEW_FLAG` — relations that are boolean flags, not identities
+     (`pull_request`), rendered `Yes`/`No`.
 
-   The converter stamps `x-mcp-view-omit` / `x-mcp-view-compact` on every
+   The converter stamps `x-mcp-view-omit` / `x-mcp-view-compact` /
+   `x-mcp-view-flag` on every
    operation returning that type, and validates every hint against the
    schema — an unknown property or type is logged as an **error** at startup,
    so a stale hint fails loudly.  This is the "fix the spec, keep the runtime

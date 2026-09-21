@@ -365,20 +365,45 @@ class TestGenericCollectionView:
     def test_view_hints_no_spec_or_type(self) -> None:
         from gitea_mcp_server.format import _view_hints
 
-        assert _view_hints(None, "Issue") == (set(), {})
-        assert _view_hints(make_openapi_spec(), None) == (set(), {})
+        assert _view_hints(None, "Issue") == (set(), {}, set())
+        assert _view_hints(make_openapi_spec(), None) == (set(), {}, set())
 
     def test_view_hints_skips_non_dict_path_items(self) -> None:
         from gitea_mcp_server.format import _view_hints
 
         spec = make_openapi_spec(paths={"/x": "not-a-dict"})
-        assert _view_hints(spec, "Issue") == (set(), {})
+        assert _view_hints(spec, "Issue") == (set(), {}, set())
 
     def test_view_hints_no_matching_operation(self) -> None:
         from gitea_mcp_server.format import _view_hints
 
         spec = _spec_with_type("Widget", {"name": {}})
-        assert _view_hints(spec, "Issue") == (set(), {})
+        assert _view_hints(spec, "Issue") == (set(), {}, set())
+
+    def test_hint_index_is_per_spec(self) -> None:
+        """Two specs get their own hints — no shared/global cache.
+
+        Regression for the review of PR #774: the index was cached in a
+        module-global keyed by ``id(spec)``, which CPython reuses after GC,
+        so one spec could silently receive another's hints.
+        """
+        from gitea_mcp_server.format import _view_hints
+
+        spec_a = _spec_with_type("Widget", {"name": {}, "a": {}}, omit=["a"])
+        spec_b = _spec_with_type("Widget", {"name": {}, "b": {}}, omit=["b"])
+        assert _view_hints(spec_a, "Widget")[0] == {"a"}
+        assert _view_hints(spec_b, "Widget")[0] == {"b"}
+        # And again, after both are indexed, to prove no cross-talk.
+        assert _view_hints(spec_a, "Widget")[0] == {"a"}
+        assert _view_hints(spec_b, "Widget")[0] == {"b"}
+
+    def test_hint_index_stored_on_spec(self) -> None:
+        """The index lives on the spec, not in module-global state."""
+        from gitea_mcp_server.format import _HINT_INDEX_KEY, _view_hints
+
+        spec = _spec_with_type("Widget", {"name": {}}, omit=["name"])
+        _view_hints(spec, "Widget")
+        assert _HINT_INDEX_KEY in spec
 
     def test_type_schema_no_spec_or_type(self) -> None:
         from gitea_mcp_server.format import _type_schema
@@ -457,7 +482,7 @@ class TestGenericCollectionView:
         from gitea_mcp_server.format import _view_hints
 
         spec = make_openapi_spec(paths={"/x": {"get": "not-a-dict"}})
-        assert _view_hints(spec, "Issue") == (set(), {})
+        assert _view_hints(spec, "Issue") == (set(), {}, set())
 
     def test_fallback_title_for_list_without_schema(self) -> None:
         """A list with no type schema gets a collection title (line 368)."""

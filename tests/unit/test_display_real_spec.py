@@ -222,6 +222,21 @@ class TestIssueRendering:
         assert "| Milestone | One Agent-Facing Contract |" in out
         assert "## User" not in out
 
+    def test_pull_request_renders_as_flag(self, real_spec: OpenAPISpec) -> None:
+        """``pull_request`` is a flag, not an identity — rendered Yes/No.
+
+        Regression for the review of PR #774: it compacted to ``merged`` and
+        rendered ``False``, and the ``badge`` render branch had no producer.
+        """
+        out = _render([_ISSUE], "Issue", real_spec)
+        assert "| Pull Request | No |" in out
+        assert "| Pull Request | False |" not in out
+
+    def test_pull_request_flag_yes_when_set(self, real_spec: OpenAPISpec) -> None:
+        issue_pr = {**_ISSUE, "pull_request": {"merged": False}}
+        out = _render([issue_pr], "Issue", real_spec)
+        assert "| Pull Request | Yes |" in out
+
     def test_detail_heading_has_number_and_title(self, real_spec: OpenAPISpec) -> None:
         out = _render(_ISSUE, "Issue", real_spec)
         assert out.startswith("# Issue #768: Compact nested user objects")

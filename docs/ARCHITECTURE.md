@@ -270,7 +270,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — stamps ``x-mcp-view-omit`` / ``x-mcp-view-compact`` pre-wrap for the generic markdown view, validated against the schema) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — stamps ``x-mcp-view-omit`` / ``x-mcp-view-compact`` / ``x-mcp-view-flag`` pre-wrap for the generic markdown view, validated against the schema) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -376,14 +376,20 @@ relation.  A dict result (a single-resource read) renders the full payload
 dynamically.
 
 The only curated knowledge is the converter-stamped deficiency list —
-``x-mcp-view-omit`` (noise fields) and ``x-mcp-view-compact`` (identity-field
+``x-mcp-view-omit`` (noise fields), ``x-mcp-view-compact`` (identity-field
 *overrides* for relations whose object has no conventional identity, e.g.
-``base`` → ``ref``, ``pull_request`` → ``merged``), stamped pre-wrap by
+``base`` → ``ref``), and ``x-mcp-view-flag`` (relations that are boolean
+flags, e.g. ``pull_request`` → ``Yes``/``No``), stamped pre-wrap by
 ``openapi_converter/display_hints.py`` and validated against the schema (an
 unknown property or type is logged as an error, never a silent skip).  A new
 or renamed schema field therefore appears automatically, and a stale hint
 fails loudly at startup.  ``tools/display.py`` holds only the bespoke
 ``labels`` view, which carries guidance the schema cannot express.
+
+The hints are indexed by response type once and stored **on the spec**
+(``x-mcp-hint-index``), so a render does not scan every operation and no
+module-global state is shared between specs.  (A follow-up moves the index to
+registration time — see the "Spec Conformance & Upstream Drift" milestone.)
 
 The contract transform is **server-level**: registered via
 ``mcp.add_transform()`` (first in the chain) so it can wrap tools from every
@@ -434,7 +440,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets and per-resource cache TTLs (populated by ``make_api_resource``, consumed by ``build_invalidation_map`` and the response-cache TTL resolver) |
-| `tools/display.py` | Bespoke display formatter **plugins** — the one view the schema cannot express (`labels`, which carries accepted-format/validation guidance).  Every other agent-facing markdown view is derived from the response schema by the format layer's generic collection view (`format._generic_collection_view`, #771); the only curated knowledge is the converter-stamped deficiency list (`x-mcp-view-omit` / `x-mcp-view-compact`, `openapi_converter/display_hints.py`).  Holds no registry state — the registry lives in `format.py`, and `server.py` (the composition root) imports this module for its registration side effect |
+| `tools/display.py` | Bespoke display formatter **plugins** — the one view the schema cannot express (`labels`, which carries accepted-format/validation guidance).  Every other agent-facing markdown view is derived from the response schema by the format layer's generic collection view (`format._generic_collection_view`, #771); the only curated knowledge is the converter-stamped deficiency list (`x-mcp-view-omit` / `x-mcp-view-compact` / `x-mcp-view-flag`, `openapi_converter/display_hints.py`).  Holds no registry state — the registry lives in `format.py`, and `server.py` (the composition root) imports this module for its registration side effect |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -993,10 +999,11 @@ from the parameter schema.
      A schema cannot express every presentation decision, so the residual
      knowledge is stamped by the converter
      (``openapi_converter/display_hints.py``) as operation-level
-     ``x-mcp-view-omit`` (noise fields) and ``x-mcp-view-compact``
+     ``x-mcp-view-omit`` (noise fields), ``x-mcp-view-compact``
      (identity-field *overrides* for relations whose object has no
-     conventional identity, e.g. ``base`` → ``ref``, ``pull_request`` →
-     ``merged``), keyed by type name.  This is the same principle as the
+     conventional identity, e.g. ``base`` → ``ref``), and
+     ``x-mcp-view-flag`` (relations that are boolean flags, e.g.
+     ``pull_request`` → ``Yes``/``No``), keyed by type name.  This is the same principle as the
      normalization rules: **fix the spec, keep the runtime generic**.  The
      hints are validated against the schema at startup — an unknown property
      or type is logged as an error, never a silent skip — so drift is loud

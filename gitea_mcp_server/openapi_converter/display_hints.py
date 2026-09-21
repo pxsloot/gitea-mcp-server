@@ -13,7 +13,7 @@ one.  Those are *deficiencies of the spec*, and this module fixes them the
 same way the other converter rules fix swagger deficiencies: by stamping
 operation-level extensions, so the runtime stays generic.
 
-Two extensions are stamped on every operation whose success response has a
+Three extensions are stamped on every operation whose success response has a
 primary type:
 
 * ``x-mcp-view-omit`` — property names to drop from the collection view.
@@ -22,6 +22,10 @@ primary type:
   generic identity policy (``login`` → ``username`` → ``name`` →
   ``full_name`` → ``id``).  A relation whose object has no identity field
   must name one here, or it would render as a Python repr.
+* ``x-mcp-view-flag`` — property names to render as a boolean flag
+  (``Yes``/``No``).  A flag relation is not an identity: ``pull_request``
+  carries ``{draft, merged, html_url, merged_at}``, so the agent wants "is
+  this a PR?", not a compacted field.
 
 The hints are keyed by **type name**, not by operation: every operation
 returning ``Issue`` gets the same view, so a tool and its resource sibling
@@ -60,6 +64,7 @@ logger = logging.getLogger(__name__)
 # agent-facing resolved output schema by ``tools/schemas.deep_resolve_schema``.
 VIEW_OMIT_KEY = "x-mcp-view-omit"
 VIEW_COMPACT_KEY = "x-mcp-view-compact"
+VIEW_FLAG_KEY = "x-mcp-view-flag"
 
 # ---------------------------------------------------------------------------
 # Curated hints — a deficiency list, not a view definition.
@@ -183,7 +188,6 @@ _VIEW_COMPACT: dict[str, dict[str, str | None]] = {
         "assignee": None,
         "assignees": None,
         "milestone": "title",
-        "pull_request": "merged",
         "labels": "name",
     },
     "PullRequest": {
@@ -197,6 +201,14 @@ _VIEW_COMPACT: dict[str, dict[str, str | None]] = {
     },
     "Repository": {"owner": None},
     "Release": {"author": None},
+}
+
+#: Properties to render as a boolean flag (``Yes``/``No``), keyed by type
+#: name.  A flag relation is not an identity — ``pull_request`` carries
+#: ``{draft, merged, html_url, merged_at}``, so compacting it to ``merged``
+#: would be semantically wrong; the agent wants "is this a PR?".
+_VIEW_FLAG: dict[str, tuple[str, ...]] = {
+    "Issue": ("pull_request",),
 }
 
 
@@ -227,41 +239,33 @@ def _validate_hints(spec: OpenAPISpec) -> None:
     silent no-op.  This is the systemic replacement for the old per-whitelist
     drift guard.
     """
-    for type_name, omitted in _VIEW_OMIT.items():
+    _validate_table(spec, _VIEW_OMIT, VIEW_OMIT_KEY)
+    _validate_table(spec, _VIEW_COMPACT, VIEW_COMPACT_KEY)
+    _validate_table(spec, _VIEW_FLAG, VIEW_FLAG_KEY)
+
+
+def _validate_table(
+    spec: OpenAPISpec,
+    table: dict[str, Any],
+    key: str,
+) -> None:
+    """Validate one curated hint table against the spec; log errors on drift."""
+    for type_name, hinted in table.items():
         props = _type_properties(spec, type_name)
         if props is None:
             logger.error(
                 "Display hint for undefined type %r (%s) — the type is not in "
                 "the spec; remove or fix the hint",
                 type_name,
-                VIEW_OMIT_KEY,
+                key,
             )
             continue
-        for prop in omitted:
+        for prop in hinted:
             if prop not in props:
                 logger.error(
                     "Display hint %s names unknown property %r on type %r — "
                     "the schema changed; fix the hint",
-                    VIEW_OMIT_KEY,
-                    prop,
-                    type_name,
-                )
-    for type_name, compacted in _VIEW_COMPACT.items():
-        props = _type_properties(spec, type_name)
-        if props is None:
-            logger.error(
-                "Display hint for undefined type %r (%s) — the type is not in "
-                "the spec; remove or fix the hint",
-                type_name,
-                VIEW_COMPACT_KEY,
-            )
-            continue
-        for prop in compacted:
-            if prop not in props:
-                logger.error(
-                    "Display hint %s names unknown property %r on type %r — "
-                    "the schema changed; fix the hint",
-                    VIEW_COMPACT_KEY,
+                    key,
                     prop,
                     type_name,
                 )
@@ -304,10 +308,14 @@ def stamp_display_hints(openapi_spec: OpenAPISpec) -> None:
             compacted = _VIEW_COMPACT.get(response_type)
             if compacted:
                 operation[VIEW_COMPACT_KEY] = dict(compacted)
+            flagged = _VIEW_FLAG.get(response_type)
+            if flagged:
+                operation[VIEW_FLAG_KEY] = list(flagged)
 
 
 __all__ = [
     "VIEW_COMPACT_KEY",
+    "VIEW_FLAG_KEY",
     "VIEW_OMIT_KEY",
     "stamp_display_hints",
 ]

@@ -300,6 +300,12 @@ def _get_resource_types(openapi_spec: OpenAPISpec, api_path: str) -> set[str]:
 def _substitute_template(template: str, params: dict[str, Any]) -> str:
     """Substitute parameters into a URI template.
 
+    Values are substituted **raw**, not percent-encoded: the result is a cache
+    key, and ``response_cache.ResponseCache`` canonicalises keys by
+    percent-decoding once, so a raw target reconstructed from tool arguments
+    matches a read the agent spelled encoded (and vice versa).  Encoding here
+    would double-encode relative to that canonical form.
+
     Args:
         template: URI template with {placeholders}
         params: Dictionary of parameter values

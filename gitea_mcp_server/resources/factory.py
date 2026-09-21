@@ -95,7 +95,12 @@ from gitea_mcp_server.tools.schemas import (
     get_success_schema,
     unwrap_result_schema,
 )
-from gitea_mcp_server.uri_utils import clean_resource_uri
+from gitea_mcp_server.uri_utils import (
+    clean_resource_uri,
+    expand_path_params,
+    render_wildcard_segment,
+    wildcard_param_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,27 +240,6 @@ def _derive_resource_name_for(
     return "resource"
 
 
-def _render_wildcard_segment(uri: str, param: str) -> str:
-    """Render ``{param}`` as ``{param*}`` in a URI template, segment-aware.
-
-    Only a path segment that is *exactly* ``{param}`` becomes ``{param*}``.
-    A plain ``str.replace`` would also rewrite a same-named substring inside
-    a different segment (e.g. ``{filepath}`` inside ``{filepath2}``) or a
-    ``{?query}`` suffix — both wrong.  Path params are always full segments
-    (between ``/``), so splitting on ``/`` is the correct boundary.
-
-    Args:
-        uri: The URI template (e.g. ``gitea://repos/{owner}/{repo}/contents/{filepath}``).
-        param: The wildcard param name (e.g. ``"filepath"``).
-
-    Returns:
-        The URI with the exact ``{param}`` segment rendered ``{param*}``.
-    """
-    segments = uri.split("/")
-    rendered = [seg if seg != f"{{{param}}}" else f"{{{param}*}}" for seg in segments]
-    return "/".join(rendered)
-
-
 def derive_resource_uri(
     openapi_spec: OpenAPISpec | None,
     api_path: str,
@@ -294,7 +278,7 @@ def derive_resource_uri(
     if operation is not None:
         wildcard = operation.get("x-wildcard-path-param")
         if isinstance(wildcard, str) and wildcard:
-            uri = _render_wildcard_segment(uri, wildcard)
+            uri = render_wildcard_segment(uri, wildcard)
     optional = [p for p in (*(query_params or []), *(context_params or [])) if p]
     if optional:
         uri += "{?" + ",".join(optional) + "}"
@@ -919,12 +903,20 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # "URI template must contain at least one parameter" validation.
     _has_uri_params = bool(re.search(r"\{[\w?*,]+\}", uri))
 
+    # Render the wildcard intent (declared in the resource URI as ``{param*}``)
+    # onto the API path once at registration: multi-segment values like file
+    # paths must keep ``/`` when substituted, while the API path uses plain
+    # ``{param}``.  Static per registration — not recomputed per read.
+    _api_path_template = api_path
+    for _wildcard_param in wildcard_param_names(uri):
+        _api_path_template = render_wildcard_segment(_api_path_template, _wildcard_param)
+
     if _has_uri_params:
 
         async def handler(**kwargs: Any) -> ResourceResult:
             """Auto-generated resource handler from factory."""
-            formatted_path = api_path
             query_kwargs: dict[str, Any] = {}
+            path_params: dict[str, Any] = {}
             for key, value in kwargs.items():
                 # None means "not provided" — FastMCP passes the declared
                 # default for optional {?param} template entries.  Skip
@@ -946,10 +938,10 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                             value,
                             query_param_validators[key],
                             resource_type=_resource_type,
-                            resource_id=formatted_path,
+                            resource_id=api_path,
                         )
                     query_kwargs[key] = value
-                elif context_params and key in context_params and value is not None:
+                elif context_params and key in context_params:
                     # Context-only param: validate but do NOT forward to API.
                     if (
                         context_param_validators
@@ -961,25 +953,25 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                             value,
                             context_param_validators[key],
                             resource_type=_resource_type,
-                            resource_id=formatted_path,
+                            resource_id=api_path,
                         )
+                elif f"{{{key}}}" in api_path:
+                    # Any remaining kwarg that names a path placeholder is a
+                    # path parameter.
+                    path_params[key] = value
                 else:
-                    # Assume any remaining kwarg is a path parameter and
-                    # substitute into the API path.  If the key isn't a
-                    # valid path placeholder, the replace is a no-op --
-                    # warn so misconfigured callers (tests, future code)
-                    # don't silently get the wrong behavior.
-                    placeholder = f"{{{key}}}"
-                    if placeholder in formatted_path:
-                        formatted_path = formatted_path.replace(placeholder, str(value))
-                    else:
-                        logger.warning(
-                            "make_api_resource %s: unknown kwarg %r=%r "
-                            "-- not a path, query, or context param; ignored",
-                            uri,
-                            key,
-                            value,
-                        )
+                    logger.warning(
+                        "make_api_resource %s: unknown kwarg %r=%r "
+                        "-- not a path, query, or context param; ignored",
+                        uri,
+                        key,
+                        value,
+                    )
+
+            # Percent-encode path parameter values (wildcards keep ``/``) so
+            # the outbound API path is well-formed for any value — see
+            # ``uri_utils`` for the encoding contract.
+            formatted_path = expand_path_params(_api_path_template, path_params)
 
             # Forward requested context keys as display metadata for
             # formatters that need extra context (e.g. ``type`` for

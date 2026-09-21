@@ -470,7 +470,7 @@ from the parameter schema.
 | `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
 | `pagination.py` | Pagination metadata, headers |
-| `uri_utils.py` | URI template helpers (``clean_resource_uri``) shared by resources, tools, and display layers |
+| `uri_utils.py` | URI template helpers (``clean_resource_uri``, ``render_wildcard_segment``, ``wildcard_param_names``, ``expand_path_params``) shared by resources, tools, and display layers.  ``expand_path_params`` is the single percent-encoding contract for path substitution — the inverse of FastMCP's resource matcher; the module docstring carries the audited substitution-site sweep (#736) |
 
 ---
 
@@ -606,7 +606,11 @@ from the parameter schema.
 
    The store indexes every cached URI under its base (query-stripped) URI,
    so a write clears every query variant that has been read (e.g.
-   `gitea://.../issues?state=open`), not just the base.  Items larger than
+   `gitea://.../issues?state=open`), not just the base.  Keys are
+   **canonicalised by percent-decoding once**, so a read spelled raw and the
+   same read spelled percent-encoded are one entry; this is what lets
+   `compute_uris_to_invalidate` substitute raw values from tool arguments and
+   still match encoded reads (#736).  Items larger than
    `CACHE_MAX_ITEM_SIZE` are not cached (skip-oversize) — the read still succeeds,
    it is simply not stored.
 
@@ -945,7 +949,10 @@ from the parameter schema.
      as a fetch endpoint (GET with a content-bearing 200, not itself a boolean
      check) and whose path parameters are a non-empty subset of the check's.
      No path-shape assumptions (e.g. "a trailing literal segment is an action")
-     — the spec is the source of truth.  On the current Gitea spec this covers
+     — the spec is the source of truth.  The concrete URI is substituted from
+     the tool arguments and percent-encoded (``uri_utils.expand_path_params``),
+     so it round-trips through FastMCP's resource matcher for any value, not
+     just the current restricted owner/repo/id charset (#736).  On the current Gitea spec this covers
      five of the eight boolean-check endpoints: ``repoPullRequestIsMerged``
      (→ the PR), ``orgIsMember``/``orgIsPublicMember`` (→ the member list,
      which 404s when the org is missing), and ``repoCheckCollaborator``/

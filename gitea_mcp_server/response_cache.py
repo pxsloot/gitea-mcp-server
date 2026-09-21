@@ -5,9 +5,15 @@ caches (``resources/read`` and ``resources/list``).
 
 Design decisions:
 
-* **Single global key space.** Keys are the raw resource
-  URIs; the format is defined here, so the writer and the invalidator can
+* **Single global key space.** Keys are the *canonical* resource URIs (see
+  below); the format is defined here, so the writer and the invalidator can
   never drift apart.
+* **Canonical keys.** A URI is canonicalised by percent-decoding it once, so
+  equivalent spellings of the same resource (raw and percent-encoded) share
+  one entry.  FastMCP's resource matcher ``unquote``s captured path parameters,
+  so the decoded form is the logical resource identity; it is also what
+  ``cache_invalidation`` reconstructs from tool arguments.  Canonicalisation is
+  applied exactly once, at this store boundary (``unquote`` is not idempotent).
 * **Per-resource TTL.** Each resource may declare a ``cache_ttl`` (via the
   resource surface, populated from ``make_api_resource(cache_ttl=...)``);
   resources without one fall back to ``CACHE_TTL_DEFAULT``.  Resource
@@ -27,6 +33,7 @@ import logging
 import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -60,6 +67,18 @@ _LIST_RESOURCES_KEY = "__gitea_list_resources__"
 _MAX_TRACKED_URIS = 50
 
 
+def _canonical_uri(uri: str) -> str:
+    """Return the canonical cache key for a resource URI.
+
+    Percent-decodes the URI once so equivalent spellings of the same resource
+    (raw and percent-encoded) share one entry.  Applied exactly once, at the
+    store boundary: ``unquote`` is not idempotent (``unquote("a%2520b")`` is
+    ``"a%20b"``, and decoding again would yield ``"a b"``), so callers pass
+    the URI as received, never an already-decoded form.
+    """
+    return unquote(uri)
+
+
 class _CacheEntry:
     """One cached value with its expiry deadline."""
 
@@ -73,8 +92,8 @@ class _CacheEntry:
 class ResponseCache:
     """In-memory TTL cache for resource reads and resource listings.
 
-    Single global key space keyed by raw URI (see module docstring).  Keys
-    are owned here, so invalidation can never drift from the writer.
+    Single global key space keyed by canonical URI (see module docstring).
+    Keys are owned here, so invalidation can never drift from the writer.
 
     Entries expire lazily on read (TTL check) and are evicted eagerly on
     write invalidation.  Items larger than ``max_item_size`` are skipped
@@ -99,6 +118,7 @@ class ResponseCache:
 
     def get(self, uri: str) -> Any | None:
         """Return the cached value for ``uri``, or ``None`` on miss/expiry."""
+        uri = _canonical_uri(uri)
         entry = self._entries.get(uri)
         if entry is None:
             return None
@@ -111,10 +131,12 @@ class ResponseCache:
         """Store ``value`` under ``uri`` for ``ttl`` seconds.
 
         Items larger than ``max_item_size`` are skipped (not cached).  The
-        URI is indexed under its base for query-variant invalidation.
+        URI is canonicalised and indexed under its base for query-variant
+        invalidation.
         """
         if ttl <= 0:
             return
+        uri = _canonical_uri(uri)
         size = _estimate_size(value)
         if size > self._max_item_size:
             logger.debug(
@@ -139,11 +161,14 @@ class ResponseCache:
     def invalidate(self, uris: Iterable[str]) -> int:
         """Delete every cached entry whose base URI is in ``uris``.
 
+        URIs are canonicalised before lookup, so a raw invalidation target
+        (as reconstructed from tool arguments) matches a percent-encoded read.
         Includes query variants recorded at read time.  Returns the number
         of entries removed.
         """
         removed = 0
-        for uri in uris:
+        for raw_uri in uris:
+            uri = _canonical_uri(raw_uri)
             base = uri.split("?", 1)[0]
             variants = self._variants.pop(base, None)
             if variants is not None:
@@ -166,7 +191,11 @@ class ResponseCache:
     # ------------------------------------------------------------------
 
     def _remove(self, uri: str) -> None:
-        """Remove one entry (expiry path) and keep the variant index accurate."""
+        """Remove one entry (expiry path) and keep the variant index accurate.
+
+        ``uri`` is already canonical (``get`` canonicalises before calling);
+        canonicalise exactly once at the public boundary, never here.
+        """
         self._entries.pop(uri, None)
         base = uri.split("?", 1)[0]
         variants = self._variants.get(base)

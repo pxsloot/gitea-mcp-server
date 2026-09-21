@@ -107,6 +107,31 @@ class TestResponseCacheStore:
         assert cache.invalidate(["gitea://repos/org/repo/pulls"]) == 0
         assert cache.get("gitea://repos/org/repo/issues") == {"title": "x"}
 
+    def test_encoded_and_raw_spellings_share_one_entry(self) -> None:
+        """Keys are canonical: an encoded read is found by its raw spelling."""
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/contents/src%2Fmain.py", {"title": "x"}, ttl=30)
+        assert cache.get("gitea://repos/org/repo/contents/src/main.py") == {"title": "x"}
+        assert cache.get("gitea://repos/org/repo/contents/src%2Fmain.py") == {"title": "x"}
+
+    def test_invalidate_raw_clears_encoded_entry(self) -> None:
+        """A raw invalidation target (reconstructed from args) clears an encoded read."""
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/contents/my%20file.txt", {"title": "x"}, ttl=30)
+        assert cache.invalidate(["gitea://repos/org/repo/contents/my file.txt"]) == 1
+        assert cache.get("gitea://repos/org/repo/contents/my%20file.txt") is None
+
+    def test_canonical_decoded_exactly_once(self) -> None:
+        """``unquote`` runs once: a literal ``%`` is not over-decoded.
+
+        ``a%2520b`` decodes to ``a%20b`` (the literal value); decoding again
+        would collide with the URL carrying a space.
+        """
+        cache = ResponseCache()
+        cache.put("gitea://repos/org/repo/contents/a%2520b", {"title": "x"}, ttl=30)
+        assert cache.get("gitea://repos/org/repo/contents/a%2520b") == {"title": "x"}
+        assert cache.get("gitea://repos/org/repo/contents/a%20b") is None
+
     def test_invalidate_query_uri_itself(self) -> None:
         """Invalidating a full query URI (not just the base) also works."""
         cache = ResponseCache()

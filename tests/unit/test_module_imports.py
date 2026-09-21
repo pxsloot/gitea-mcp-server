@@ -248,7 +248,11 @@ def _converter_import_violations(source: str, package: str) -> list[str]:
             targets.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             targets.extend(_import_from_targets(node, package))
-    return [target for target in targets if target.startswith(_CONVERTER_PREFIX)]
+    return [
+        target
+        for target in targets
+        if target == _CONVERTER_PREFIX or target.startswith(f"{_CONVERTER_PREFIX}.")
+    ]
 
 
 class TestLayerDependencies:

@@ -14,12 +14,12 @@ curated tables keyed by type name.
 
 The tables serve two consumers:
 
-* :func:`validate_display_hints` — the pre-wrap validation pass, run once at
-  conversion against the schema.  **Fail loud.**  Every hint is validated:
-  an unknown property name, or a hint for a type the spec does not define,
-  is logged as an error.  A stale hint is a bug, not a silent no-op — this
-  is the systemic form of the drift guard the old hand-written whitelists
-  lacked.
+* :func:`validate_display_hints` — the validation pass, run once at
+  conversion against the component schemas.  **Fail loud.**  Every hint is
+  validated: an unknown property name, or a hint for a type the spec does
+  not define, is logged as an error.  A stale hint is a bug, not a silent
+  no-op — this is the systemic form of the drift guard the old hand-written
+  whitelists lacked.
 * :func:`view_hints_for` — the runtime lookup.  The registration layers
   resolve a response type's hints once into ``tool.meta["view_hints"]`` /
   resource content meta (a :class:`~gitea_mcp_server.models.ViewHints`

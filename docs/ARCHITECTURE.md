@@ -270,7 +270,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the schema pre-wrap and resolved per entity at registration via ``view_hints_for``) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |

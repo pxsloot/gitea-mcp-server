@@ -29,13 +29,19 @@ Formatter contract and registry:
         restating the signature.  ``call_markdown_formatter`` is the single
         dispatch point.
     register_formatter / get_formatter / get_formatter_for_type - the formatter
-        registry.  Domain formatters live in ``tools/display.py`` and register
+        registry.  Bespoke formatters live in ``tools/display.py`` and register
         here; the result pipeline resolves through :func:`resolve_formatter`
         without importing the domain module (Result → Format, never Result →
         Display).
     resolve_formatter - the three-tier formatter choice (explicit per-result →
-        type-bound domain formatter → generic), the single dispatch policy
-        shared by every tool and resource.
+        bespoke type-bound formatter → generic schema-anchored view), the
+        single dispatch policy shared by every tool and resource.
+    _generic_collection_view - the generic, schema-anchored markdown view
+        (#771): the bound type's properties in declaration order, scalars as
+        table rows, ``$ref``-backed relations compacted to an identity.  The
+        only curated knowledge is the converter-stamped deficiency list
+        (``x-mcp-view-omit`` / ``x-mcp-view-compact``,
+        ``openapi_converter/display_hints.py``).
 
 The single result pipeline for tools and resources lives in
 ``tools/result_pipeline.py``; this module provides the shared formatting
@@ -260,10 +266,379 @@ def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None
     return get_formatter_for_type(response_type)
 
 
+# ---------------------------------------------------------------------------
+# Generic schema-anchored collection view
+# ---------------------------------------------------------------------------
+#
+# The collection view is derived from the response schema, not from a
+# hand-written per-type field list (#771).  The bound type's properties, in
+# declaration order, become the view; scalars render as table rows and
+# ``$ref``-backed relations compact to an identity.  The only curated
+# knowledge is the converter-stamped deficiency list (``x-mcp-view-omit`` /
+# ``x-mcp-view-compact``), read off the operation — so a new or renamed
+# schema field appears automatically and a stale hint fails loudly at
+# startup (``openapi_converter/display_hints.py``).
+
+#: Identity fields tried in order when compacting a ``$ref``-backed object.
+_IDENTITY_KEYS: tuple[str, ...] = ("login", "username", "name", "full_name", "id")
+
+
+def _identity(value: Any, key: str | None = None) -> str:
+    """Render a ``$ref``-backed object as its identity.
+
+    *key* is the converter-stamped identity field for this relation (e.g.
+    ``base`` → ``ref``); ``None`` uses the generic policy (``login`` →
+    ``username`` → ``name`` → ``full_name`` → ``id``).  A collapsed relation
+    marker renders as its label.  A dict with no usable identity field
+    renders as a compact ``key=value`` summary — never a Python repr, which
+    would leak quotes and braces into agent-facing markdown.
+    """
+    if is_ref_marker(value):
+        return ref_marker_label(value)
+    if isinstance(value, dict):
+        keys = (key,) if key else _IDENTITY_KEYS
+        for candidate_key in keys:
+            candidate = value.get(candidate_key)
+            if candidate is not None and not isinstance(candidate, (dict, list)):
+                return str(candidate)
+        # No identity field: render a compact, quote-free summary of the
+        # scalar fields rather than ``str(dict)``.
+        scalars = [
+            f"{k}={v}"
+            for k, v in value.items()
+            if v is not None and not isinstance(v, (dict, list))
+        ]
+        return ", ".join(scalars) if scalars else "—"
+    return str(value)
+
+
+def _identity_list(value: list[Any], key: str | None = None) -> str:
+    """Render a list of ``$ref``-backed objects as comma-joined identities."""
+    return ", ".join(_identity(item, key) for item in value)
+
+
+def _ref_target(schema: Any, openapi_spec: OpenAPISpec | None) -> str | None:
+    """Return the type name a property schema references, or ``None``.
+
+    Handles a bare ``$ref``, a combinator (``anyOf``/``oneOf``/``allOf``)
+    wrapping a ``$ref``, and an array whose ``items`` is a ``$ref``.  The
+    referenced type must resolve to an **object** schema — a combinator
+    wrapping a scalar alias (e.g. ``Issue.state`` → ``StateType``, a string)
+    is not a relation.
+    """
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        return _object_type_name(ref, openapi_spec)
+    for key in ("anyOf", "oneOf", "allOf"):
+        members = schema.get(key)
+        if isinstance(members, list):
+            for member in members:
+                if isinstance(member, dict) and isinstance(member.get("$ref"), str):
+                    name = _object_type_name(member["$ref"], openapi_spec)
+                    if name:
+                        return name
+    if schema.get("type") == "array" or (
+        isinstance(schema.get("type"), list) and "array" in schema["type"]
+    ):
+        return _ref_target(schema.get("items"), openapi_spec)
+    return None
+
+
+def _object_type_name(ref: str, openapi_spec: OpenAPISpec | None) -> str | None:
+    """Return the type name for *ref* if it resolves to an object schema.
+
+    An unresolvable ``$ref`` (no spec, or a type absent from the spec) still
+    returns the ref's name — it is treated as a relation and compacts to a
+    ``key=value`` summary rather than expanding.  That is the safe default:
+    a missing schema should not dump a nested object into a list view.
+    """
+    name = ref.rsplit("/", 1)[-1]
+    if openapi_spec is None:
+        return name
+    schema = _type_schema(openapi_spec, name)
+    if schema is None:
+        return name
+    schema_type = schema.get("type")
+    if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
+        return name
+    return None
+
+
+def _view_hints(
+    openapi_spec: OpenAPISpec | None, response_type: str | None
+) -> tuple[set[str], dict[str, str | None], set[str]]:
+    """Read the converter-stamped view hints for a response type.
+
+    Returns ``(omit, compact, flag)`` — the property names to drop, a mapping
+    of property name to identity-field **override** (``None`` = generic
+    policy), and the property names to render as a boolean flag.  All are
+    empty when no spec/type is available, so the view degrades to the plain
+    schema derivation.
+
+    The hints are keyed by response type, so the whole spec is indexed once
+    (:func:`_hint_index`) rather than scanned per render.
+    """
+    if openapi_spec is None or not response_type:
+        return set(), {}, set()
+    return _hint_index(openapi_spec).get(response_type, (set(), {}, set()))
+
+
+#: Private spec key holding the built hint index.  The index is derived from
+#: the spec and stored *on* the spec, so there is no module-global cache and
+#: no ``id()``-keyed lookup (which is unsound — CPython reuses ``id()`` after
+#: garbage collection).  The key is stripped from agent-facing schemas by
+#: ``tools/schemas.deep_resolve_schema`` alongside the other ``x-mcp-*`` keys.
+_HINT_INDEX_KEY = "x-mcp-hint-index"
+
+#: One type's view hints: ``(omit, compact, flag)``.
+_ViewHints = tuple[set[str], dict[str, str | None], set[str]]
+
+
+def _hint_index(openapi_spec: OpenAPISpec) -> dict[str, _ViewHints]:
+    """Index the converter-stamped view hints by response type.
+
+    Built once per spec and stored on the spec itself, so a markdown render
+    does not scan every operation and no module-global state is shared
+    between specs.  When two operations share a response type, the first
+    wins — the hints are keyed by type in the converter, so they agree.
+    """
+    cached = openapi_spec.get(_HINT_INDEX_KEY)
+    if isinstance(cached, dict):
+        return cast("dict[str, _ViewHints]", cached)
+
+    index: dict[str, _ViewHints] = {}
+    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            response_type = operation.get("x-response-type")
+            if not isinstance(response_type, str) or response_type in index:
+                continue
+            omit = operation.get("x-mcp-view-omit")
+            compact = operation.get("x-mcp-view-compact")
+            flag = operation.get("x-mcp-view-flag")
+            index[response_type] = (
+                set(omit) if isinstance(omit, list) else set(),
+                dict(compact) if isinstance(compact, dict) else {},
+                set(flag) if isinstance(flag, list) else set(),
+            )
+    # The spec is a TypedDict; the index key is dynamic, so write through a
+    # plain-dict view (the same escape hatch the converter uses for x-* keys).
+    cast("dict[str, Any]", openapi_spec)[_HINT_INDEX_KEY] = index
+    return index
+
+
+def _type_schema(
+    openapi_spec: OpenAPISpec | None, response_type: str | None
+) -> dict[str, Any] | None:
+    """Return the named component schema for a response type, or ``None``."""
+    if openapi_spec is None or not response_type:
+        return None
+    components = openapi_spec.get("components", {})
+    schemas = components.get("schemas", {})
+    if not isinstance(schemas, dict):
+        return None
+    schema = schemas.get(response_type)
+    return schema if isinstance(schema, dict) else None
+
+
+def _build_field_filter(
+    properties: dict[str, Any],
+    omit: set[str],
+    compact: dict[str, str | None],
+    flag: set[str],
+    openapi_spec: OpenAPISpec | None,
+) -> dict[str, dict]:
+    """Build the collection view's field filter from the schema.
+
+    A property is a **relation** when its schema references an object type
+    (``$ref``, a combinator wrapping one, or an array of one) — derived from
+    the schema, so a new or unknown type compacts its relations for free.
+    The converter-stamped hints refine that:
+
+    - ``compact`` supplies identity-field *overrides* for relations whose
+      object has no conventional identity (``base`` → ``ref``, ``milestone``
+      → ``title``).
+    - ``flag`` marks a relation that is a boolean flag, not an identity
+      (``pull_request``) — rendered ``Yes``/``No``.
+    - ``omit`` drops noise fields.
+    """
+    field_filter: dict[str, dict] = {}
+    for prop_name, prop_schema in properties.items():
+        if prop_name in omit:
+            continue
+        if prop_name in flag:
+            field_filter[prop_name] = {"render": "badge"}
+        elif _ref_target(prop_schema, openapi_spec) is not None:
+            field_filter[prop_name] = {
+                "render": "compact_identity",
+                "identity_key": compact.get(prop_name),
+            }
+        else:
+            field_filter[prop_name] = {}
+    return field_filter
+
+
+def _generic_collection_view(
+    data: Any,
+    *,
+    response_type: str | None,
+    openapi_spec: OpenAPISpec | None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Render API objects as a schema-anchored view.
+
+    A **list** renders the collection view: the bound type's schema
+    properties in declaration order, minus the converter-stamped omissions,
+    with ``$ref``-backed relations compacted to an identity.  A **dict**
+    (a single-resource read) renders the full payload dynamically — a detail
+    read must never drop a field.  Falls back to the generic renderer when
+    the type schema is unavailable, so an unknown type keeps today's
+    behavior.
+
+    *extra* carries the call context (``type`` for the issue/pull title);
+    the formatter declares it so ``call_markdown_formatter`` forwards it.
+    """
+    schema = _type_schema(openapi_spec, response_type)
+    if schema is None:
+        return format_as_markdown(data, title=_fallback_title(data, response_type))
+
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return format_as_markdown(data, title=_fallback_title(data, response_type))
+
+    if isinstance(data, dict):
+        # Detail view: the full payload, every field present in the data.
+        return format_as_markdown(data, title=_detail_title(data, response_type, extra))
+
+    omit, compact, flag = _view_hints(openapi_spec, response_type)
+    field_filter = _build_field_filter(properties, omit, compact, flag, openapi_spec)
+
+    title = _collection_title(response_type, len(data), extra, data)
+    return format_as_markdown(
+        data,
+        title=title,
+        field_filter=field_filter,
+        item_title_key=_item_title_key(properties, response_type),
+    )
+
+
+def _detail_title(data: Any, response_type: str | None, extra: dict[str, Any] | None = None) -> str:
+    """Heading for a single-object read (``Repository``, ``Issue #1``).
+
+    An Issue/PullRequest detail read gets an ``Issue #N: title`` heading; the
+    ``type`` filter (``pulls``) or a set ``pull_request`` field selects the
+    PR label.  Other types use their type-appropriate identity field.
+    """
+    if isinstance(data, dict):
+        if response_type in ("Issue", "PullRequest"):
+            is_pr = response_type == "PullRequest" or bool(data.get("pull_request"))
+            is_pr = is_pr or (extra or {}).get("type") == "pulls"
+            label = "Pull Request" if is_pr else "Issue"
+            number = data.get("number", "?")
+            title = data.get("title")
+            return f"{label} #{number}: {title}" if title else f"{label} #{number}"
+        for key in _title_keys(response_type):
+            value = data.get(key)
+            if value:
+                if response_type == "Release":
+                    return f"Release {value}"
+                return str(value)
+    return response_type or "Result"
+
+
+def _title_keys(response_type: str | None) -> tuple[str, ...]:
+    """Identity-field candidates for a type's heading, most specific first.
+
+    Type-aware so an empty ``full_name`` falls through to ``login`` (User) or
+    ``username`` (Organization), and a Release prefers ``tag_name`` over an
+    empty ``name``.
+    """
+    if response_type == "User":
+        return ("login", "full_name", "username", "name")
+    if response_type == "Organization":
+        return ("username", "name", "full_name")
+    if response_type == "Release":
+        return ("tag_name", "name")
+    return ("full_name", "title", "name", "username", "login", "tag_name")
+
+
+def _fallback_title(data: Any, response_type: str | None) -> str:
+    """Heading when the type schema is unavailable: collection or detail."""
+    if isinstance(data, list):
+        return _collection_title(response_type, len(data), data=data)
+    return _detail_title(data, response_type)
+
+
+#: Explicit plural labels for types a naive pluraliser gets wrong.
+_PLURAL_LABELS: dict[str, str] = {
+    "PullRequest": "Pull Requests",
+    "Repository": "Repositories",
+}
+
+
+def _collection_title(
+    response_type: str | None,
+    count: int,
+    extra: dict[str, Any] | None = None,
+    data: list[Any] | None = None,
+) -> str:
+    """Pluralised heading for a collection view (``Issues - 3 items``).
+
+    The issue-list ``type`` filter (``issues`` / ``pulls``) overrides the
+    type-derived label.  With no filter, an issue list that contains pull
+    requests is labelled ``Issues and Pull Requests`` — Gitea's ``/issues``
+    endpoint returns PRs too.
+    """
+    type_filter = (extra or {}).get("type")
+    if response_type == "Issue":
+        if type_filter == "pulls":
+            label = "Pull Requests"
+        elif type_filter == "issues":
+            label = "Issues"
+        elif data and any(isinstance(item, dict) and item.get("pull_request") for item in data):
+            label = "Issues and Pull Requests"
+        else:
+            label = "Issues"
+    else:
+        label = _pluralize(response_type) if response_type else "Results"
+    return f"{label} - {count} items" if count else label
+
+
+def _pluralize(type_name: str) -> str:
+    """Pluralise a type name (``Issue`` -> ``Issues``, ``PullRequest`` -> ``Pull Requests``)."""
+    if type_name in _PLURAL_LABELS:
+        return _PLURAL_LABELS[type_name]
+    if type_name.endswith(("s", "x", "z", "ch", "sh")):
+        return f"{type_name}es"
+    if type_name.endswith("y") and len(type_name) > 1 and type_name[-2] not in "aeiou":
+        return f"{type_name[:-1]}ies"
+    return f"{type_name}s"
+
+
+def _item_title_key(properties: dict[str, Any], response_type: str | None = None) -> str | None:
+    """Pick the per-item title field from the schema's properties.
+
+    Type-aware so a repository list titles each item ``owner/repo``
+    (``full_name``) and a release list uses ``tag_name``.
+    """
+    for key in _title_keys(response_type):
+        if key in properties:
+            return key
+    return None
+
+
 def resolve_formatter(
     schema: dict[str, Any] | None,
     explicit: MarkdownFormatter | None = None,
     response_type: str | None = None,
+    *,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> MarkdownFormatter:
     """Return the formatter for a result: explicit, type-bound, or generic.
 
@@ -272,8 +647,11 @@ def resolve_formatter(
     1. ``explicit`` — an explicit per-result formatter (the resource
        surface's ``format_hint`` resolution).
     2. The type-bound domain formatter for ``response_type``
-       (:func:`_type_bound_formatter`) — the same view a resource
-       sibling renders, applied to autogen tools and un-hinted resources.
+       (:func:`_type_bound_formatter`) — a *bespoke* formatter registered
+       for a type (e.g. ``labels``).  When none is registered, the generic
+       schema-anchored collection view is used for list results
+       (:func:`_generic_collection_view`), so a tool and its resource
+       sibling render the same view without a hand-written per-type list.
     3. :func:`format_as_markdown`, with ``schema`` bound up front because
        ``call_markdown_formatter`` dispatches only ``extra`` (never
        ``schema`` or ``detail``).
@@ -287,6 +665,12 @@ def resolve_formatter(
     bound = _type_bound_formatter(response_type)
     if bound is not None:
         return bound
+    if response_type and openapi_spec is not None:
+        return functools.partial(
+            _generic_collection_view,
+            response_type=response_type,
+            openapi_spec=openapi_spec,
+        )
     return functools.partial(format_as_markdown, schema=schema)
 
 
@@ -665,7 +1049,7 @@ def _render_list_as_compact_ref(raw_val: list, template: str) -> str:
     return ", ".join(items)
 
 
-def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field_filter, allOf, anyOf, render hints
+def _format_dict_as_markdown(  # noqa: PLR0912, PLR0915 - justified: scalar/nested, field_filter, allOf, anyOf, render hints
     data: dict[str, Any],
     schema: dict[str, Any] | None = None,
     indent: str = "",
@@ -714,9 +1098,13 @@ def _format_dict_as_markdown(  # noqa: PLR0912 - justified: scalar/nested, field
                 flat.append((label, ref_marker_label(raw_val)))
                 continue
 
-            # Render hints override nesting — compact_ref and badge
-            # always produce flat table rows regardless of value type.
-            if render_hint == "compact_ref" and isinstance(raw_val, dict):
+            # Render hints override nesting — compact_ref, compact_identity,
+            # and badge always produce flat table rows regardless of value type.
+            if render_hint == "compact_identity" and isinstance(raw_val, dict):
+                flat.append((label, _identity(raw_val, field_opts.get("identity_key"))))
+            elif render_hint == "compact_identity" and isinstance(raw_val, list):
+                flat.append((label, _identity_list(raw_val, field_opts.get("identity_key"))))
+            elif render_hint == "compact_ref" and isinstance(raw_val, dict):
                 template = field_opts.get("template", "{id}")
                 try:
                     formatted = template.format(**raw_val)

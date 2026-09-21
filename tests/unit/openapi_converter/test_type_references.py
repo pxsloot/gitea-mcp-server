@@ -11,10 +11,10 @@ from typing import Any
 from gitea_mcp_server.openapi_converter.type_references import (
     _collect_refs,
     _collect_transitive_refs,
-    _primary_type,
-    _resolve_ref,
-    _success_schema,
+    primary_type,
+    resolve_ref,
     stamp_type_references,
+    success_schema,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -187,33 +187,33 @@ class TestStampTypeReferences:
 
 
 class TestSuccessSchema:
-    """Tests for _success_schema."""
+    """Tests for success_schema."""
 
     def test_returns_schema_with_ref_intact(self) -> None:
         """The raw response schema keeps its $ref (pre-wrap)."""
         spec = _make_spec()
-        schema = _success_schema(spec, "/repos/{owner}/{repo}/labels", "GET")
+        schema = success_schema(spec, "/repos/{owner}/{repo}/labels", "GET")
         assert schema == {"type": "array", "items": {"$ref": "#/components/schemas/Label"}}
 
     def test_missing_path_returns_none(self) -> None:
         spec = _make_spec()
-        assert _success_schema(spec, "/does/not/exist", "GET") is None
+        assert success_schema(spec, "/does/not/exist", "GET") is None
 
     def test_non_dict_path_item_returns_none(self) -> None:
         spec = make_openapi_spec(paths={"/weird": "not-a-dict"})
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_non_dict_operation_returns_none(self) -> None:
         spec = make_openapi_spec(paths={"/weird": {"get": "not-a-dict"}})
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_non_dict_response_returns_none(self) -> None:
         spec = make_openapi_spec(paths={"/weird": {"get": {"responses": {"200": "not-a-dict"}}}})
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_non_dict_responses_returns_none(self) -> None:
         spec = make_openapi_spec(paths={"/weird": {"get": {"responses": "not-a-dict"}}})
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_non_dict_json_content_returns_none(self) -> None:
         spec = make_openapi_spec(
@@ -230,7 +230,7 @@ class TestSuccessSchema:
                 }
             }
         )
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_unresolvable_response_ref_returns_none(self) -> None:
         """A response-level $ref that cannot be resolved returns None."""
@@ -241,7 +241,7 @@ class TestSuccessSchema:
                 }
             }
         )
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_non_dict_content_returns_none(self) -> None:
         spec = make_openapi_spec(
@@ -249,7 +249,7 @@ class TestSuccessSchema:
                 "/weird": {"get": {"responses": {"200": {"description": "ok", "content": "nope"}}}}
             }
         )
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
     def test_no_json_content_returns_none(self) -> None:
         spec = make_openapi_spec(
@@ -266,39 +266,39 @@ class TestSuccessSchema:
                 }
             }
         )
-        assert _success_schema(spec, "/weird", "GET") is None
+        assert success_schema(spec, "/weird", "GET") is None
 
 
 class TestPrimaryType:
-    """Tests for _primary_type."""
+    """Tests for primary_type."""
 
     def test_object_ref(self) -> None:
-        assert _primary_type({"$ref": "#/components/schemas/Label"}) == "Label"
+        assert primary_type({"$ref": "#/components/schemas/Label"}) == "Label"
 
     def test_array_ref(self) -> None:
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Label"}}
-        assert _primary_type(schema) == "Label"
+        assert primary_type(schema) == "Label"
 
     def test_array_without_ref_items(self) -> None:
         schema = {"type": "array", "items": {"type": "string"}}
-        assert _primary_type(schema) is None
+        assert primary_type(schema) is None
 
     def test_inline_object_no_ref(self) -> None:
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
-        assert _primary_type(schema) is None
+        assert primary_type(schema) is None
 
     def test_combinator_root_ref(self) -> None:
         """A root wrapped in a combinator resolves via the shared helper."""
         schema = {"allOf": [{"$ref": "#/components/schemas/Label"}]}
-        assert _primary_type(schema) == "Label"
+        assert primary_type(schema) == "Label"
 
     def test_array_combinator_item_ref(self) -> None:
         """An array whose items are combinator-wrapped resolves too."""
         schema = {"type": "array", "items": {"anyOf": [{"$ref": "#/components/schemas/Label"}]}}
-        assert _primary_type(schema) == "Label"
+        assert primary_type(schema) == "Label"
 
     def test_none_schema(self) -> None:
-        assert _primary_type(None) is None
+        assert primary_type(None) is None
 
 
 class TestCollectRefs:
@@ -343,18 +343,18 @@ class TestCollectRefs:
 
 
 class TestResolveRef:
-    """Tests for _resolve_ref."""
+    """Tests for resolve_ref."""
 
     def test_resolves_valid_ref(self) -> None:
         spec = _make_spec()
-        resolved = _resolve_ref(spec, "#/components/schemas/Label")
+        resolved = resolve_ref(spec, "#/components/schemas/Label")
         assert isinstance(resolved, dict)
         assert resolved["type"] == "object"
 
     def test_missing_segment_returns_none(self) -> None:
         spec = _make_spec()
-        assert _resolve_ref(spec, "#/components/schemas/Missing") is None
+        assert resolve_ref(spec, "#/components/schemas/Missing") is None
 
     def test_non_dict_result_returns_none(self) -> None:
         spec = make_openapi_spec(components={"schemas": {"X": "not-a-dict"}})
-        assert _resolve_ref(spec, "#/components/schemas/X") is None
+        assert resolve_ref(spec, "#/components/schemas/X") is None

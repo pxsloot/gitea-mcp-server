@@ -58,6 +58,8 @@ truth. Other mentions point here.
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
 | Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |
 | Markdown formatter contract (`MarkdownFormatter`) | `format.py` (source, canonical) + `ARCHITECTURE.md` (pipeline) + `DEVELOPMENT.md` (add-a-formatter how-to) |
+| Generic schema-anchored markdown view | `format.py` (`_generic_collection_view`, source) + `openapi_converter/display_hints.py` (curated hints) + `ARCHITECTURE.md` (design decision #18) |
+| Display-view hints (`x-mcp-view-omit` / `x-mcp-view-compact`) | `openapi_converter/display_hints.py` (source, canonical) + `ARCHITECTURE.md` (design decision #18) |
 | Agent-facing `$ref` marker shape | `gitea_mcp_server/marker.py` (source: `ref_marker`/`is_ref_marker`/`ref_marker_label`) + `ARCHITECTURE.md` (pipeline) |
 | Payload `$ref` chain resolution | `gitea_mcp_server/ref_resolver.py` (source: `resolve_ref_chain`) + `ARCHITECTURE.md` (module map) |
 | Cache invalidation / response cache | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #6) |

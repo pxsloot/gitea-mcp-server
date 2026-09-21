@@ -354,6 +354,8 @@ def _resolve_formatter(
     result: ExecutionResult,
     schema: dict[str, Any] | None,
     response_type: str | None = None,
+    *,
+    openapi_spec: OpenAPISpec | None = None,
 ) -> MarkdownFormatter:
     """Return the result's formatter, the type-bound domain formatter, or the
     schema-bound generic fallback.
@@ -366,10 +368,16 @@ def _resolve_formatter(
 
     The explicit tier is the ``ExecutionResult.markdown_formatter`` (the
     resource surface's ``format_hint`` resolution); the type-bound tier uses
-    ``response_type``; the pipeline is a single, uniform formatter call site.
+    ``response_type``; when no bespoke formatter is registered the format
+    layer derives the generic schema-anchored collection view from
+    *openapi_spec* (#771).  The pipeline is a single, uniform formatter call
+    site.
     """
     return resolve_formatter(
-        schema, explicit=result.markdown_formatter, response_type=response_type
+        schema,
+        explicit=result.markdown_formatter,
+        response_type=response_type,
+        openapi_spec=openapi_spec,
     )
 
 
@@ -440,7 +448,9 @@ def _format(  # noqa: PLR0913 - the pipeline is the single display path; every d
             # _resolve_formatter; the dispatch helper forwards only the
             # kwargs it declares, here ``extra`` (formatter context).
             text = call_markdown_formatter(
-                _resolve_formatter(result, schema, response_type=response_type),
+                _resolve_formatter(
+                    result, schema, response_type=response_type, openapi_spec=openapi_spec
+                ),
                 page_data,
                 extra=extra,
             )

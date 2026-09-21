@@ -18,6 +18,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 from tests.helpers.mcp_results import extract_text_content
+from tests.helpers.spec_fixtures import make_openapi_spec
 
 
 class TestContextMetaKeysPipeline:
@@ -272,33 +273,58 @@ class TestContextMetaKeysPipeline:
 
         The executor resolves the hint into a plain formatter and forwards
         the content meta as ``ExecutionResult.extra``; the pipeline binds
-        the two at the single call site (no executor-side closure).
+        the two at the single call site (no executor-side closure).  The
+        ``labels`` formatter is the bespoke one that consumes ``extra``.
         """
         from gitea_mcp_server.format import get_formatter
         from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 
-        data = [{"number": 1, "title": "Bug", "state": "open"}]
+        data = [{"id": 1, "name": "bug", "color": "ff0000"}]
         result = ExecutionResult(
             data=data,
             shape="object",
-            markdown_formatter=get_formatter("issues"),
-            extra={"type": "pulls"},
+            markdown_formatter=get_formatter("labels"),
+            extra={"owner": "o", "repo": "r"},
         )
         tool_result = render(result, fmt="markdown")
-        assert "Pull Requests - 1 items" in extract_text_content(tool_result.content)
+        assert "# Labels for o/r" in extract_text_content(tool_result.content)
 
     def test_resource_response_type_flows_through_pipeline(self) -> None:
         """A resource with no ``format_hint`` still gets the domain view.
 
         The factory stores the pre-wrap ``x-response-type`` in content meta;
         the executor surfaces it as ``ExecutionResult.response_type``; the
-        pipeline binds the type-bound formatter (tier 2).
+        pipeline derives the generic schema-anchored view (tier 2, #771).
         """
         from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 
+        spec = make_openapi_spec(
+            paths={
+                "/issues": {
+                    "get": {
+                        "x-response-type": "Issue",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "array",
+                                            "items": {"$ref": "#/components/schemas/Issue"},
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            },
+            components={
+                "schemas": {"Issue": {"type": "object", "properties": {"number": {}, "title": {}}}}
+            },
+        )
         data = [{"number": 1, "title": "Bug", "state": "open"}]
         result = ExecutionResult(data=data, shape="object", response_type="Issue")
-        tool_result = render(result, fmt="markdown")
+        tool_result = render(result, fmt="markdown", openapi_spec=spec)
         text = extract_text_content(tool_result.content)
         assert "Issues - 1 items" in text
         assert "| Title | Bug |" in text

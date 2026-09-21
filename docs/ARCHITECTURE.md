@@ -270,7 +270,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — stamps ``x-mcp-view-omit`` / ``x-mcp-view-compact`` / ``x-mcp-view-flag`` pre-wrap for the generic markdown view, validated against the schema) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -278,7 +278,7 @@ Agent reads a resource:
 | `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
 | `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
-| `format.py` | Schema-aware formatting shared by tools & resources; `MarkdownFormatter` (the canonical formatter contract) + `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) + the **formatter registry** (`register_formatter`/`get_formatter`/`get_formatter_for_type`) and `resolve_formatter` (the three-tier dispatch policy). Domain formatters register here; the result pipeline imports only this module (Result → Format → Display) |
+| `format.py` | Schema-aware formatting shared by tools & resources; `MarkdownFormatter` (the canonical formatter contract) + `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) + the **formatter registry** (`register_formatter`/`get_formatter`/`get_formatter_for_type`) and `resolve_formatter` (the three-tier dispatch policy) + the **generic schema-anchored collection view** (`_generic_collection_view`, #771). Domain formatters register here; the result pipeline imports only this module (Result → Format → Display) |
 | `tools/unified_search.py` | Unified search across tools, docs, and resources |
 
 ### Tool Customization Stack (applied in order)
@@ -363,6 +363,34 @@ the text is a rendering of the page data.  Empty/out-of-range pages emit
 "total_count": N}`` as JSON text.  No display logic lives in executors — no
 ``_formatted`` marker, no pagination or formatting in the execution path.
 
+**The markdown view is schema-anchored, not hand-written** (#771).  When a
+result carries a ``response_type`` and no bespoke formatter is registered for
+it, ``format.resolve_formatter`` returns the generic collection view
+(``format._generic_collection_view``): the bound type's schema properties, in
+declaration order, with scalars as table rows and **relations compacted to an
+identity**.  A relation is *derived from the schema* — a property whose schema
+references an object type (``$ref``, a combinator wrapping one, or an array of
+one), so a new or unknown type compacts its relations for free.  A combinator
+wrapping a scalar alias (``Issue.state`` → ``StateType``, a string) is not a
+relation.  A dict result (a single-resource read) renders the full payload
+dynamically.
+
+The only curated knowledge is the converter-stamped deficiency list —
+``x-mcp-view-omit`` (noise fields), ``x-mcp-view-compact`` (identity-field
+*overrides* for relations whose object has no conventional identity, e.g.
+``base`` → ``ref``), and ``x-mcp-view-flag`` (relations that are boolean
+flags, e.g. ``pull_request`` → ``Yes``/``No``), stamped pre-wrap by
+``openapi_converter/display_hints.py`` and validated against the schema (an
+unknown property or type is logged as an error, never a silent skip).  A new
+or renamed schema field therefore appears automatically, and a stale hint
+fails loudly at startup.  ``tools/display.py`` holds only the bespoke
+``labels`` view, which carries guidance the schema cannot express.
+
+The hints are indexed by response type once and stored **on the spec**
+(``x-mcp-hint-index``), so a render does not scan every operation and no
+module-global state is shared between specs.  (A follow-up moves the index to
+registration time — see the "Spec Conformance & Upstream Drift" milestone.)
+
 The contract transform is **server-level**: registered via
 ``mcp.add_transform()`` (first in the chain) so it can wrap tools from every
 provider.  Autogenerated tools are identified by the ``_WRAP_ME`` marker
@@ -412,7 +440,7 @@ from the parameter schema.
 | `resources/factory.py` | ``make_api_resource()`` factory with auto schema derivation and URI-template derivation (spec path + wildcard extension + query suffix) |
 | `resources/meta.py` | ``ResourceMeta`` dataclass, ``size_hint`` / ``default_detail`` auto-derivation |
 | `resources/surface.py` | Registered resource surface — the single source of truth for cache-invalidation targets and per-resource cache TTLs (populated by ``make_api_resource``, consumed by ``build_invalidation_map`` and the response-cache TTL resolver) |
-| `tools/display.py` | Domain-specific display formatter **plugins** — each a `format.MarkdownFormatter` (the contract is stated canonically in `format.py`); name-bound via `format_hint`, type-bound via `register_formatter(types=...)` for tool siblings (#760); dispatched via `call_markdown_formatter`.  Holds no registry state — the registry lives in `format.py`, and `server.py` (the composition root) imports this module for its registration side effect |
+| `tools/display.py` | Bespoke display formatter **plugins** — the one view the schema cannot express (`labels`, which carries accepted-format/validation guidance).  Every other agent-facing markdown view is derived from the response schema by the format layer's generic collection view (`format._generic_collection_view`, #771); the only curated knowledge is the converter-stamped deficiency list (`x-mcp-view-omit` / `x-mcp-view-compact` / `x-mcp-view-flag`, `openapi_converter/display_hints.py`).  Holds no registry state — the registry lives in `format.py`, and `server.py` (the composition root) imports this module for its registration side effect |
 | `tools/resource_display.py` | Resource content helpers — `extract_resource_content` (pull text from a `ResourceResult`) and a `clean_resource_uri` re-export.  The display pipeline lives in `tools/result_pipeline.py`; `read_resource` is an ordinary synthetic tool whose executor returns an `ExecutionResult` rendered by the single pipeline. |
 | `resources/scope.py` | Scope derivation for tools and resources |
 | `tools/mcp_tools.py` | ``list_resources`` / ``read_resource`` tools, tool schema resource |
@@ -953,6 +981,38 @@ from the parameter schema.
      response shapes that carry their meaning in the status code without
      ambiguity.  Only quirks that *mislead* — ambiguous booleans, sentence-
      word parameter names — are normalized.
+
+ 18. **Schema-anchored markdown views; view knowledge lives in the converter**
+     (#771) -- The agent-facing markdown *collection* view is derived from the
+     response schema, not from a hand-written per-type field list.  The
+     format layer's generic view (``format._generic_collection_view``) reads
+     the bound type's properties in declaration order, renders scalars as
+     table rows, and compacts **relations** to an identity (``login`` →
+     ``username`` → ``name`` → ``full_name`` → ``id``).  A relation is
+     derived from the schema — a property whose schema references an object
+     type (``$ref``, a combinator wrapping one, or an array of one) — so a
+     new or unknown type compacts its relations for free.  A combinator
+     wrapping a scalar alias (``Issue.state`` → ``StateType``, a string) is
+     not a relation.  A dict result (a single-resource read) renders the full
+     payload dynamically, so a detail read never drops a field.
+
+     A schema cannot express every presentation decision, so the residual
+     knowledge is stamped by the converter
+     (``openapi_converter/display_hints.py``) as operation-level
+     ``x-mcp-view-omit`` (noise fields), ``x-mcp-view-compact``
+     (identity-field *overrides* for relations whose object has no
+     conventional identity, e.g. ``base`` → ``ref``), and
+     ``x-mcp-view-flag`` (relations that are boolean flags, e.g.
+     ``pull_request`` → ``Yes``/``No``), keyed by type name.  This is the same principle as the
+     normalization rules: **fix the spec, keep the runtime generic**.  The
+     hints are validated against the schema at startup — an unknown property
+     or type is logged as an error, never a silent skip — so drift is loud
+     (the systemic replacement for the old per-whitelist drift guard).
+     ``tools/display.py`` holds only the bespoke ``labels`` view, which
+     carries guidance the schema cannot express.  The ``x-mcp-*`` hints are
+     stripped from the resolved agent-facing output schema
+     (``tools/schemas.deep_resolve_schema``), so they never leak into
+     ``tool_info``.
 
 ---
 ## Response Content-Type Handling

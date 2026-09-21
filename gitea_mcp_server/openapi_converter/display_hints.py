@@ -1,0 +1,321 @@
+"""Display-view hints for the generic markdown renderer (pre-wrap).
+
+The agent-facing markdown *collection* view is derived from the response
+schema: the bound type's properties, in declaration order, with scalars as
+table rows and ``$ref``-backed relations compacted to an identity.  That
+derivation is generic — it works for any type the spec defines, including
+types this server has never seen.
+
+A schema cannot express every presentation decision, though.  Some fields
+are noise in a list view (URLs, internal flags, nested trackers); some
+relations should compact to a specific identity rather than the generic
+one.  Those are *deficiencies of the spec*, and this module fixes them the
+same way the other converter rules fix swagger deficiencies: by stamping
+operation-level extensions, so the runtime stays generic.
+
+Three extensions are stamped on every operation whose success response has a
+primary type:
+
+* ``x-mcp-view-omit`` — property names to drop from the collection view.
+* ``x-mcp-view-compact`` — a mapping of property name to the identity field
+  to read from the nested object (``{"base": "ref"}``), or ``null`` for the
+  generic identity policy (``login`` → ``username`` → ``name`` →
+  ``full_name`` → ``id``).  A relation whose object has no identity field
+  must name one here, or it would render as a Python repr.
+* ``x-mcp-view-flag`` — property names to render as a boolean flag
+  (``Yes``/``No``).  A flag relation is not an identity: ``pull_request``
+  carries ``{draft, merged, html_url, merged_at}``, so the agent wants "is
+  this a PR?", not a compacted field.
+
+The hints are keyed by **type name**, not by operation: every operation
+returning ``Issue`` gets the same view, so a tool and its resource sibling
+can never disagree.  The runtime renderer reads the hints off the operation
+(``x-mcp-view-*``) and the properties off the type's schema.
+
+**Fail loud.**  Every hint is validated against the resolved type schema:
+an unknown property name, or a hint for a type the spec does not define, is
+logged as an error.  A stale hint is a bug, not a silent no-op — this is the
+systemic form of the drift guard the old hand-written whitelists lacked.
+
+The response-schema helpers (``success_schema`` / ``primary_type``) are
+shared with :mod:`~gitea_mcp_server.openapi_converter.type_references` — the
+same pre-wrap pass that stamps ``x-response-type`` — so the two can never
+disagree about an operation's primary type.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, cast
+
+from gitea_mcp_server.constants import HTTP_METHODS_ALL
+from gitea_mcp_server.openapi_converter.type_references import (
+    primary_type,
+    success_schema,
+)
+
+if TYPE_CHECKING:
+    from gitea_mcp_server.openapi_types import OpenAPISpec
+
+logger = logging.getLogger(__name__)
+
+# Operation-level extension keys.  ``x-mcp-`` marks them as our own metadata
+# (like ``x-response-type``), not a Gitea leak; they are stripped from the
+# agent-facing resolved output schema by ``tools/schemas.deep_resolve_schema``.
+VIEW_OMIT_KEY = "x-mcp-view-omit"
+VIEW_COMPACT_KEY = "x-mcp-view-compact"
+VIEW_FLAG_KEY = "x-mcp-view-flag"
+
+# ---------------------------------------------------------------------------
+# Curated hints — a deficiency list, not a view definition.
+#
+# Only fields the schema cannot express belong here.  The generic renderer
+# derives everything else from the type's properties, so a new or renamed
+# schema field appears automatically; a hint naming a field that no longer
+# exists fails loudly at startup.
+# ---------------------------------------------------------------------------
+
+#: Properties to drop from the collection view, keyed by type name.
+_VIEW_OMIT: dict[str, tuple[str, ...]] = {
+    "Issue": (
+        "assets",
+        "repository",
+        "url",
+        "original_author",
+        "original_author_id",
+        "pin_order",
+        "ref",
+        "body",
+    ),
+    "PullRequest": (
+        "url",
+        "diff_url",
+        "patch_url",
+        "merge_base",
+        "merge_commit_sha",
+        "merged_by",
+        "requested_reviewers",
+        "requested_reviewers_teams",
+        "pin_order",
+        "flow",
+        "body",
+    ),
+    "Repository": (
+        "url",
+        "clone_url",
+        "ssh_url",
+        "languages_url",
+        "link",
+        "parent",
+        "permissions",
+        "internal_tracker",
+        "external_tracker",
+        "external_wiki",
+        "repo_transfer",
+        "avatar_url",
+        "wiki_branch",
+        "mirror_interval",
+        "mirror_updated",
+        "original_url",
+        "object_format_name",
+        "default_allow_maintainer_edit",
+        "default_delete_branch_after_merge",
+        "default_merge_style",
+        "default_update_style",
+        "allow_fast_forward_only_merge",
+        "allow_merge_commits",
+        "allow_rebase",
+        "allow_rebase_explicit",
+        "allow_rebase_update",
+        "allow_squash_merge",
+        "ignore_whitespace_conflicts",
+        "globally_editable_wiki",
+        "has_actions",
+        "has_issues",
+        "has_packages",
+        "has_projects",
+        "has_pull_requests",
+        "has_releases",
+        "has_wiki",
+        "empty",
+        "template",
+        "internal",
+        "fork",
+        "archived_at",
+        "release_counter",
+        "watchers_count",
+    ),
+    "User": (
+        "id",
+        "login_name",
+        "source_id",
+        "language",
+        "last_login",
+        "prohibit_login",
+        "restricted",
+        "active",
+        "is_admin",
+        "starred_repos_count",
+        "avatar_url",
+    ),
+    "Organization": (
+        "id",
+        "avatar_url",
+        "repo_admin_change_team_access",
+    ),
+    "Release": (
+        "id",
+        "url",
+        "upload_url",
+        "tarball_url",
+        "zipball_url",
+        "archive_download_count",
+        "hide_archive_links",
+        "target_commitish",
+    ),
+}
+
+#: Properties to render as a compact identity, keyed by type name.
+#:
+#: The value is the identity field to read from the nested object (e.g.
+#: ``base`` → ``ref``), or ``None`` to use the generic identity policy
+#: (``login`` → ``username`` → ``name`` → ``full_name`` → ``id``).  A
+#: relation whose object has no identity field must name one here, or it
+#: would render as a Python repr.
+_VIEW_COMPACT: dict[str, dict[str, str | None]] = {
+    "Issue": {
+        "user": None,
+        "assignee": None,
+        "assignees": None,
+        "milestone": "title",
+        "labels": "name",
+    },
+    "PullRequest": {
+        "user": None,
+        "assignee": None,
+        "assignees": None,
+        "milestone": "title",
+        "base": "ref",
+        "head": "ref",
+        "labels": "name",
+    },
+    "Repository": {"owner": None},
+    "Release": {"author": None},
+}
+
+#: Properties to render as a boolean flag (``Yes``/``No``), keyed by type
+#: name.  A flag relation is not an identity — ``pull_request`` carries
+#: ``{draft, merged, html_url, merged_at}``, so compacting it to ``merged``
+#: would be semantically wrong; the agent wants "is this a PR?".
+_VIEW_FLAG: dict[str, tuple[str, ...]] = {
+    "Issue": ("pull_request",),
+}
+
+
+def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:
+    """Return the property names of a named component schema, or ``None``.
+
+    ``None`` means the type is not defined in the spec (or has no
+    ``properties``) — the caller reports it as a hint error.
+    """
+    components = spec.get("components", {})
+    schemas = components.get("schemas", {})
+    if not isinstance(schemas, dict):
+        return None
+    schema = schemas.get(type_name)
+    if not isinstance(schema, dict):
+        return None
+    props = schema.get("properties")
+    if not isinstance(props, dict):
+        return None
+    return set(props.keys())
+
+
+def _validate_hints(spec: OpenAPISpec) -> None:
+    """Validate every curated hint against the spec; log errors on drift.
+
+    An unknown property name or an undefined type is a bug in the curated
+    table — it is reported at ERROR level so it is loud at startup, never a
+    silent no-op.  This is the systemic replacement for the old per-whitelist
+    drift guard.
+    """
+    _validate_table(spec, _VIEW_OMIT, VIEW_OMIT_KEY)
+    _validate_table(spec, _VIEW_COMPACT, VIEW_COMPACT_KEY)
+    _validate_table(spec, _VIEW_FLAG, VIEW_FLAG_KEY)
+
+
+def _validate_table(
+    spec: OpenAPISpec,
+    table: dict[str, Any],
+    key: str,
+) -> None:
+    """Validate one curated hint table against the spec; log errors on drift."""
+    for type_name, hinted in table.items():
+        props = _type_properties(spec, type_name)
+        if props is None:
+            logger.error(
+                "Display hint for undefined type %r (%s) — the type is not in "
+                "the spec; remove or fix the hint",
+                type_name,
+                key,
+            )
+            continue
+        for prop in hinted:
+            if prop not in props:
+                logger.error(
+                    "Display hint %s names unknown property %r on type %r — "
+                    "the schema changed; fix the hint",
+                    key,
+                    prop,
+                    type_name,
+                )
+
+
+def stamp_display_hints(openapi_spec: OpenAPISpec) -> None:
+    """Stamp ``x-mcp-view-*`` hints on operations, keyed by response type.
+
+    For every operation whose success response has a primary type, the
+    curated omit/compact lists for that type are stamped onto the operation
+    (only when non-empty).  The runtime renderer reads them off the
+    operation; the properties themselves are read from the type's schema, so
+    the view stays schema-anchored.
+
+    Must run *before* ``_wrap_success_response_schemas`` — the wrapping
+    inlines the root ``$ref`` and erases the type name this function keys on.
+
+    Mutates ``openapi_spec`` in place.  Never raises: hint validation logs
+    errors, and a malformed operation is skipped.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (pre-wrap, ``$ref``
+            intact).  Mutated in place.
+    """
+    _validate_hints(openapi_spec)
+
+    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
+                continue
+            response_type = primary_type(success_schema(openapi_spec, path, method))
+            if not response_type:
+                continue
+            omitted = _VIEW_OMIT.get(response_type)
+            if omitted:
+                operation[VIEW_OMIT_KEY] = list(omitted)
+            compacted = _VIEW_COMPACT.get(response_type)
+            if compacted:
+                operation[VIEW_COMPACT_KEY] = dict(compacted)
+            flagged = _VIEW_FLAG.get(response_type)
+            if flagged:
+                operation[VIEW_FLAG_KEY] = list(flagged)
+
+
+__all__ = [
+    "VIEW_COMPACT_KEY",
+    "VIEW_FLAG_KEY",
+    "VIEW_OMIT_KEY",
+    "stamp_display_hints",
+]

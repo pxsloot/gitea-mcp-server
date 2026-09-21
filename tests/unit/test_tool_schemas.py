@@ -1162,14 +1162,8 @@ class TestDeepResolveSchema:
         assert resolved["properties"]["id"]["type"] == "integer"
         assert resolved["properties"]["login"]["type"] == "string"
 
-    def test_strips_x_mcp_display_hints(self) -> None:
-        """Our own ``x-mcp-*`` metadata never reaches the agent schema.
-
-        Since #775 the display-view hints travel in ``tool.meta`` /
-        resource content meta rather than as operation extensions, so this is
-        a defensive guard: any ``x-mcp-*`` key on a schema node is pipeline
-        metadata, not part of the agent-facing schema.
-        """
+    def test_resolved_schema_has_no_x_mcp_keys(self) -> None:
+        """Resolved schema nodes never carry ``x-mcp-*`` pipeline metadata."""
         from gitea_mcp_server.tools.schemas import deep_resolve_schema
 
         schema = {

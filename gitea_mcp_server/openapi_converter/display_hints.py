@@ -239,20 +239,19 @@ def _type_properties(spec: OpenAPISpec, type_name: str) -> set[str] | None:
 
 
 def validate_display_hints(openapi_spec: OpenAPISpec) -> None:
-    """Validate every curated hint against the spec; log errors on drift.
+    """Validate every curated hint against the component schemas.
 
-    The pre-wrap pass run once at conversion.  An unknown property name or an
-    undefined type is a bug in the curated table — it is reported at ERROR
-    level so it is loud at startup, never a silent no-op.  This is the
-    systemic replacement for the old per-whitelist drift guard.
+    An unknown property name or an undefined type is a bug in the curated
+    table — it is reported at ERROR level so it is loud at startup, never a
+    silent no-op.  This is the systemic replacement for the old per-whitelist
+    drift guard.
 
-    Must run *before* ``_wrap_success_response_schemas``: the wrapping inlines
-    the root ``$ref`` and erases the type name the curated tables are keyed
-    on.  Never raises: drift is logged, not thrown.
+    Reads ``components/schemas`` only; it does not depend on response
+    wrapping or on the operations that reference a type.  Never raises: drift
+    is logged, not thrown.
 
     Args:
-        openapi_spec: Post-conversion OpenAPI 3.1 spec (pre-wrap, ``$ref``
-            intact).  Not mutated.
+        openapi_spec: Post-conversion OpenAPI 3.1 spec.  Not mutated.
     """
     _validate_table(openapi_spec, _VIEW_OMIT, "omit")
     _validate_table(openapi_spec, _VIEW_COMPACT, "compact")

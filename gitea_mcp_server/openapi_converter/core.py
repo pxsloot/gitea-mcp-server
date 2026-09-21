@@ -990,12 +990,13 @@ def convert_swagger_to_openapi_v3(spec: SwaggerV2Spec) -> dict[str, Any]:
     # for cache invalidation.  Must run BEFORE _wrap_success_response_schemas:
     # the wrapping inlines top-level $refs, which would lose the type names.
     stamp_type_references(cast("OpenAPISpec", result))
-    # Validate the curated display-view hint tables against the schema.  Same
-    # pre-wrap requirement: the tables are keyed by the response type name,
-    # which wrapping erases.  The hints themselves are resolved per entity at
-    # registration (``display_hints.view_hints_for``), not stamped here.
-    validate_display_hints(cast("OpenAPISpec", result))
     _wrap_success_response_schemas(cast("OpenAPISpec", result))
+    # Validate the curated display-view hint tables against the component
+    # schemas.  Response wrapping does not modify ``components/schemas``, so
+    # this is independent of the wrapping step.  The hints themselves are
+    # resolved per entity at registration (``display_hints.view_hints_for``),
+    # not stamped here.
+    validate_display_hints(cast("OpenAPISpec", result))
 
     logger.info("OpenAPI conversion completed successfully")
     return result

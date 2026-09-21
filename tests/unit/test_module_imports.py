@@ -14,6 +14,7 @@ Reasons to keep this file:
 
 from __future__ import annotations
 
+import ast
 import importlib
 import subprocess
 import sys
@@ -213,6 +214,43 @@ class TestNoCircularImports:
             importlib.import_module(mod)
 
 
+_CONVERTER_PREFIX = "gitea_mcp_server.openapi_converter"
+
+
+def _import_from_targets(node: ast.ImportFrom, package: str) -> list[str]:
+    """Absolute module targets of an ``ImportFrom``, with relatives resolved.
+
+    ``package`` is the importing module's ``__package__`` (``gitea_mcp_server``
+    for ``format.py``).  Resolving ``node.level`` against it means
+    ``from .openapi_converter…`` and ``from . import openapi_converter`` are
+    caught, not only absolute imports.
+    """
+    module = node.module or ""
+    if node.level == 0:
+        # Absolute: also cover ``from pkg import sub``.
+        targets = [module] if module else []
+        targets.extend(f"{module}.{alias.name}" if module else alias.name for alias in node.names)
+        return targets
+    parts = package.split(".") if package else []
+    base_parts = parts[: len(parts) - (node.level - 1)] if node.level > 1 else parts
+    base = ".".join(base_parts)
+    if module:
+        return [f"{base}.{module}" if base else module]
+    # ``from . import name`` — each alias is a submodule.
+    return [f"{base}.{alias.name}" if base else alias.name for alias in node.names]
+
+
+def _converter_import_violations(source: str, package: str) -> list[str]:
+    """Return import targets in *source* that reach ``openapi_converter``."""
+    targets: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            targets.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            targets.extend(_import_from_targets(node, package))
+    return [target for target in targets if target.startswith(_CONVERTER_PREFIX)]
+
+
 class TestLayerDependencies:
     """The result pipeline must not depend on the domain formatter module.
 
@@ -282,31 +320,18 @@ class TestLayerDependencies:
     def test_format_carries_no_hint_index_or_converter_import(self) -> None:
         """The display layer carries hints as data, never derived from the spec.
 
-        #775 moved the hint index to registration: ``format`` has no hint
-        lookup, no spec mutation, and no direct ``openapi_converter`` import.
-
-        A module-level ``sys.modules`` guard is deliberately *not* used here —
-        ``format`` reaches the converter transitively via ``ref_resolver``, so
-        such a guard would be false.  This locks the direct act (an AST scan),
-        not the transitive graph.
+        ``format`` has no hint lookup, no spec mutation, and no direct
+        ``openapi_converter`` import.  A ``sys.modules`` guard is deliberately
+        not used: ``format`` reaches the converter transitively through
+        ``ref_resolver``, so only the direct import is meaningful to lock.
         """
-        import ast
         import inspect
 
         from gitea_mcp_server import format as format_module
 
         source = inspect.getsource(format_module)
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                assert not (node.module or "").startswith("gitea_mcp_server.openapi_converter"), (
-                    f"format.py must not import openapi_converter (line {node.lineno})"
-                )
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert not alias.name.startswith("gitea_mcp_server.openapi_converter"), (
-                        f"format.py must not import openapi_converter (line {node.lineno})"
-                    )
+        package = format_module.__package__ or ""
+        assert _converter_import_violations(source, package) == []
 
         for symbol in (
             "_hint_index",
@@ -316,3 +341,17 @@ class TestLayerDependencies:
             "x-mcp-hint-index",
         ):
             assert symbol not in source, f"format.py still references {symbol!r}"
+
+    def test_converter_import_guard_catches_relative_imports(self) -> None:
+        """The layering guard resolves relatives, so ``.openapi_converter`` can't slip through."""
+        package = "gitea_mcp_server"
+        for source in (
+            "from .openapi_converter.display_hints import view_hints_for",
+            "from .openapi_converter import display_hints",
+            "from . import openapi_converter",
+            "from gitea_mcp_server import openapi_converter",
+            "import gitea_mcp_server.openapi_converter.core",
+        ):
+            assert _converter_import_violations(source, package), source
+
+        assert _converter_import_violations("from gitea_mcp_server import models", package) == []

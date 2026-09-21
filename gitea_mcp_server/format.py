@@ -439,9 +439,10 @@ def _generic_collection_view(
     behavior.
 
     *view_hints* is the registration-resolved :class:`ViewHints` for
-    *response_type* (or ``None`` for an un-curated type); it is required so a
-    wiring omission fails loudly instead of silently rendering without the
-    curated deficiencies.
+    *response_type*, or ``None`` for a type with no curated deficiency.  The
+    parameter is keyword-only and required so each direct call site makes an
+    explicit decision; the result pipeline passes ``None`` when an entity
+    registered no hints, which renders the plain schema-derived view.
 
     *extra* carries the call context (``type`` for the issue/pull title);
     the formatter declares it so ``call_markdown_formatter`` forwards it.

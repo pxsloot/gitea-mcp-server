@@ -586,7 +586,7 @@ manual ``get_success_schema`` / ``unwrap_result_schema`` boilerplate.
    view needs knowledge the schema cannot express (the `labels` formatter
    carries accepted-format and validation guidance).
 
-   **Curating the generic view.**  Only two things need curating, both in
+   **Curating the generic view.**  Only three things need curating, all in
    `openapi_converter/display_hints.py` (keyed by type name):
 
    - `_VIEW_OMIT` — fields that are noise in a list view (URLs, internal

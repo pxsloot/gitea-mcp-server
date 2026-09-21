@@ -114,8 +114,9 @@ def _render(
 ) -> str:
     """Call the generic view with the hints registration would pass.
 
-    ``view_hints`` is required on ``_generic_collection_view`` so a wiring
-    omission fails loudly; this helper is the test call site that supplies it.
+    ``view_hints`` is keyword-only and required on ``_generic_collection_view``
+    so each direct call site decides explicitly; this helper supplies it
+    (``None`` when the case has no curated deficiency).
     """
     hints = _hints(omit=omit, compact=compact, flag=flag) if (omit or compact or flag) else None
     return _generic_collection_view(

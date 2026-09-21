@@ -48,6 +48,23 @@ def _list_op(op_id: str, ref: str) -> dict[str, Any]:
     }
 
 
+def _x_mcp_keys(node: Any, path: str = "") -> list[str]:
+    """Dotted paths of every ``x-mcp-*`` key in a spec tree."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if not isinstance(key, str):
+                continue
+            child = f"{path}.{key}" if path else key
+            if key.startswith("x-mcp-"):
+                found.append(child)
+            found.extend(_x_mcp_keys(value, child))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found.extend(_x_mcp_keys(value, f"{path}[{index}]"))
+    return found
+
+
 class TestPrimaryType:
     def test_array_element_type(self) -> None:
         schema = {"type": "array", "items": {"$ref": "#/components/schemas/Issue"}}
@@ -269,6 +286,18 @@ class TestValidateHints:
             validate_display_hints(spec)
         errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
         assert errors == [], [r.getMessage() for r in errors]
+
+    def test_converted_spec_has_no_x_mcp_extensions(
+        self, swagger_spec_fixture: dict[str, Any]
+    ) -> None:
+        """The converted spec carries no ``x-mcp-*`` extensions."""
+        from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
+
+        spec = cast(
+            "OpenAPISpec",
+            convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", swagger_spec_fixture)),
+        )
+        assert _x_mcp_keys(spec) == []
 
     def test_clean_spec_no_errors(self, caplog: pytest.LogCaptureFixture) -> None:
         spec = self._full_spec()

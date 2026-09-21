@@ -14,13 +14,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
+from unittest.mock import MagicMock
 
 import pytest
+from fastmcp.server.providers.openapi import OpenAPITool
 
+from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.format import _generic_collection_view
 from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
 from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
+from gitea_mcp_server.server_setup.mcp_builder import _customize_metadata
+from gitea_mcp_server.tools.schemas import get_success_schema
 
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
@@ -362,3 +368,63 @@ class TestRelationDerivation:
         """
         out = _render([_ISSUE], "Issue", real_spec)
         assert "| State | open |" in out
+
+
+def _repository_list_operation(spec: OpenAPISpec) -> tuple[str, str] | None:
+    """Path and lower-case method of a Repository array-response operation."""
+    paths: dict[str, Any] = cast("dict[str, Any]", spec.get("paths", {}))
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS_ALL or not isinstance(operation, dict):
+                continue
+            if operation.get("x-response-type") != "Repository":
+                continue
+            # The response may be a response-level ``$ref``, and the resolved
+            # schema carries the pipeline's ``{"result": ...}`` wrapper.
+            schema = get_success_schema(spec, path, method, resolve=False)
+            if not isinstance(schema, dict):
+                continue
+            result = schema.get("properties", {}).get("result")
+            if schema.get("type") == "array" or (
+                isinstance(result, dict) and result.get("type") == "array"
+            ):
+                return path, method
+    return None
+
+
+class TestRegisteredEntityRendering:
+    """A registered entity's resolved ``view_hints`` reach the rendered view."""
+
+    def test_repository_list_registration_reaches_render(self, real_spec: OpenAPISpec) -> None:
+        found = _repository_list_operation(real_spec)
+        assert found is not None, "no Repository array operation in the real spec"
+        path, method = found
+        route = SimpleNamespace(
+            path=path,
+            method=method.upper(),
+            summary="list repositories",
+            operation_id="list_repos",
+        )
+        component = MagicMock(spec=OpenAPITool)
+        component.name = "list_repos"
+        component.annotations = None
+        component.tags = set()
+        component.description = ""
+        component.parameters = {"properties": {}}
+        component.output_schema = None
+        component.meta = {}
+
+        _customize_metadata(route, component, openapi_spec=real_spec)
+
+        hints = component.meta["view_hints"]
+        assert hints == view_hints_for("Repository")
+        rendered = _generic_collection_view(
+            [_REPO],
+            response_type="Repository",
+            openapi_spec=real_spec,
+            view_hints=hints,
+        )
+        assert "| Owner | mcp-server |" in rendered
+        assert "clone_url" not in rendered.lower()

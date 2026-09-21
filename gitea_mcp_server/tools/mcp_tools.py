@@ -395,12 +395,12 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
 
     - Templates require parameter substitution before calling `read_resource`
     - Check the `tags` field to understand resource categories:
-      - `wrapper`: User-friendly content (raw JSON with display metadata; rendered as Markdown by default via the display pipeline)
+      - `wrapper`: User-friendly content (raw JSON with display metadata; rendered through the display pipeline)
       - `raw`: Raw JSON from API
       - `api`: Auto-generated from OpenAPI spec
     - The `mimeType` reflects the stored content type (``application/json`` for
       wrapper resources, ``text/plain`` for raw text).  Use the ``format`` parameter
-      to control display format — ``format=markdown`` (default) renders JSON data
+      to control display format — ``format=markdown`` renders JSON data
       through the display pipeline, ``format=json`` returns the raw JSON,
       ``format=raw`` bypasses all formatting.
     - The `required_scope` field tells you what Gitea token scope is needed:
@@ -411,7 +411,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
       (e.g., ``pulls``, ``issues``), pass ``detail="concise"`` to save tokens.
     - The `default_detail` field recommends a detail level. Respect it unless
       you specifically need full expansion.
-    - Use the `format` parameter to control output: ``format=markdown`` (default),
+    - Use the `format` parameter to control output: ``format=markdown``,
       ``format=json``, or ``format=raw``.
 
     Returns:
@@ -510,7 +510,7 @@ async def _read_resource_tool(
     ## Parameter: format
 
     Output format:
-    - ``markdown`` (default): schema-aware Markdown with tables and sections (for JSON resources).
+    - ``markdown``: schema-aware Markdown with tables and sections (for JSON resources).
       Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
     - ``raw``: the executor-produced data serialized as the ``{"result": ...}``
       envelope — the same deterministic raw contract as every tool.  Base64

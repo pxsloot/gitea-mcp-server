@@ -13,7 +13,7 @@ what errors look like.
 
 ## Reading vs extracting
 
-`format` picks the shape of the result. The default is `markdown`.
+`format` picks the shape of the result. The server sets the default.
 
 - `markdown` — read. It shows the key fields of each item, not every field, and
   collection views are more compact than single-item views.

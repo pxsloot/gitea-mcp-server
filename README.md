@@ -66,6 +66,7 @@ gitea-mcp
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `TRANSPORT_TYPE` | `stdio` | `stdio` or `http` |
 | `TOOL_PREFIX` | `gitea_` | Prefix for all tool names |
+| `DEFAULT_RESPONSE_FORMAT` | `markdown` | Default `format` for tool/resource output: `markdown`, `json`, or `raw` |
 
 HTTP transport settings (`TRANSPORT_TYPE=http`):
 - `HTTP_HOST` — default `127.0.0.1` (set `HTTP_HOST=0.0.0.0` for remote access)

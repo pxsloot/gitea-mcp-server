@@ -1137,6 +1137,43 @@ class TestServerEdgeCases:
             "Increase the budget deliberately, not by trimming."
         )
 
+    def test_agent_surfaces_do_not_hardcode_format_default(self) -> None:
+        """No agent-facing surface pins a fixed ``format`` default (#781).
+
+        The default is server config (``DEFAULT_RESPONSE_FORMAT``); the tool
+        schema carries the per-tool truth.  Prose that pins a format becomes a
+        lie on a server configured differently.  Guards the injected
+        instructions, the ``tool-output-format`` guide, and the synthetic
+        ``read_resource``/``list_resources`` descriptions.
+        """
+        import inspect
+        import re
+
+        from gitea_mcp_server.tools.docs_tools import DocManager
+        from gitea_mcp_server.tools.mcp_tools import _list_resources_tool, _read_resource_tool
+
+        guide = DocManager().get("tool-output-format")
+        assert guide is not None, "tool-output-format guide is missing"
+
+        # "markdown default", "default is markdown", "``markdown`` (default)".
+        default_claim = re.compile(
+            r"(?:markdown|json|raw)`*\s*(?:\(default\)|default)"
+            r"|default\s+is\s+`*(?:markdown|json|raw)",
+            re.IGNORECASE,
+        )
+        surfaces = {
+            "injected instructions": _served_instructions(),
+            "tool-output-format guide": guide.full_content,
+            "list_resources description": inspect.getdoc(_list_resources_tool) or "",
+            "read_resource description": inspect.getdoc(_read_resource_tool) or "",
+        }
+        for label, text in surfaces.items():
+            match = default_claim.search(text)
+            assert match is None, (
+                f"{label} pins a format default ({match.group(0)!r}); point at the "
+                "tool schema instead — the default is server config."
+            )
+
     @pytest.mark.asyncio
     async def test_tool_output_format_guide_pointer(self) -> None:
         """The injected doc points to read_doc("tool-output-format"); it must exist.

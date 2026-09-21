@@ -49,6 +49,42 @@ doc, follow full workflow.**
 
 ---
 
+## Invariants are executable, not prose
+
+When you state an invariant — in a design note, a docstring, a comment — turn
+it into a check **before** you write the code. A comment does not fail; a test
+does.
+
+- "Relations are derived, not curated" → a test that fails if a relation
+  appears in a curated table.
+- "No shared mutable state between specs" → a test that builds two specs and
+  asserts isolation.
+- "The output schema never leaks `x-mcp-*`" → a test that asserts the strip.
+
+This is not ceremony. The recurring failure mode is stating the correct
+principle and then violating it in the implementation — the comment becomes
+the false assumption. If you cannot express the invariant as a check, you do
+not yet understand it well enough to rely on it.
+
+## Split at round two
+
+A PR that needs a third review round is telling you something: it is still
+surfacing structural decisions, not bugs. At that point, **stop iterating and
+split the remaining work** into its own issue/PR.
+
+- Round 1 finds output bugs. Fix them.
+- Round 2 finds architecture issues. Fix them, and watch for a third.
+- Round 3 means the design is still being discovered. Split it.
+
+Distinguish a **bug** (fix it) from a **missing concept** (the design is
+incomplete — pause and split). A finding that adds a new kind of thing (e.g.
+"a flag is not an identity") is a missing concept, not a bug.
+
+Large PRs are reviewed serially by layer, not in one pass: a reviewer holds
+one layer's invariants at a time. Split by layer, not by size.
+
+---
+
 ## Verification Checklist (before PR)
 
 - [ ] Branch created from latest `main`

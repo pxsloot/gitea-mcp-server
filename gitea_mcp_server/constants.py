@@ -27,10 +27,10 @@ accepted everywhere at once."""
 DEFAULT_DETAIL = "full"
 """Canonical ``detail`` default for the tool surface.
 
-The ``detail`` virtual-param registry entry, the result pipeline's
-``render`` signature, and ``DETAIL_PARAM_SCHEMA`` all read this value.
-``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to ``"concise"``
-for introspection tools, and resource ``default_detail``
+The ``detail`` virtual-param registry entry, ``format.collapse_data`` and the
+result pipeline's ``render`` signatures, and ``DETAIL_PARAM_SCHEMA`` all read
+this value.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to
+``"concise"`` for introspection tools, and resource ``default_detail``
 (``resources/meta.py``) is a separate concern.  Unlike ``format``, ``detail``
 is static (not server config), so it is not threaded from ``Config``."""
 

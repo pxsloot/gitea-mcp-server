@@ -400,13 +400,13 @@ the result pipeline — no display logic lives in the registry.
 
     ``format``'s default is the server-wide ``response_format`` config — the
     single source.  The VirtualParam registry entry carries **no** static
-    default (``default=None``); callers pass the live config value via
-    ``default_overrides`` on :func:`inject_into`, and the same value is
-    threaded into the contract spine as ``default_format``.  A param with no
-    registry default and no override is injected without a ``default`` key
-    rather than silently inheriting a literal.  ``detail`` is static, so its
-    default is a shared constant (``constants.DEFAULT_DETAIL``) rather than
-    config.
+    default (the module-private ``_NO_DEFAULT`` sentinel); callers pass the
+    live config value via ``default_overrides`` on :func:`inject_into`, and the
+    same value is threaded into the contract spine as ``default_format``.  A
+    param with no registry default and no override is injected without a
+    ``default`` key rather than silently inheriting a literal.  ``detail`` is
+    static, so its default is a shared constant (``constants.DEFAULT_DETAIL``)
+    rather than config.
 
 ### 6. Add a tool-specific parameter
 

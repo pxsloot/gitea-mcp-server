@@ -369,6 +369,19 @@ class TestSudoHooks:
         assert vp.schema == {"type": "string", "minLength": 1}
         assert vp.default is None
 
+    def test_sudo_injected_schema_keeps_null_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The real sudo entry injects ``"default": null``, not a missing key.
+
+        ``None`` is sudo's legitimate null default; only the ``_NO_DEFAULT``
+        sentinel (``format``) omits the ``default`` key (#785 review F4).
+        """
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        monkeypatch.setattr(_VIRTUAL_PARAMS["sudo"], "visible", True)
+        params: dict = {}
+        inject_into(params, only={"sudo"})
+        assert params["properties"]["sudo"]["default"] is None
+
 
 # ---------------------------------------------------------------------------
 # sudo - scope-gated visibility

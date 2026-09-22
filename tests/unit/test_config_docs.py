@@ -41,11 +41,18 @@ def test_every_config_field_documented_in_env_example() -> None:
 
 
 def test_config_protocol_mirrors_config_fields() -> None:
-    """``ConfigProtocol`` is a manual mirror; it must not drift from Config."""
-    protocol_fields = set(ConfigProtocol.__annotations__)
-    config_fields = set(Config.model_fields)
-    assert protocol_fields == config_fields, (
-        f"ConfigProtocol/Config drift — only in protocol: "
-        f"{sorted(protocol_fields - config_fields)}; only in Config: "
-        f"{sorted(config_fields - protocol_fields)}"
-    )
+    """``ConfigProtocol`` is a manual mirror; names *and* types must not drift."""
+    protocol = dict(ConfigProtocol.__annotations__)
+    config = {name: field.annotation for name, field in Config.model_fields.items()}
+
+    only_protocol = sorted(set(protocol) - set(config))
+    only_config = sorted(set(config) - set(protocol))
+    assert not only_protocol, f"ConfigProtocol fields absent from Config: {only_protocol}"
+    assert not only_config, f"Config fields absent from ConfigProtocol: {only_config}"
+
+    type_drift = {
+        name: {"config": config[name], "protocol": protocol[name]}
+        for name in config
+        if config[name] != protocol[name]
+    }
+    assert not type_drift, f"ConfigProtocol/Config type drift: {type_drift}"

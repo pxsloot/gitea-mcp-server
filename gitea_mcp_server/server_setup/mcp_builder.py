@@ -758,9 +758,9 @@ class _ToolWrappingTransform(Transform):
         families from a single source of truth.
 
         ``format``'s default is dynamic — it comes from server config, not the
-        registry (whose ``format`` entry has ``default=None``).  Passed via
-        ``default_overrides``, resolved per injected param so a real API
-        parameter named ``format`` is never touched.
+        registry (whose ``format`` entry uses the ``_NO_DEFAULT`` sentinel).
+        Passed via ``default_overrides``, resolved per injected param so a real
+        API parameter named ``format`` is never touched.
 
         Autogen tools (no explicit allowlist) get the actually-injected set
         stamped into ``tool.meta["_virtual_params"]`` so extraction matches

@@ -723,7 +723,7 @@ class _ToolWrappingTransform(Transform):
     def __init__(
         self,
         openapi_spec: OpenAPISpec,
-        response_format: str = "markdown",
+        response_format: str,
         synthetic_executors: SyntheticExecutorRegistry | None = None,
     ) -> None:
         self._openapi_spec = openapi_spec
@@ -757,9 +757,10 @@ class _ToolWrappingTransform(Transform):
         so the registry drives the agent-facing param surface for both
         families from a single source of truth.
 
-        ``format``'s default is dynamic — it comes from server config,
-        not the registry.  Passed via ``default_overrides`` so the
-        VirtualParam's ``.default`` stays accurate for the injection site.
+        ``format``'s default is dynamic — it comes from server config, not the
+        registry (whose ``format`` entry has ``default=None``).  Passed via
+        ``default_overrides``, resolved per injected param so a real API
+        parameter named ``format`` is never touched.
 
         Autogen tools (no explicit allowlist) get the actually-injected set
         stamped into ``tool.meta["_virtual_params"]`` so extraction matches
@@ -838,8 +839,16 @@ class _ToolWrappingTransform(Transform):
             executor = self._wrap_synthetic_executor(tool, executor)
         # The spec flows to the display pipeline (root-list item summaries
         # under detail=concise, #759) — both tool families are wrapped here,
-        # so this single call covers autogen and synthetic tools alike.
-        return build_transform_fn(tool, executor, openapi_spec=self._openapi_spec)
+        # so this single call covers autogen and synthetic tools alike.  The
+        # configured response format flows in as the spine's default, the
+        # same value injected into every tool schema above — one source, no
+        # literal fallback in the spine.
+        return build_transform_fn(
+            tool,
+            executor,
+            openapi_spec=self._openapi_spec,
+            default_format=self._response_format,
+        )
 
     def _wrap_synthetic_executor(
         self,

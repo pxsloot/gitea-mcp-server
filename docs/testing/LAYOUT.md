@@ -166,6 +166,7 @@ across the entire module tree:
 |---|---|---|
 | `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. **Must be updated** when a new module is added to any subpackage — add its dotted name to ``ALL_MODULES``. | #552 |
 | `tests/unit/test_spec_fixture_convention.py` | No test builds a spec as an inline dict literal — annotated or passed as `openapi_spec=`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
+| `tests/unit/test_config_docs.py` | Every `Config` field is documented in `README.md` and `.env.example`; `ConfigProtocol` mirrors `Config`. | #785 |
 
 ## Test Data and Fixtures
 

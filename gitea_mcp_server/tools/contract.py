@@ -62,7 +62,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
-from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
+from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE
 from gitea_mcp_server.context_utils import resolve_current_context
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from gitea_mcp_server.tools.virtual_params import apply_pre_hooks, apply_to, extract_from
@@ -118,6 +118,7 @@ def build_transform_fn(
     executor: Executor,
     *,
     openapi_spec: OpenAPISpec | None = None,
+    default_format: str,
 ) -> Callable[..., Any]:
     """Build the per-call :func:`transform_fn` closure for a tool.
 
@@ -133,6 +134,14 @@ def build_transform_fn(
     stored in ``tool.meta`` (meta is serialized with the tool; the full spec
     would bloat every ``list_tools`` response).
 
+    ``default_format`` is the live server default (``Config.response_format``),
+    captured by the closure.  It is required — not defaulted to a literal —
+    so the configured value is the single source of the ``format`` default:
+    the same value is injected into every tool schema by
+    ``_ToolWrappingTransform`` and used here as the spine's fallback when the
+    extracted ``format`` is absent.  ``detail`` is static and comes from
+    :data:`~gitea_mcp_server.constants.DEFAULT_DETAIL`.
+
     Args:
         tool: The ``Tool`` being wrapped.  ``tool.meta["output_schema_raw"]``
             is attached to the extracted dict as ``_raw_schema`` so the
@@ -147,6 +156,9 @@ def build_transform_fn(
         openapi_spec: Post-conversion OpenAPI 3.1 spec (or ``None``), captured
             by the closure and forwarded to :func:`render` so
             ``detail="concise"`` can summarize root-list items (#759).
+        default_format: The live configured default response format
+            (``Config.response_format``) — the single source of the
+            ``format`` default.
 
     Returns:
         The ``transform_fn`` callable to attach via
@@ -209,8 +221,8 @@ def build_transform_fn(
         return apply_to(
             render(
                 result,
-                fmt=virtual_values.get("format", "markdown"),
-                detail=virtual_values.get("detail", "full"),
+                fmt=virtual_values.get("format") or default_format,
+                detail=virtual_values.get("detail") or DEFAULT_DETAIL,
                 page=page,
                 limit=limit,
                 fetch_all=virtual_values.get("fetch_all", False),

@@ -66,6 +66,9 @@ gitea-mcp
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `TRANSPORT_TYPE` | `stdio` | `stdio` or `http` |
 | `TOOL_PREFIX` | `gitea_` | Prefix for all tool names |
+| `TOOL_FILTERING_ENABLED` | `true` | Hide tools the token's scopes cannot use |
+| `ENABLE_LAZY_LOADING` | `true` | Hide tools from `list_tools`; discover them via `search_tools` |
+| `EXCLUDE_CONFIG_PATH` | -- | YAML file with tool/resource exclude/include patterns |
 | `DEFAULT_RESPONSE_FORMAT` | `markdown` | Default `format` for tool/resource output: `markdown`, `json`, or `raw` |
 
 HTTP transport settings (`TRANSPORT_TYPE=http`):

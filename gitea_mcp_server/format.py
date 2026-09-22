@@ -60,6 +60,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from gitea_mcp_server.constants import DEFAULT_DETAIL
 from gitea_mcp_server.marker import is_ref_marker, ref_marker, ref_marker_label
 from gitea_mcp_server.ref_resolver import resolve_ref_chain
 from gitea_mcp_server.schema_utils import (
@@ -764,7 +765,7 @@ def _extract_type_name(schema: dict[str, Any] | None) -> str | None:
 def collapse_data(
     data: Any,
     schema: dict[str, Any] | None = None,
-    detail: str = "full",
+    detail: str = DEFAULT_DETAIL,
     *,
     openapi_spec: OpenAPISpec | None = None,
 ) -> Any:

@@ -519,6 +519,7 @@ class TestPaginationMetadata:
     def _make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
 
     def _make_tool(
@@ -808,6 +809,7 @@ class TestCustomizeComponentTextResponse:
 
         transform = _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
 
         tool = Tool(
@@ -857,6 +859,7 @@ class TestCustomizeComponentTextResponse:
 
         transform = _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
 
         tool = Tool(

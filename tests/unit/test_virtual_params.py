@@ -188,6 +188,61 @@ class TestInjectInto:
         assert injected == {"format"}
         assert "fetch_all" not in params["properties"]
 
+    def test_default_override_does_not_touch_real_api_param(self) -> None:
+        """A real API parameter named ``format`` keeps its schema and default.
+
+        ``inject_into`` never shadows a real parameter (``only=None``) and the
+        default override is resolved per *injected* param — so a real
+        ``format`` query/body parameter is never hijacked to the server's
+        response-format default (#785).
+        """
+        real_format = {"type": "string", "default": "tar.gz"}
+        params: dict = {"properties": {"format": real_format}}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"format": _FORMAT_VP},
+            clear=True,
+        ):
+            injected = inject_into(params, default_overrides={"format": "json"})
+        assert injected == set()
+        assert params["properties"]["format"] == real_format
+
+    def test_format_injected_without_static_default(self) -> None:
+        """The registry does not fabricate a ``format`` default.
+
+        ``format``'s default is server config, supplied by the caller via
+        ``default_overrides``.  Without an override no ``default`` key is
+        written — the spine supplies the configured value (#785).
+        """
+        params: dict = {}
+        inject_into(params, only={"format"})
+        fmt = params["properties"]["format"]
+        assert "default" not in fmt
+        assert fmt["enum"] == ["json", "markdown", "raw"]
+
+    def test_default_override_sets_injected_format_default(self) -> None:
+        """A supplied override becomes the injected ``format`` default."""
+        params: dict = {}
+        inject_into(params, only={"format"}, default_overrides={"format": "json"})
+        assert params["properties"]["format"]["default"] == "json"
+
+    def test_none_default_is_written_as_null(self) -> None:
+        """``default=None`` is a real null default, not "no default".
+
+        Only the ``_NO_DEFAULT`` sentinel omits the ``default`` key; a
+        ``None`` default (e.g. ``sudo``) is written as JSON null so the
+        schema keeps advertising it (#785 review F1).
+        """
+        null_default = VirtualParam(schema={"type": "string"}, default=None, description="")
+        params: dict = {}
+        with patch.dict(
+            "gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS",
+            {"sudo_like": null_default},
+            clear=True,
+        ):
+            inject_into(params)
+        assert params["properties"]["sudo_like"]["default"] is None
+
 
 # ---------------------------------------------------------------------------
 # apply_pre_hooks
@@ -313,6 +368,19 @@ class TestSudoHooks:
         assert vp.post_hook is not None
         assert vp.schema == {"type": "string", "minLength": 1}
         assert vp.default is None
+
+    def test_sudo_injected_schema_keeps_null_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The real sudo entry injects ``"default": null``, not a missing key.
+
+        ``None`` is sudo's legitimate null default; only the ``_NO_DEFAULT``
+        sentinel (``format``) omits the ``default`` key (#785 review F4).
+        """
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        monkeypatch.setattr(_VIRTUAL_PARAMS["sudo"], "visible", True)
+        params: dict = {}
+        inject_into(params, only={"sudo"})
+        assert params["properties"]["sudo"]["default"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +676,7 @@ class TestWrapIntegration:
 
         transform = _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
         tool = self._make_tool()
         [wrapped] = await transform.list_tools([tool])
@@ -625,6 +694,7 @@ class TestWrapIntegration:
 
         transform = _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
         tool = self._make_tool()
 
@@ -656,6 +726,7 @@ class TestWrapIntegration:
 
         transform = _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
         )
         tool = self._make_tool()
 

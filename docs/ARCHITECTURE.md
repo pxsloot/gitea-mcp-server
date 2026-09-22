@@ -287,7 +287,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 
 | Module | One-line role |
 |--------|---------------|
-| `tools/contract.py` | Generic agent-facing contract spine — ``build_transform_fn(tool, executor)``, shared by autogen and synthetic tools |
+| `tools/contract.py` | Generic agent-facing contract spine — ``build_transform_fn(tool, executor, default_format=...)``, shared by autogen and synthetic tools |
 | `tools/result_pipeline.py` | Single result pipeline — ``ExecutionResult`` (raw executor output) + ``render()`` (shape → paginate → format → ToolResult); the single writer of both channels |
 | `tools/customize.py` | title/category, hint inference, annotation prep |
 | `tools/schemas.py` | ``derive_output_schema``, ``$ref`` resolution, response classification |
@@ -321,7 +321,7 @@ The customization layers as applied during server startup:
 | 9. Unified search | `tools/unified_search.py` | merged name-match + BM25 search across tools, docs, and resources with `type` discriminator |
 | 10. Response caching | `response_cache.py` middleware | TTL-based caching of resource reads + listings |
 | 11. Label runtime | `tools/label_transform.py` | `LabelTransform` — innermost provider-level transform, converts label strings to IDs before HTTP call (registered via `provider.add_transform()`) |
-| 12. Contract wrapping | `server_setup/mcp_builder.py` + `tools/contract.py` | `_ToolWrappingTransform` — **server-level** transform registered via `mcp.add_transform()` (first in the chain), wraps tools stamped with the `_WRAP_ME` marker: virtual-param injection, validation, error translation, pagination metadata, formatting. Spine shared via `tools/contract.build_transform_fn(tool, executor)` |
+| 12. Contract wrapping | `server_setup/mcp_builder.py` + `tools/contract.py` | `_ToolWrappingTransform` — **server-level** transform registered via `mcp.add_transform()` (first in the chain), wraps tools stamped with the `_WRAP_ME` marker: virtual-param injection, validation, error translation, pagination metadata, formatting. Spine shared via `tools/contract.build_transform_fn(tool, executor, default_format=...)` |
 
 Synthetic tools are registered on the root FastMCP server rather than the
 OpenAPI provider, so they cannot use the provider's route-aware execution
@@ -341,7 +341,7 @@ Schema ``maximum`` on the ``limit`` parameter so agents discover each
 tool's page-size bound via ``tool_info``.
 
 The **per-call contract spine is shared** via ``tools/contract.py``:
-``build_transform_fn(tool, executor)`` runs virtual-param extraction,
+``build_transform_fn(tool, executor, default_format=...)`` runs virtual-param extraction,
 pre-hooks, context resolution, and the single result pipeline for both tool
 families.  Autogen tools supply the autogen executor (the HTTP pipeline in
 ``server_setup/mcp_builder.py``: validation, route-aware HTTP execution,
@@ -480,7 +480,7 @@ from the parameter schema.
    auto-generates tools from the spec. Customization happens via
    `_ToolWrappingTransform` and the `transform_fn` pattern, not by
    hand-registering each tool.  The per-call `transform_fn` spine is extracted
-   into `tools/contract.py` (`build_transform_fn(tool, executor)`) and shared
+   into `tools/contract.py` (`build_transform_fn(tool, executor, default_format=...)`) and shared
    with synthetic tools; `_ToolWrappingTransform` supplies the autogen
    HTTP-pipeline executor.  The transform itself is registered **server-level**
    (`mcp.add_transform()`, first in the chain) so it can wrap tools from every

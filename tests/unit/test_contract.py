@@ -63,7 +63,7 @@ class TestBuildTransformFn:
             return ExecutionResult(data="ok", shape="scalar")
 
         tool = _make_tool()
-        transform_fn = build_transform_fn(tool, executor)
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         result = await transform_fn(query="q", page=1, format="json", detail="full")
 
         assert received["kwargs"] == {"query": "q", "page": 1}
@@ -83,7 +83,7 @@ class TestBuildTransformFn:
             captured["ctx"] = ctx
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor)
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         await transform_fn(query="q")
 
         assert captured["ctx"] is None
@@ -101,7 +101,7 @@ class TestBuildTransformFn:
             captured["content"] = kwargs.get("content")
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor)
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         await transform_fn(content="hello", content_type="text")
 
         assert captured["content"] == base64.b64encode(b"hello").decode()
@@ -125,7 +125,9 @@ class TestBuildTransformFn:
         ) -> ExecutionResult:
             return ExecutionResult(data={"name": "x"}, shape="object")
 
-        transform_fn = build_transform_fn(_make_tool(raw_schema=raw_schema), executor)
+        transform_fn = build_transform_fn(
+            _make_tool(raw_schema=raw_schema), executor, default_format="markdown"
+        )
         await transform_fn(query="q")
 
         assert seen["extracted"]["_raw_schema"] == raw_schema
@@ -149,7 +151,7 @@ class TestBuildTransformFn:
 
         monkeypatch.setattr("gitea_mcp_server.tools.contract.apply_to", _spy_apply_to)
 
-        transform_fn = build_transform_fn(_make_tool(), executor)
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         result = await transform_fn(query="q")
 
         assert calls == ["executor", "apply_to"]
@@ -176,7 +178,7 @@ class TestBuildTransformFn:
 
         tool = _make_tool()
         tool.meta = {"_virtual_params": {"format"}}
-        transform_fn = build_transform_fn(tool, executor)
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         await transform_fn(query="q", format="json", fetch_all=True)
 
         # format (allowlisted) popped; fetch_all (off-allowlist) left in kwargs.
@@ -202,7 +204,7 @@ class TestBuildTransformFn:
             received["extracted"] = dict(extracted or {})
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor)
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         await transform_fn(query="q", format="json", fetch_all=True)
 
         assert received["extracted"] == {"format": "json", "fetch_all": True}
@@ -232,7 +234,7 @@ class TestBuildTransformFn:
         # What _inject_params stamps for an autogen tool: visible params that
         # passed injection (format/detail), fetch_all excluded by predicate.
         tool.meta = {"_virtual_params": {"format", "detail"}}
-        transform_fn = build_transform_fn(tool, executor)
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         await transform_fn(query="q", format="json", fetch_all=True)
 
         assert received["extracted"] == {"format": "json"}
@@ -266,7 +268,9 @@ class TestBuildTransformFn:
         ) -> ExecutionResult:
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor, openapi_spec=spec)
+        transform_fn = build_transform_fn(
+            _make_tool(), executor, openapi_spec=spec, default_format="markdown"
+        )
         result = await transform_fn(query="q", format="json")
 
         assert seen["openapi_spec"] is spec
@@ -293,7 +297,7 @@ class TestBuildTransformFn:
         ) -> ExecutionResult:
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor)
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         await transform_fn(query="q", format="json")
 
         assert seen["openapi_spec"] is None
@@ -315,7 +319,9 @@ class TestBuildTransformFn:
         ) -> ExecutionResult:
             return ExecutionResult(data={"name": "alpha"}, shape="object")
 
-        transform_fn = build_transform_fn(_make_tool(raw_schema=raw_schema), executor)
+        transform_fn = build_transform_fn(
+            _make_tool(raw_schema=raw_schema), executor, default_format="markdown"
+        )
         result = await transform_fn(query="q", format="json")
 
         assert result.structured_content == {"result": {"name": "alpha"}}
@@ -356,7 +362,9 @@ class TestDisplayExtraDerivation:
             ) -> ExecutionResult:
                 return ExecutionResult(data=[], shape="list")
 
-            transform_fn = build_transform_fn(tool or _make_tool(), executor)
+            transform_fn = build_transform_fn(
+                tool or _make_tool(), executor, default_format="markdown"
+            )
             await transform_fn(**call_kwargs)
             return seen
         finally:

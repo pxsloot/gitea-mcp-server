@@ -24,13 +24,23 @@ accepted everywhere at once."""
 # Detail Parameter Schema (shared by all tools)
 # ============================================================================
 
+DEFAULT_DETAIL = "full"
+"""Canonical ``detail`` default for the tool surface.
+
+The ``detail`` virtual-param registry entry, ``format.collapse_data`` and the
+result pipeline's ``render`` signatures, and ``DETAIL_PARAM_SCHEMA`` all read
+this value.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to
+``"concise"`` for introspection tools, and resource ``default_detail``
+(``resources/meta.py``) is a separate concern.  Unlike ``format``, ``detail``
+is static (not server config), so it is not threaded from ``Config``."""
+
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
     "enum": [
         "concise",
         "full",
     ],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
-    "default": "full",
+    "default": DEFAULT_DETAIL,
     "description": (
         "Output detail level.  "
         '"full" (default) — complete information, full object expansion.  '

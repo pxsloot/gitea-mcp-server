@@ -103,7 +103,7 @@ class TestErrorHandlingEnhancement:
 
         # Apply metadata and wrap via transform (live pipeline path)
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="APINotFound") as exc_info:
@@ -148,7 +148,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=value_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="Some unrelated validation error") as exc_info:
@@ -181,7 +181,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=network_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="(?i)network|connection") as exc_info:
@@ -215,7 +215,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=timeout_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="Request timed out") as exc_info:
@@ -248,7 +248,7 @@ class TestErrorHandlingEnhancement:
         tool.run = AsyncMock(side_effect=unexpected_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="(?i)unexpected") as exc_info:
@@ -847,7 +847,7 @@ class TestErrorHandlingNonJson:
         tool.run = AsyncMock(side_effect=value_error)
 
         _customize_metadata(route, tool, openapi_spec=openapi_spec)
-        transform = _ToolWrappingTransform(openapi_spec=openapi_spec)
+        transform = _ToolWrappingTransform(openapi_spec=openapi_spec, response_format="markdown")
         [wrapped] = await transform.list_tools([tool])
 
         with pytest.raises(ValueError, match="Internal Server Error") as exc_info:

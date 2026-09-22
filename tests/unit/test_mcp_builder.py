@@ -691,6 +691,7 @@ class TestToolWrappingTransformTelemetry:
     def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=openapi_spec if openapi_spec is not None else make_openapi_spec(),
+            response_format="markdown",
         )
 
     def make_tool(self, name: str = "test_tool") -> Tool:
@@ -1876,6 +1877,7 @@ class TestPipelineBase64Decode:
     def make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
+            response_format="markdown",
         )
 
     def make_tool(self) -> Tool:
@@ -2030,6 +2032,7 @@ class TestPipelineBinaryResponse:
     def make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
+            response_format="markdown",
         )
 
     def make_tool(self) -> Tool:
@@ -2142,6 +2145,7 @@ class TestTryHandleBinaryResponseEdgeCases:
     def make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
+            response_format="markdown",
         )
 
     @pytest.mark.asyncio
@@ -2163,6 +2167,7 @@ class TestPipelineUnicodeDecodeError:
     def make_transform(self) -> _ToolWrappingTransform:
         return _ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
+            response_format="markdown",
         )
 
     def _make_tool(self, *, is_binary_response: bool) -> Tool:
@@ -2735,7 +2740,7 @@ class TestBooleanCheckResourceUri:
         return make_openapi_spec(paths={path: {"get": operation}})
 
     def make_transform(self, spec: OpenAPISpec) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(openapi_spec=spec)
+        return _ToolWrappingTransform(openapi_spec=spec, response_format="markdown")
 
     def test_merge_path_uses_pr_resource(self) -> None:
         """The PR fetch prefix is the resource for the merge check."""
@@ -2935,7 +2940,9 @@ class TestBooleanCheckHandlers:
     """
 
     def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(openapi_spec=openapi_spec or make_openapi_spec())
+        return _ToolWrappingTransform(
+            openapi_spec=openapi_spec or make_openapi_spec(), response_format="markdown"
+        )
 
     @staticmethod
     def _pr_fetch_spec() -> OpenAPISpec:

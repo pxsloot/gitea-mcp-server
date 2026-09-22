@@ -19,9 +19,12 @@ The registry serves two roles:
 
 Lifecycle for every tool call::
 
-    1. inject_into(tool.parameters, tool=tool)  ← adds to schema at startup;
-       returns the injected set, which the caller stamps into
-       ``tool.meta["_virtual_params"]`` so extraction matches injection
+    1. inject_into(tool.parameters, tool=tool,
+                   default_overrides={"format": config_default})  ← adds to
+       schema at startup; returns the injected set, which the caller stamps
+       into ``tool.meta["_virtual_params"]`` so extraction matches injection.
+       ``default_overrides`` supplies the defaults of params the registry
+       leaves open (``format``).
     2. extract_from(kwargs, only=tool.meta["_virtual_params"])  ← pops before
        HTTP call; params not injected (e.g. ``fetch_all`` on autogen tools)
        stay in kwargs and are rejected as unknown by validation
@@ -41,7 +44,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from gitea_mcp_server.constants import RESPONSE_FORMATS
+from gitea_mcp_server.constants import DEFAULT_DETAIL, RESPONSE_FORMATS
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,12 @@ class VirtualParam:
     Attributes:
         schema: JSON Schema fragment for the parameter (type, enum, etc.).
         default: Default value used when the agent omits the parameter.
+            ``None`` is a legitimate null default (e.g. ``sudo``).  The
+            module-private :data:`_NO_DEFAULT` sentinel means the registry
+            owns **no** static default — the caller must supply one via
+            ``inject_into(..., default_overrides=)`` or the injected schema
+            is written without a ``default`` key.  ``format`` uses this (its
+            default is server config).
         description: Description shown to agents in the tool schema.
         visible: Whether to include this param in tool schemas.
             Set to ``False`` at startup for scope-gated params when the
@@ -108,6 +117,14 @@ class VirtualParam:
 # To add one: append an entry here.  inject_into / extract_from / apply_to
 # pick it up automatically.
 _VIRTUAL_PARAMS: dict[str, VirtualParam] = {}
+
+_NO_DEFAULT: Any = object()
+"""Sentinel: the registry owns no static default for this param.
+
+Distinct from ``None``, which is a real null default (``sudo``).  A param
+registered with this sentinel must get its default from the caller's
+``default_overrides``; when none is supplied, ``inject_into`` writes no
+``default`` key (rather than a misleading literal)."""
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +238,7 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 # extracted dict in a stable order.  No hooks — the pipeline reads them.
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
     schema={"type": "string", "enum": ["full", "concise"]},
-    default="full",
+    default=DEFAULT_DETAIL,
     description=(
         'Output detail level.  "full" (default) — complete information. '
         '"concise" — root items summarized (scalars intact), nested '
@@ -233,7 +250,14 @@ _VIRTUAL_PARAMS["detail"] = VirtualParam(
 
 _VIRTUAL_PARAMS["format"] = VirtualParam(
     schema={"type": "string", "enum": list(RESPONSE_FORMATS)},
-    default="markdown",
+    # No static default: ``format``'s default is the server-wide
+    # ``DEFAULT_RESPONSE_FORMAT`` config, supplied by the caller via
+    # ``inject_into(..., default_overrides={"format": ...})``.  When no
+    # override is given (direct/test calls), no ``default`` key is written —
+    # the registry does not own this value.  The display spine receives the
+    # same configured default as ``default_format``, so it never needs a
+    # literal fallback either.
+    default=_NO_DEFAULT,
     description=(
         "Response format control.  "
         '"json" — raw JSON.  '
@@ -325,14 +349,19 @@ def inject_into(
         parameters: Tool parameter schema dict (mutated in place).
         tool: The Tool being wrapped, for ``tool_predicate`` gating.
         default_overrides: Optional ``{param_name: value}`` dict of
-            defaults to overwrite after injection.  Use for params whose
-            default is dynamic (e.g. ``format``'s default comes from
-            server config, not the registry).
+            defaults to use instead of the registry's static default — for
+            params whose default is dynamic (e.g. ``format``'s default comes
+            from server config, not the registry; the registry entry uses the
+            ``_NO_DEFAULT`` sentinel).  Overrides are resolved **per injected
+            param**:
+            a name that was not injected is never touched, so a real API
+            parameter named ``format`` keeps its own default.
         only: Optional allowlist of param names to inject/overwrite.
             ``None`` injects every visible param, skipping existing names
             (autogen behavior).
     """
     props = parameters.setdefault("properties", {})
+    overrides = default_overrides or {}
     injected: set[str] = set()
     for name, vp in _VIRTUAL_PARAMS.items():
         if only is not None and name not in only:
@@ -346,19 +375,12 @@ def inject_into(
         if name in props and only is None:
             # Autogen: never shadow a real API parameter.
             continue
-        props[name] = {
-            **vp.schema,
-            "default": vp.default,
-            "description": vp.description,
-        }
+        default = overrides.get(name, vp.default)
+        entry = {**vp.schema, "description": vp.description}
+        if default is not _NO_DEFAULT:
+            entry["default"] = default
+        props[name] = entry
         injected.add(name)
-
-    # Apply caller-specified default overrides (e.g. format's default
-    # comes from server config, not the static registry default).
-    if default_overrides:
-        for name, value in default_overrides.items():
-            if name in props:
-                props[name]["default"] = value
 
     return injected
 

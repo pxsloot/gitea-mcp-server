@@ -79,7 +79,7 @@ from mcp.types import TextContent
 from pydantic import ConfigDict
 from pydantic.json_schema import SkipJsonSchema  # noqa: TC002 - runtime use via get_type_hints
 
-from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE, RESPONSE_FORMATS
+from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE, RESPONSE_FORMATS
 from gitea_mcp_server.format import (
     MarkdownFormatter,
     call_markdown_formatter,
@@ -178,7 +178,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     result: ExecutionResult,
     *,
     fmt: str,
-    detail: str = "full",
+    detail: str = DEFAULT_DETAIL,
     page: int = 1,
     limit: int = DEFAULT_PAGE_SIZE,
     fetch_all: bool = False,

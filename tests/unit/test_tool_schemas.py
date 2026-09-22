@@ -477,6 +477,7 @@ class TestDeriveOutputSchema:
 
             transform = _ToolWrappingTransform(
                 openapi_spec=self.MINIMAL_SPEC,
+                response_format="markdown",
             )
             [wrapped] = await transform.list_tools([tool])
             actual = await wrapped.run({"owner": "test", "repo": "test"})
@@ -521,6 +522,7 @@ class TestDeriveOutputSchema:
 
             transform = _ToolWrappingTransform(
                 openapi_spec=self.MINIMAL_SPEC,
+                response_format="markdown",
             )
             [wrapped] = await transform.list_tools([tool])
             actual = await wrapped.run({"owner": "test", "repo": "test"})
@@ -566,6 +568,7 @@ class TestDeriveOutputSchema:
 
             transform = _ToolWrappingTransform(
                 openapi_spec=spec,
+                response_format="markdown",
             )
             [wrapped] = await transform.list_tools([tool])
             actual = await wrapped.run(arguments={"page": 1, "limit": 10})
@@ -1858,7 +1861,9 @@ class TestContentTypeVirtualParam:
 
     @pytest.mark.asyncio
     async def test_content_type_injected_into_repo_create_file(self) -> None:
-        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        transform = _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(), response_format="markdown"
+        )
         tool = Tool(
             name="repo_create_file",
             tags={"repository"},
@@ -1888,7 +1893,9 @@ class TestContentTypeVirtualParam:
 
     @pytest.mark.asyncio
     async def test_content_type_injected_into_repo_update_file(self) -> None:
-        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        transform = _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(), response_format="markdown"
+        )
         tool = Tool(
             name="repo_update_file",
             tags={"repository"},
@@ -1947,7 +1954,9 @@ class TestContentTypeVirtualParam:
         """When content_type='text', the content kwarg is base64-encoded."""
         import base64
 
-        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        transform = _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(), response_format="markdown"
+        )
         tool = Tool(
             name="repo_create_file",
             tags={"repository"},
@@ -2010,7 +2019,9 @@ class TestContentTypeVirtualParam:
     @pytest.mark.asyncio
     async def test_content_type_base64_passes_through(self) -> None:
         """When content_type='base64' (default), content is passed as-is."""
-        transform = _ToolWrappingTransform(openapi_spec=make_openapi_spec())
+        transform = _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(), response_format="markdown"
+        )
         tool = Tool(
             name="repo_create_file",
             tags={"repository"},

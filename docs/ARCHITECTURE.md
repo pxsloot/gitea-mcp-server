@@ -372,9 +372,9 @@ complete API data (the machine contract, envelope and pagination included),
 ``markdown`` is a schema-derived reading view (collections compact nested
 relations; a single item is the full payload), and ``detail="concise"``
 collapses relations in **both** channels.  The registry's ``format``/``detail``
-descriptions (injected into every tool schema) are the agent-facing echo;
-``format.py`` (the renderer) points at the canonical home, and the agent-facing
-``tool-output-format`` guide echoes it.
+descriptions (injected into tool schemas where the tool opts in) are the
+agent-facing echo; ``format.py`` (the renderer) points at the canonical home,
+and the agent-facing ``tool-output-format`` guide echoes it.
 
 **The markdown view is schema-anchored, not hand-written** (#771).  When a
 result carries a ``response_type`` and no bespoke formatter is registered for

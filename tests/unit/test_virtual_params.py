@@ -850,7 +850,18 @@ class TestDetailSchemaSingleSource:
             DetailLiteral,
         )
 
-        assert get_args(DetailLiteral) == DETAIL_VALUES
+        # Pin the literal values, so a typo in DetailLiteral is caught rather
+        # than mirrored into DETAIL_VALUES.
+        assert get_args(DetailLiteral) == ("full", "concise")
+        assert DETAIL_VALUES == ("full", "concise")
         assert list(DETAIL_VALUES) == DETAIL_PARAM_SCHEMA["enum"]
         assert DETAIL_PARAM_SCHEMA["default"] == DEFAULT_DETAIL
         assert DETAIL_PARAM_SCHEMA_CONCISE["default"] == DEFAULT_DETAIL_CONCISE
+
+    def test_registry_enum_is_not_aliased(self) -> None:
+        """The injected detail schema owns its enum list, not the constant."""
+        from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        assert _VIRTUAL_PARAMS["detail"].schema["enum"] == DETAIL_PARAM_SCHEMA["enum"]
+        assert _VIRTUAL_PARAMS["detail"].schema["enum"] is not DETAIL_PARAM_SCHEMA["enum"]

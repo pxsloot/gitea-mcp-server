@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 
 from gitea_mcp_server.constants import (
     DETAIL_PARAM_SCHEMA,
+    DETAIL_VALUES,
     RESPONSE_FORMATS,
 )
 from gitea_mcp_server.validation import validate_enum
@@ -259,7 +260,10 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 # ``detail`` derives from ``constants.DETAIL_PARAM_SCHEMA`` — the single
 # source — so the injected schema and the introspection tools cannot drift.
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
-    schema=dict(DETAIL_PARAM_SCHEMA),
+    # Copy the enum list too: a shallow ``dict()`` would share the canonical
+    # ``DETAIL_PARAM_SCHEMA["enum"]`` object, so mutating an injected schema
+    # would corrupt the constant.
+    schema={**DETAIL_PARAM_SCHEMA, "enum": list(DETAIL_VALUES)},
     default=DETAIL_PARAM_SCHEMA["default"],
     description=str(DETAIL_PARAM_SCHEMA["description"]),
 )

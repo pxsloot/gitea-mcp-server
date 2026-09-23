@@ -1221,7 +1221,6 @@ class TestServerEdgeCases:
         """
         import inspect
 
-        from gitea_mcp_server.server import _build_server_instructions
         from gitea_mcp_server.tools import result_pipeline
         from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.tools.mcp_tools import _list_resources_tool, _read_resource_tool
@@ -1232,7 +1231,7 @@ class TestServerEdgeCases:
 
         format_desc = _VIRTUAL_PARAMS["format"].description
         detail_desc = _VIRTUAL_PARAMS["detail"].description
-        instructions = _build_server_instructions()
+        instructions = _served_instructions()
 
         # The canonical dev-time statement names both channels.
         canonical = result_pipeline.__doc__
@@ -1264,17 +1263,37 @@ class TestServerEdgeCases:
         # The injected doc carries the one-liner.
         assert "schema-derived reading view" in instructions
 
-        # No agent-facing docstring hand-copies the virtual-param text: the
-        # registry owns it, so a copy is a drift surface.  A surface that
-        # carries no parameter prose cannot contradict the contract.
+        # No agent-facing docstring hand-copies the virtual-param text or its
+        # format semantics: the registry owns them, so a copy is a drift
+        # surface.  A phrase blocklist is a regression guard over the phrasings
+        # that drifted, not a proof.
+        stale = (
+            "## Parameter: format",
+            "## Parameter: detail",
+            "full object expansion",
+            "control display format",
+            "through the display pipeline",
+            "returns the raw JSON",
+            "bypasses all formatting",
+        )
+        # Self-check: the blocklist catches each phrasing we removed.
+        known_bad = (
+            "Use the ``format`` parameter to control display format — "
+            "``format=markdown`` renders JSON data through the display pipeline",
+            "``format=json`` returns the raw JSON",
+            "``format=raw`` bypasses all formatting",
+            '"full" (default): complete information, full object expansion',
+        )
+        for sample in known_bad:
+            assert any(phrase in sample for phrase in stale), f"guard misses: {sample!r}"
+
         for label, fn in (
             ("read_resource", _read_resource_tool),
             ("list_resources", _list_resources_tool),
         ):
             text = inspect.getdoc(fn) or ""
-            assert "## Parameter: format" not in text, f"{label} hand-copies format"
-            assert "## Parameter: detail" not in text, f"{label} hand-copies detail"
-            assert "full object expansion" not in text, f"{label} carries stale detail text"
+            for phrase in stale:
+                assert phrase not in text, f"{label} carries stale format prose: {phrase!r}"
 
     @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:

@@ -39,12 +39,14 @@ DETAIL_VALUES: tuple[str, ...] = get_args(DetailLiteral)
 DEFAULT_DETAIL = "full"
 """Canonical ``detail`` default for the tool surface.
 
-The ``detail`` virtual-param registry entry, ``format.collapse_data`` and the
-result pipeline's ``render`` signatures, and ``DETAIL_PARAM_SCHEMA`` all read
-this value.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to
-``"concise"`` for introspection tools, and resource ``default_detail``
-(``resources/meta.py``) is a separate concern.  Unlike ``format``, ``detail``
-is static (not server config), so it is not threaded from ``Config``."""
+``DETAIL_PARAM_SCHEMA`` assembles this value, and the ``detail`` virtual-param
+registry entry derives from that schema — so the registry reads it
+transitively.  ``format.collapse_data`` and the result pipeline's ``render``
+signatures read it directly.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately
+overrides it to ``"concise"`` for introspection tools, and resource
+``default_detail`` (``resources/meta.py``) is a separate concern.  Unlike
+``format``, ``detail`` is static (not server config), so it is not threaded
+from ``Config``."""
 
 DEFAULT_DETAIL_CONCISE: DetailLiteral = "concise"
 """The introspection tools' ``detail`` default (``DETAIL_PARAM_SCHEMA_CONCISE``)."""

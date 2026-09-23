@@ -134,10 +134,11 @@ def build_transform_fn(
     """Build the per-call :func:`transform_fn` closure for a tool.
 
     The returned callable receives ``**kwargs`` (the agent's arguments) and
-    runs the full agent-facing contract spine: extract virtual params, run
-    pre-hooks, resolve the context, delegate to *executor*, render the raw
-    ``ExecutionResult`` through the single result pipeline, then hand off
-    to :func:`apply_to` for post-hooks (sudo cleanup).
+    runs the full agent-facing contract spine: extract virtual params, validate
+    them against their registry schemas, run pre-hooks, resolve the context,
+    delegate to *executor*, render the raw ``ExecutionResult`` through the
+    single result pipeline, then hand off to :func:`apply_to` for post-hooks
+    (sudo cleanup).
 
     ``openapi_spec`` is captured by the closure and forwarded to
     :func:`render` — it enables root-list item summaries under

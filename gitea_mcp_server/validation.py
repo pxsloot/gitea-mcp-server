@@ -5,10 +5,13 @@ tool arguments meet Gitea API requirements before execution.
 
 Architecture — two layers of enum validation:
 
-1. **Schema-driven validation** (runtime in ``run_validation``):
-   Before calling a hardcoded ``SINGLE_VALIDATORS`` entry, ``run_validation``
-   checks whether the parameter's own JSON Schema defines an ``enum``. If it
-   does, validation uses that enum — no hardcoded values needed.
+1. **Schema-driven validation** (runtime): :func:`validate_enum` is the shared
+   public entry.  It checks whether a parameter's own JSON Schema defines an
+   ``enum`` (walking ``anyOf``/``oneOf``) and validates against it — no
+   hardcoded values needed.  Both real-parameter validation
+   (``tools.errors.run_validation``) and virtual-parameter validation
+   (``tools.virtual_params.validate_extracted``) delegate to it, so the two
+   surfaces share one mechanism and one error shape.
 
 2. **Description-to-enum inference** (schema time in
    ``augment_schema_with_validation``): Some Gitea spec types (e.g.

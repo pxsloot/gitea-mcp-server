@@ -145,23 +145,32 @@ class TestBuildTransformFn:
         assert calls["n"] == 0
 
     @pytest.mark.asyncio
-    async def test_invalid_content_type_rejected_before_pre_hook(self) -> None:
-        """A bad ``content_type`` is rejected before the pre-hook encodes content."""
-        calls = {"n": 0}
+    async def test_invalid_content_type_rejected_before_pre_hook(self, monkeypatch: Any) -> None:
+        """A bad ``content_type`` is rejected before the pre-hook encodes content.
+
+        Asserts neither the executor nor the pre-hook stage is reached, so the
+        rejection genuinely happens before ``content`` could be encoded.
+        """
+        calls = {"executor": 0, "pre_hooks": 0}
 
         async def executor(
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
         ) -> ExecutionResult:
-            calls["n"] += 1
+            calls["executor"] += 1
             return ExecutionResult(data="ok", shape="scalar")
+
+        def _spy_pre_hooks(extracted: dict[str, Any], kwargs: dict[str, Any] | None = None) -> None:
+            calls["pre_hooks"] += 1
+
+        monkeypatch.setattr("gitea_mcp_server.tools.contract.apply_pre_hooks", _spy_pre_hooks)
 
         transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
         with pytest.raises(ValueError, match="content_type must be one of"):
             await transform_fn(content="hello", content_type="bogus")
 
-        assert calls["n"] == 0
+        assert calls == {"executor": 0, "pre_hooks": 0}
 
     @pytest.mark.asyncio
     async def test_absent_format_uses_spine_default(self) -> None:

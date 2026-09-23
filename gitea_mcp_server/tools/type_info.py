@@ -17,11 +17,15 @@ Registration:
 
 import json
 import logging
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, cast
 
 from fastmcp.server.context import Context
 
-from gitea_mcp_server.constants import DETAIL_PARAM_SCHEMA_CONCISE
+from gitea_mcp_server.constants import (
+    DEFAULT_DETAIL_CONCISE,
+    DETAIL_PARAM_SCHEMA_CONCISE,
+    DetailLiteral,
+)
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
@@ -340,10 +344,9 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
         ],
         ctx: Context,
         detail: Annotated[
-            # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
-            Literal["concise", "full"],
+            DetailLiteral,
             str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
-        ] = "concise",
+        ] = DEFAULT_DETAIL_CONCISE,
     ) -> ExecutionResult:
         """Resolve a $ref type name to its schema and cross-references."""
         if not type_index:

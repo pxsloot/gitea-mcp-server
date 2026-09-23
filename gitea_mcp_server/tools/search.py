@@ -10,7 +10,7 @@ match generated API tools.
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -20,10 +20,12 @@ from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
 from gitea_mcp_server.constants import (
+    DEFAULT_DETAIL_CONCISE,
     DETAIL_PARAM_SCHEMA_CONCISE,
     SEARCH_CATEGORY_ALIASES,
     SEARCH_MIN_SCORE,
     SEARCH_NAME_BOOST,
+    DetailLiteral,
 )
 from gitea_mcp_server.format import format_tool_info_markdown
 from gitea_mcp_server.models import ToolSchemaResult, ToolSearchEntry
@@ -729,8 +731,7 @@ async def _tool_info_impl(  # noqa: PLR0913 - name, ctx, transform, tool_prefix,
     ctx: Context,
     transform: TolerantSearchTransform,
     tool_prefix: str = "",
-    # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
-    detail: Literal["concise", "full"] = "concise",
+    detail: DetailLiteral = DEFAULT_DETAIL_CONCISE,
     page: int = 1,
     limit: int = 10,
     openapi_spec: OpenAPISpec | None = None,
@@ -1109,10 +1110,9 @@ def register_synthetic_tools(
     async def tool_info_fn(
         name: Annotated[str, "The exact name of the tool to inspect"],
         detail: Annotated[
-            # Keep in sync with DETAIL_PARAM_SCHEMA/DETAIL_PARAM_SCHEMA_CONCISE enum in constants.py
-            Literal["concise", "full"],
+            DetailLiteral,
             str(DETAIL_PARAM_SCHEMA_CONCISE["description"]),
-        ] = "concise",
+        ] = DEFAULT_DETAIL_CONCISE,
         page: Annotated[
             int,
             "Page number for output_schema properties (1-based). Only used when detail=full.",

@@ -4,6 +4,8 @@ This module collects all magic numbers and hardcoded values to improve
 maintainability and make configuration easier.
 """
 
+from typing import Literal, get_args
+
 # ============================================================================
 # Response Formatting
 # ============================================================================
@@ -24,6 +26,16 @@ accepted everywhere at once."""
 # Detail Parameter Schema (shared by all tools)
 # ============================================================================
 
+DetailLiteral = Literal["full", "concise"]
+"""Canonical ``detail`` values, in agent-facing order.
+
+The single source for the value set: ``DETAIL_PARAM_SCHEMA``'s enum derives
+from it, and the introspection tools (``tool_info``, ``resolve_type``) annotate
+their own ``detail`` parameter with it."""
+
+DETAIL_VALUES: tuple[str, ...] = get_args(DetailLiteral)
+"""The ``detail`` values, derived from :data:`DetailLiteral`."""
+
 DEFAULT_DETAIL = "full"
 """Canonical ``detail`` default for the tool surface.
 
@@ -34,12 +46,12 @@ this value.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to
 (``resources/meta.py``) is a separate concern.  Unlike ``format``, ``detail``
 is static (not server config), so it is not threaded from ``Config``."""
 
+DEFAULT_DETAIL_CONCISE: DetailLiteral = "concise"
+"""The introspection tools' ``detail`` default (``DETAIL_PARAM_SCHEMA_CONCISE``)."""
+
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
-    "enum": [
-        "full",
-        "concise",
-    ],  # Values must match the Literal in tools/search.py / tools/type_info.py; order is agent-facing
+    "enum": list(DETAIL_VALUES),
     "default": DEFAULT_DETAIL,
     "description": (
         "Output detail level.  "
@@ -54,28 +66,23 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
 }
 """JSON Schema for the ``detail`` parameter used by all tools.
 
-**Single source** for the ``detail`` parameter (type, enum, default, and
-description).  The virtual-param registry (``tools/virtual_params.py``)
+**Single source** for the ``detail`` parameter.  The value set is
+:data:`DetailLiteral`; the virtual-param registry (``tools/virtual_params.py``)
 derives its ``detail`` entry from this value, and the introspection tools
-(``tool_info``, ``resolve_type``) use :data:`DETAIL_PARAM_SCHEMA_CONCISE`, so
-the agent-facing ``detail`` schema cannot drift between the two.
+(``tool_info``, ``resolve_type``) annotate their ``detail`` parameter with
+:data:`DetailLiteral` and :data:`DETAIL_PARAM_SCHEMA_CONCISE`, so the
+agent-facing ``detail`` schema cannot drift.
 
 Controls how much detail is shown in tool output.  ``"full"`` expands nested
 ``$ref``-backed relations; ``"concise"`` summarizes root items (scalar fields
 intact) and collapses nested ``$ref``-backed relations to the canonical
 agent-facing marker (``{"$ref": "TypeName"}``, or with ``count`` for a
-collapsed list — #759, #763) in **both** json and markdown.  The default is
-``"full"``.
-
-.. note::
-    The ``enum`` values **must** stay in sync with the
-    ``Literal["concise", "full"]`` type annotations in
-    ``tools/search.py`` and ``tools/type_info.py``.
+collapsed list) in **both** json and markdown.  The default is ``"full"``.
 """
 
 DETAIL_PARAM_SCHEMA_CONCISE: dict[str, object] = {
     **DETAIL_PARAM_SCHEMA,
-    "default": "concise",
+    "default": DEFAULT_DETAIL_CONCISE,
 }
 """Variant of :data:`DETAIL_PARAM_SCHEMA`  that defaults to ``"concise"``.
 

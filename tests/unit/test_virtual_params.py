@@ -836,3 +836,21 @@ class TestDetailSchemaSingleSource:
         concise = {k: v for k, v in DETAIL_PARAM_SCHEMA_CONCISE.items() if k != "default"}
         assert concise == base
         assert DETAIL_PARAM_SCHEMA_CONCISE["default"] == "concise"
+
+    def test_value_set_single_source(self) -> None:
+        """The detail value set comes from one Literal; the enum derives."""
+        from typing import get_args
+
+        from gitea_mcp_server.constants import (
+            DEFAULT_DETAIL,
+            DEFAULT_DETAIL_CONCISE,
+            DETAIL_PARAM_SCHEMA,
+            DETAIL_PARAM_SCHEMA_CONCISE,
+            DETAIL_VALUES,
+            DetailLiteral,
+        )
+
+        assert get_args(DetailLiteral) == DETAIL_VALUES
+        assert list(DETAIL_VALUES) == DETAIL_PARAM_SCHEMA["enum"]
+        assert DETAIL_PARAM_SCHEMA["default"] == DEFAULT_DETAIL
+        assert DETAIL_PARAM_SCHEMA_CONCISE["default"] == DEFAULT_DETAIL_CONCISE

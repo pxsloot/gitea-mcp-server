@@ -49,13 +49,12 @@ The single result pipeline for tools and resources lives in
 primitives it builds on.
 
 Output contract:
-    The canonical statement of what each channel carries lives in the
-    virtual-param registry's module docstring
-    (:mod:`gitea_mcp_server.tools.virtual_params`) — ``json`` / ``raw``
-    are the complete machine contract, ``markdown`` is a schema-derived
-    reading view.  This module is the renderer; it does not restate the
-    contract.  See :func:`_generic_collection_view` for the view and
-    :func:`~gitea_mcp_server.openapi_converter.display_hints.view_hints_for`
+    The canonical statement of what each channel carries lives with the
+    single writer of both channels — ``tools/result_pipeline.py``.
+    ``json`` / ``raw`` are the complete machine contract; ``markdown`` is a
+    schema-derived reading view.  This module is the renderer; it does not
+    restate the contract.  See :func:`_generic_collection_view` for the view
+    and :func:`~gitea_mcp_server.openapi_converter.display_hints.view_hints_for`
     for the curated omissions.
 """
 

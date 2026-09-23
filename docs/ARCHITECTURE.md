@@ -365,14 +365,14 @@ the text is a rendering of the page data.  Empty/out-of-range pages emit
 "total_count": N}`` as JSON text.  No display logic lives in executors — no
 ``_formatted`` marker, no pagination or formatting in the execution path.
 
-**The output contract is stated canonically in the virtual-param registry.**
-The module docstring of ``tools/virtual_params.py`` is the dev-time
-source of truth for what each channel carries: ``json``/``raw`` are the
+**The output contract is stated canonically in ``tools/result_pipeline.py``.**
+The pipeline is the single writer of both channels, so its module docstring is
+the dev-time source of truth for what each carries: ``json``/``raw`` are the
 complete API data (the machine contract, envelope and pagination included),
 ``markdown`` is a schema-derived reading view (collections compact nested
 relations; a single item is the full payload), and ``detail="concise"``
 collapses relations in **both** channels.  The registry's ``format``/``detail``
-descriptions (injected into every tool schema) are the agent-facing statement;
+descriptions (injected into every tool schema) are the agent-facing echo;
 ``format.py`` (the renderer) points at the canonical home, and the agent-facing
 ``tool-output-format`` guide echoes it.
 

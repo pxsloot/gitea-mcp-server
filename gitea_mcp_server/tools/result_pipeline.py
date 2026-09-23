@@ -18,11 +18,30 @@ the serialized envelope dict — the two channels never disagree.  For
 envelope's ``result``, not the executor's full data) while
 ``structured_content`` carries the envelope.
 
-The output contract — what each channel carries for ``json``/``raw`` vs
-``markdown``, and what ``detail`` collapses — is stated canonically in the
-virtual-param registry's module docstring
-(:mod:`gitea_mcp_server.tools.virtual_params`); this module is the single
-writer that implements it.
+Output contract (canonical):
+    This pipeline is the **single writer of both channels**, so it is the
+    source of truth for what each channel carries — every other home points
+    here.
+
+    - ``json`` / ``raw`` — the **machine contract**: the complete API data in
+      the ``{"result": ...}`` envelope, with pagination (``has_more`` /
+      ``next_offset`` / ``total_count``) beside ``result``.  ``raw`` is that
+      same envelope as deterministic JSON text.
+    - ``markdown`` — the **reading contract**: a schema-derived view, not a
+      copy of the payload.  A collection shows the bound type's fields —
+      scalars complete — with ``$ref``-backed relations compacted to an
+      identity/label (a few curated noise fields omitted); a single item
+      shows the full payload.
+    - ``detail="concise"`` collapses nested ``$ref``-backed relations to the
+      canonical marker in **both** channels; ``detail="full"`` (default)
+      expands them.
+
+    A field absent from a markdown collection is therefore a compacted
+    relation or a deliberately omitted noise field — ``json`` / ``raw``
+    always carry it.  The registry's ``format`` / ``detail`` descriptions
+    (:mod:`gitea_mcp_server.tools.virtual_params`) are the agent-facing echo;
+    ``format.py`` (the renderer) points here, and the agent-time guide
+    (``gitea_mcp_server/docs/guides/tool-output-format.md``) echoes it.
 
 Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 ``$ref``-aware collapse when the tool-level schema does not describe the

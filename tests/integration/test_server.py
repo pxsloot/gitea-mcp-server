@@ -1210,9 +1210,10 @@ class TestServerEdgeCases:
     async def test_markdown_vs_json_contract(self) -> None:
         """The output contract is stated once and echoed consistently.
 
-        Canonical home: ``virtual_params.py``'s module docstring.  Agent-facing
-        echoes: the ``tool-output-format`` guide, the registry ``format`` /
-        ``detail`` descriptions, and the injected doc.  The agent-facing
+        Canonical home: ``result_pipeline.py``'s module docstring (the single
+        writer of both channels).  Agent-facing echoes: the
+        ``tool-output-format`` guide, the registry ``format`` / ``detail``
+        descriptions, and the injected doc.  The agent-facing
         ``read_resource`` / ``list_resources`` docstrings must not hand-copy
         the parameter text (the drift class this contract exists to kill);
         behavioral completeness is locked by the real-spec view tests
@@ -1221,7 +1222,7 @@ class TestServerEdgeCases:
         import inspect
 
         from gitea_mcp_server.server import _build_server_instructions
-        from gitea_mcp_server.tools import virtual_params
+        from gitea_mcp_server.tools import result_pipeline
         from gitea_mcp_server.tools.docs_tools import DocManager
         from gitea_mcp_server.tools.mcp_tools import _list_resources_tool, _read_resource_tool
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
@@ -1234,7 +1235,7 @@ class TestServerEdgeCases:
         instructions = _build_server_instructions()
 
         # The canonical dev-time statement names both channels.
-        canonical = virtual_params.__doc__
+        canonical = result_pipeline.__doc__
         assert canonical is not None
         for anchor in (
             "machine contract",
@@ -1242,7 +1243,7 @@ class TestServerEdgeCases:
             "complete API data",
             "schema-derived",
         ):
-            assert anchor in canonical, f"virtual_params.py contract missing: {anchor!r}"
+            assert anchor in canonical, f"result_pipeline.py contract missing: {anchor!r}"
 
         # The agent-time guide echoes the contract, including the
         # collection-vs-single-item distinction.

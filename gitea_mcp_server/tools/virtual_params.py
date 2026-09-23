@@ -39,29 +39,12 @@ Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
 ``tool_predicate`` — then the injection call site must pass ``tool``).
 
-Output contract (canonical):
-    The ``format`` / ``detail`` entries below are the **canonical home** for
-    the agent-facing output contract — the single statement every other home
-    points at.  ``format.py`` (the renderer) points here; the agent-time guide
-    (``gitea_mcp_server/docs/guides/tool-output-format.md``) echoes it; the
-    injected agent instructions carry the one-line summary.
-
-    - ``json`` / ``raw`` — the **machine contract**: the complete API data in
-      the ``{"result": ...}`` envelope, with pagination (``has_more`` /
-      ``next_offset`` / ``total_count``) beside ``result``.  ``raw`` is that
-      same envelope as deterministic JSON text.
-    - ``markdown`` — the **reading contract**: a schema-derived view, not a
-      copy of the payload.  A collection shows the bound type's fields —
-      scalars complete — with ``$ref``-backed relations compacted to an
-      identity/label (a few curated noise fields omitted); a single item
-      shows the full payload.
-    - ``detail="concise"`` collapses nested ``$ref``-backed relations to the
-      canonical marker in **both** channels; ``detail="full"`` (default)
-      expands them.
-
-    A field absent from a markdown collection is therefore a compacted
-    relation or a deliberately omitted noise field — ``json`` / ``raw``
-    always carry it."""
+Output contract:
+    The ``format`` / ``detail`` entries below carry the **agent-facing**
+    statement of the output contract.  The canonical statement lives with the
+    pipeline that implements it — ``tools/result_pipeline.py``, the single
+    writer of both channels; the injected agent instructions carry the
+    one-line summary."""
 
 from __future__ import annotations
 
@@ -265,10 +248,10 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 # schema injection + kwarg extraction machinery is shared — but they carry
 # no hooks, and no display logic lives here.
 #
-# The output contract these two params describe is stated canonically in this
-# module's docstring (json/raw = the complete machine contract; markdown = a
-# schema-derived reading view; detail collapses relations in both channels).
-# The descriptions below are the agent-facing statement.
+# The output contract these two params describe is stated canonically in
+# ``tools/result_pipeline.py`` (json/raw = the complete machine contract;
+# markdown = a schema-derived reading view; detail collapses relations in
+# both channels).  The descriptions below are the agent-facing echo.
 
 # ``detail`` registered before ``format`` so both are present in the
 # extracted dict in a stable order.  No hooks — the pipeline reads them.

@@ -4,6 +4,8 @@ This module collects all magic numbers and hardcoded values to improve
 maintainability and make configuration easier.
 """
 
+from typing import Literal, get_args
+
 # ============================================================================
 # Response Formatting
 # ============================================================================
@@ -24,50 +26,67 @@ accepted everywhere at once."""
 # Detail Parameter Schema (shared by all tools)
 # ============================================================================
 
-DEFAULT_DETAIL = "full"
+DetailLiteral = Literal["full", "concise"]
+"""Canonical ``detail`` values, in agent-facing order.
+
+The single source for the value set: ``DETAIL_PARAM_SCHEMA``'s enum derives
+from it, and the introspection tools (``tool_info``, ``resolve_type``) annotate
+their own ``detail`` parameter with it."""
+
+DETAIL_VALUES: tuple[str, ...] = get_args(DetailLiteral)
+"""The ``detail`` values, derived from :data:`DetailLiteral`."""
+
+DEFAULT_DETAIL: DetailLiteral = "full"
 """Canonical ``detail`` default for the tool surface.
 
-The ``detail`` virtual-param registry entry, ``format.collapse_data`` and the
-result pipeline's ``render`` signatures, and ``DETAIL_PARAM_SCHEMA`` all read
-this value.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately overrides it to
-``"concise"`` for introspection tools, and resource ``default_detail``
-(``resources/meta.py``) is a separate concern.  Unlike ``format``, ``detail``
-is static (not server config), so it is not threaded from ``Config``."""
+``DETAIL_PARAM_SCHEMA`` assembles this value, and the ``detail`` virtual-param
+registry entry derives from that schema — so the registry reads it
+transitively.  ``format.collapse_data`` and the result pipeline's ``render``
+signatures read it directly.  ``DETAIL_PARAM_SCHEMA_CONCISE`` deliberately
+overrides it to ``"concise"`` for introspection tools, and resource
+``default_detail`` (``resources/meta.py``) is a separate concern.  Unlike
+``format``, ``detail`` is static (not server config), so it is not threaded
+from ``Config``."""
+
+DEFAULT_DETAIL_CONCISE: DetailLiteral = "concise"
+"""The introspection tools' ``detail`` default (``DETAIL_PARAM_SCHEMA_CONCISE``)."""
 
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
-    "enum": [
-        "concise",
-        "full",
-    ],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
+    "enum": list(DETAIL_VALUES),
     "default": DEFAULT_DETAIL,
     "description": (
         "Output detail level.  "
-        '"full" (default) — complete information, full object expansion.  '
-        '"concise" — root items are summarized (scalar fields intact); '
-        "nested $ref-backed objects collapse to the marker "
+        '"full" (default) — complete information, nested $ref-backed '
+        "relations expanded.  "
+        '"concise" — root items are summarized (scalar fields intact); nested '
+        "$ref-backed relations collapse to the marker "
         '{"$ref": "TypeName"} ({"$ref": "TypeName", "count": N} for a '
-        "collapsed list), rendered as $ref:TypeName in markdown."
+        "collapsed list; rendered $ref:TypeName in markdown) in both json and "
+        "markdown (raw is never compacted)."
     ),
 }
 """JSON Schema for the ``detail`` parameter used by all tools.
 
-Controls how much detail is shown in tool output.  ``"full"`` renders
-everything recursively; ``"concise"`` summarizes root items (scalar fields
-intact) and collapses nested ``$ref``-backed objects to the canonical
-agent-facing marker (``{"$ref": "TypeName"}``, or with ``count`` for a
-collapsed list — #759, #763).  The default is ``"full"`` (backward
-compatible).
+**Single source** for the ``detail`` parameter.  The value set is
+:data:`DetailLiteral`; the virtual-param registry (``tools/virtual_params.py``)
+derives its ``detail`` entry from this value, and the introspection tools
+(``tool_info``, ``resolve_type``) annotate their ``detail`` parameter with
+:data:`DetailLiteral` and :data:`DETAIL_PARAM_SCHEMA_CONCISE`, so the
+agent-facing ``detail`` schema cannot drift.
 
-.. note::
-    The ``enum`` values **must** stay in sync with the
-    ``Literal["concise", "full"]`` type annotations in
-    ``tools/search.py`` and ``tools/type_info.py``.
+Controls how much detail is shown in tool output.  ``"full"`` expands nested
+``$ref``-backed relations; ``"concise"`` summarizes root items (scalar fields
+intact) and collapses nested ``$ref``-backed relations to the canonical
+agent-facing marker (``{"$ref": "TypeName"}``, or with ``count`` for a
+collapsed list) in **both** json and markdown.  The default is ``"full"``.
 """
 
 DETAIL_PARAM_SCHEMA_CONCISE: dict[str, object] = {
     **DETAIL_PARAM_SCHEMA,
-    "default": "concise",
+    # Copy the enum list so this variant never aliases the canonical one.
+    "enum": list(DETAIL_VALUES),
+    "default": DEFAULT_DETAIL_CONCISE,
 }
 """Variant of :data:`DETAIL_PARAM_SCHEMA`  that defaults to ``"concise"``.
 

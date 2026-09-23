@@ -18,6 +18,33 @@ the serialized envelope dict — the two channels never disagree.  For
 envelope's ``result``, not the executor's full data) while
 ``structured_content`` carries the envelope.
 
+Output contract (canonical):
+    This pipeline is the **single writer of both channels**, so it is the
+    source of truth for what each channel carries — every other home points
+    here.
+
+    - ``json`` / ``raw`` — the **machine contract**: the API data in the
+      ``{"result": ...}`` envelope, with pagination (``has_more`` /
+      ``next_offset`` / ``total_count``) beside ``result``.  ``raw`` is that
+      same envelope as deterministic JSON text, and is **never** compacted.
+    - ``markdown`` — the **reading contract**: a schema-derived view, not a
+      copy of the payload.  A collection shows the bound type's fields —
+      scalars complete — with ``$ref``-backed relations compacted to an
+      identity/label (a few curated noise fields omitted); a single item
+      shows the full payload.
+    - ``detail="concise"`` compacts nested ``$ref``-backed relations in
+      json and markdown alike; ``raw`` is never compacted.
+      ``detail="full"`` (default) expands them.
+
+    So a field absent from a markdown collection is a compacted relation or a
+    deliberately omitted noise field.  At ``detail="full"`` (the default)
+    ``json`` and ``raw`` carry it; at ``detail="concise"`` ``json`` shows the
+    ``$ref`` marker too, and only ``raw`` still carries the full nested value.
+    The registry's ``format`` / ``detail`` descriptions
+    (:mod:`gitea_mcp_server.tools.virtual_params`) are the agent-facing echo;
+    ``format.py`` (the renderer) points here, and the agent-time guide
+    (``gitea_mcp_server/docs/guides/tool-output-format.md``) echoes it.
+
 Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 ``$ref``-aware collapse when the tool-level schema does not describe the
 result (e.g. ``read_resource``, whose schema varies per URI); it takes

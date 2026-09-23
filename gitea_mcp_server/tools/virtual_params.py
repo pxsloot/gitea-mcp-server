@@ -37,7 +37,14 @@ Lifecycle for every tool call::
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
-``tool_predicate`` — then the injection call site must pass ``tool``)."""
+``tool_predicate`` — then the injection call site must pass ``tool``).
+
+Output contract:
+    The ``format`` / ``detail`` entries below carry the **agent-facing**
+    statement of the output contract.  The canonical statement lives with the
+    pipeline that implements it — ``tools/result_pipeline.py``, the single
+    writer of both channels; the injected agent instructions carry the
+    one-line summary."""
 
 from __future__ import annotations
 
@@ -47,7 +54,11 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from gitea_mcp_server.constants import DEFAULT_DETAIL, RESPONSE_FORMATS
+from gitea_mcp_server.constants import (
+    DETAIL_PARAM_SCHEMA,
+    DETAIL_VALUES,
+    RESPONSE_FORMATS,
+)
 from gitea_mcp_server.validation import validate_enum
 
 logger = logging.getLogger(__name__)
@@ -237,19 +248,24 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 # the executor's raw ExecutionResult.  They stay in the registry so the
 # schema injection + kwarg extraction machinery is shared — but they carry
 # no hooks, and no display logic lives here.
+#
+# The output contract these two params describe is stated canonically in
+# ``tools/result_pipeline.py`` (json/raw = the complete machine contract;
+# markdown = a schema-derived reading view; detail collapses relations in
+# both channels).  The descriptions below are the agent-facing echo.
 
 # ``detail`` registered before ``format`` so both are present in the
 # extracted dict in a stable order.  No hooks — the pipeline reads them.
+#
+# ``detail`` derives from ``constants.DETAIL_PARAM_SCHEMA`` — the single
+# source — so the injected schema and the introspection tools cannot drift.
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
-    schema={"type": "string", "enum": ["full", "concise"]},
-    default=DEFAULT_DETAIL,
-    description=(
-        'Output detail level.  "full" (default) — complete information. '
-        '"concise" — root items summarized (scalars intact), nested '
-        "$ref-backed objects collapsed to the ``$ref`` marker "
-        '(``{"$ref": "TypeName"}``, or with ``"count"`` for a collapsed list; '
-        "rendered as ``$ref:TypeName`` in markdown)."
-    ),
+    # Copy the enum list too: a shallow ``dict()`` would share the canonical
+    # ``DETAIL_PARAM_SCHEMA["enum"]`` object, so mutating an injected schema
+    # would corrupt the constant.
+    schema={**DETAIL_PARAM_SCHEMA, "enum": list(DETAIL_VALUES)},
+    default=DETAIL_PARAM_SCHEMA["default"],
+    description=str(DETAIL_PARAM_SCHEMA["description"]),
 )
 
 _VIRTUAL_PARAMS["format"] = VirtualParam(
@@ -263,10 +279,14 @@ _VIRTUAL_PARAMS["format"] = VirtualParam(
     # literal fallback either.
     default=_NO_DEFAULT,
     description=(
-        "Response format control.  "
-        '"json" — raw JSON.  '
-        '"markdown" — formatted tables for human/agent reading.  '
-        '"raw" — unprocessed API response.'
+        "Response format.  "
+        '"json"/"raw" — the API data in a {"result": ...} envelope '
+        "(pagination included); the machine contract.  "
+        '"raw" is never compacted; "json" compacts nested relations at '
+        'detail="concise".  '
+        '"markdown" — a schema-derived reading view: collections show the '
+        "type's fields with nested relations compacted; a single item shows "
+        "the full payload."
     ),
 )
 

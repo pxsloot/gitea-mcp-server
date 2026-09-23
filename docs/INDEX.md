@@ -58,6 +58,7 @@ truth. Other mentions point here.
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
 | Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |
 | Markdown formatter contract (`MarkdownFormatter`) | `format.py` (source, canonical) + `ARCHITECTURE.md` (pipeline) + `DEVELOPMENT.md` (add-a-formatter how-to) |
+| Output format contract (json/raw vs markdown, `detail`) | `tools/result_pipeline.py` (source, canonical: module docstring) + `tools/virtual_params.py` (registry descriptions, agent-facing echo) + `format.py` (renderer, points here) + `gitea_mcp_server/docs/guides/tool-output-format.md` (agent-facing echo) |
 | Generic schema-anchored markdown view | `format.py` (`_generic_collection_view`, source) + `openapi_converter/display_hints.py` (`view_hints_for`) + `ARCHITECTURE.md` (design decision #18) |
 | Display-view hints (`omit` / `compact` / `flag`, `ViewHints`) | `openapi_converter/display_hints.py` (source, canonical) + `models.py` (`ViewHints`) + `ARCHITECTURE.md` (design decision #18) |
 | Agent-facing `$ref` marker shape | `gitea_mcp_server/marker.py` (source: `ref_marker`/`is_ref_marker`/`ref_marker_label`) + `ARCHITECTURE.md` (pipeline) |

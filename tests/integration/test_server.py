@@ -1207,6 +1207,104 @@ class TestServerEdgeCases:
         )
 
     @pytest.mark.asyncio
+    async def test_markdown_vs_json_contract(self) -> None:
+        """The output contract is stated once and echoed consistently.
+
+        Canonical home: ``result_pipeline.py``'s module docstring (the single
+        writer of both channels).  Agent-facing echoes: the
+        ``tool-output-format`` guide, the registry ``format`` / ``detail``
+        descriptions, and the injected doc.  The agent-facing
+        ``read_resource`` / ``list_resources`` docstrings must not hand-copy
+        the parameter text (the drift class this contract exists to kill);
+        behavioral completeness is locked by the real-spec view tests
+        (``test_display_real_spec.py``).
+        """
+        import inspect
+
+        from gitea_mcp_server.tools import result_pipeline
+        from gitea_mcp_server.tools.docs_tools import DocManager
+        from gitea_mcp_server.tools.mcp_tools import _list_resources_tool, _read_resource_tool
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        guide = DocManager().get("tool-output-format")
+        assert guide is not None, "tool-output-format guide is missing"
+
+        format_desc = _VIRTUAL_PARAMS["format"].description
+        detail_desc = _VIRTUAL_PARAMS["detail"].description
+        instructions = _served_instructions()
+
+        # The canonical dev-time statement names both contracts and the
+        # detail interaction.
+        canonical = result_pipeline.__doc__
+        assert canonical is not None
+        for anchor in (
+            "machine contract",
+            "reading contract",
+            "schema-derived",
+            "never compacted",
+        ):
+            assert anchor in canonical, f"result_pipeline.py contract missing: {anchor!r}"
+
+        # The agent-time guide echoes the contract, including the
+        # collection-vs-single-item distinction and raw's exemption.
+        for anchor in (
+            "machine contract",
+            "reading contract",
+            "schema-derived",
+            "single item",
+            "never compacted",
+        ):
+            assert anchor in guide.full_content, f"guide contract missing: {anchor!r}"
+
+        # The registry descriptions agree: markdown a view, raw never compacted.
+        assert "machine contract" in format_desc
+        assert "schema-derived reading view" in format_desc
+        assert "never compacted" in format_desc
+        assert "both json and markdown" in detail_desc
+
+        # The canonical statement and the registry description agree that
+        # detail=concise compacts json and markdown, and never raw.
+        assert "json and markdown" in canonical
+        assert "json and markdown" in detail_desc
+        assert "never compacted" in canonical
+        assert "never compacted" in detail_desc
+
+        # The injected doc carries the one-liner.
+        assert "schema-derived reading view" in instructions
+
+        # No agent-facing docstring hand-copies the virtual-param text or its
+        # format semantics: the registry owns them, so a copy is a drift
+        # surface.  A phrase blocklist is a regression guard over the phrasings
+        # that drifted, not a proof.
+        stale = (
+            "## Parameter: format",
+            "## Parameter: detail",
+            "full object expansion",
+            "control display format",
+            "through the display pipeline",
+            "returns the raw JSON",
+            "bypasses all formatting",
+        )
+        # Self-check: the blocklist catches each phrasing we removed.
+        known_bad = (
+            "Use the ``format`` parameter to control display format — "
+            "``format=markdown`` renders JSON data through the display pipeline",
+            "``format=json`` returns the raw JSON",
+            "``format=raw`` bypasses all formatting",
+            '"full" (default): complete information, full object expansion',
+        )
+        for sample in known_bad:
+            assert any(phrase in sample for phrase in stale), f"guard misses: {sample!r}"
+
+        for label, fn in (
+            ("read_resource", _read_resource_tool),
+            ("list_resources", _list_resources_tool),
+        ):
+            text = inspect.getdoc(fn) or ""
+            for phrase in stale:
+                assert phrase not in text, f"{label} carries stale format prose: {phrase!r}"
+
+    @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:
         """Served instructions contain key anchor phrases from the #461 review."""
         from gitea_mcp_server.server import _build_server_instructions

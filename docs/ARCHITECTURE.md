@@ -365,6 +365,18 @@ the text is a rendering of the page data.  Empty/out-of-range pages emit
 "total_count": N}`` as JSON text.  No display logic lives in executors — no
 ``_formatted`` marker, no pagination or formatting in the execution path.
 
+**The output contract is stated canonically in ``tools/result_pipeline.py``.**
+The pipeline is the single writer of both channels, so its module docstring is
+the dev-time source of truth for what each carries: ``json``/``raw`` are the
+API data (the machine contract, envelope and pagination included), ``markdown``
+is a schema-derived reading view (collections compact nested relations; a
+single item is the full payload), and ``detail="concise"`` compacts nested
+relations in ``json`` and ``markdown`` alike — ``raw`` is never compacted.
+The registry's ``format``/``detail`` descriptions (injected into tool schemas
+where the tool opts in) are the agent-facing echo; ``format.py`` (the renderer)
+points at the canonical home, and the agent-facing ``tool-output-format`` guide
+echoes it.
+
 **The markdown view is schema-anchored, not hand-written** (#771).  When a
 result carries a ``response_type`` and no bespoke formatter is registered for
 it, ``format.resolve_formatter`` returns the generic collection view

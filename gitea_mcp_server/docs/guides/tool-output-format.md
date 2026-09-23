@@ -16,15 +16,20 @@ what errors look like.
 `format` picks the shape of the result. The server sets the default; the tool
 schema shows it.
 
-- `markdown` — read. It shows the key fields of each item, not every field, and
-  collection views are more compact than single-item views.
-- `json` — extract. It gives you the complete API data; prefer it when you need
-  specific fields or will feed a result to code.
-- `raw` — the API payload as JSON text.
+- `json` / `raw` — the machine contract. The API data in a `{"result": ...}`
+  envelope, with pagination (`has_more`, `next_offset`, `total_count`) beside
+  `result`. Prefer these when you need specific fields or will feed a result to
+  code. `raw` is never compacted.
+- `markdown` — the reading contract. A schema-derived view, not a copy of the
+  payload: a collection shows the type's fields (scalars complete) with nested
+  relations compacted to an identity; a single item shows the full payload.
 
-Start with the default; reach for `json` when you want to pull specific fields,
-and `raw` when you need the payload exactly as the API sent it. For file
-resources such as a README, `read_resource` returns the decoded text directly.
+So read with `markdown`, extract with `json`/`raw`. At the default
+`detail="full"`, a field missing from a markdown collection is a compacted
+relation or a deliberately omitted noise field, and `json`/`raw` carry it. At
+`detail="concise"`, `json` and `markdown` both show the `$ref` marker; only
+`raw` carries the full nested value. For file resources such as a README,
+`read_resource` returns the decoded text directly.
 
 ## Keeping results small
 
@@ -33,7 +38,7 @@ resources such as a README, `read_resource` returns the decoded text directly.
 | detail | Result |
 |--------|--------|
 | `full` (default) | Everything is expanded. |
-| `concise` | Each item keeps its scalar fields (title, state, dates, body, ...) but nested objects -- user, milestone, repository, ... -- are replaced by a marker. |
+| `concise` | Each item keeps its scalar fields (title, state, dates, body, ...) but nested objects -- user, milestone, repository, ... -- are replaced by a marker. Applies to `json` and `markdown` alike. |
 
 A marker looks like `{"$ref": "TypeName"}` in `json` and `$ref:TypeName` in
 `markdown`. A collapsed list is `{"$ref": "TypeName", "count": N}`

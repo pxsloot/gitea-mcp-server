@@ -244,7 +244,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}/pulls",
         method="GET",
         resource_type="pulls",
-        scopes=["read:issue"],
+        scopes=["read:repository"],
         tags={"wrapper", "pull_requests"},
         error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
         param_config=ResourceParamConfig(

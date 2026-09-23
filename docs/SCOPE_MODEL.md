@@ -137,7 +137,6 @@ reads operation tags.
 
 ### TAG_TO_SCOPE mapping (`constants.py`)
 
-
 | Swagger tag | Scope resource name |
 |-------------|-------------------|
 | `admin` | `sudo` |
@@ -274,9 +273,12 @@ at spec-prep time:
 - **Custom resources**: ``register_custom_resources`` skips resources whose
   ``required_scopes`` are not satisfied by the token's available scopes.
 
-All three use the same underlying data (``filtered_tools_info``) or its direct
-subset (``available_scopes``), so the visible tool set and the visible resource
-set can never disagree.
+Tools and auto resources use the same underlying data
+(``filtered_tools_info``), so a tool and its auto resource are always filtered
+by the same decision.  Custom resources declare their own ``required_scopes``
+and are gated independently against ``available_scopes`` — the declaration is
+hand-written, so it must match the API endpoint it wraps (it is not derived
+from the spec).
 
 ---
 

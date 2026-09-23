@@ -514,6 +514,7 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
 #   PUT  /user/starred/{owner}/{repo}         → same
 #   DELETE /user/starred/{owner}/{repo}       → same
 #   GET  /user/orgs                           → User + Organization
+#   GET  /users/{username}/repos              → /users group (user) + route (repository)
 #   GET  /users/{username}/orgs               → User + Organization
 #   GET  /users/{username}/orgs/{org}/permissions → User + Organization
 #   POST /org/{org}/repos                     → Organization + Repository
@@ -526,6 +527,7 @@ _SCOPE_TAG_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
     ("put", "/user/starred/{owner}/{repo}"): ("user", "repository"),
     ("delete", "/user/starred/{owner}/{repo}"): ("user", "repository"),
     ("get", "/user/orgs"): ("user", "organization"),
+    ("get", "/users/{username}/repos"): ("user", "repository"),
     ("get", "/users/{username}/orgs"): ("user", "organization"),
     ("get", "/users/{username}/orgs/{org}/permissions"): ("user", "organization"),
     ("post", "/org/{org}/repos"): ("organization", "repository"),
@@ -546,8 +548,8 @@ def _reconcile_scope_tags(openapi_spec: OpenAPISpec) -> int:
     Mutates ``openapi_spec`` in-place.  Returns the number of operations
     reconciled.  Warns when an entry's operation is absent (stale table) or
     when its scope tags already match (obsolete entry — upstream fixed the
-    annotation).  Removing a tag is logged at warning level so upstream drift
-    is visible.
+    annotation).  Removing a tag (an upstream mis-tag correction) is logged at
+    info level.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (mutated in-place).
@@ -583,7 +585,7 @@ def _reconcile_scope_tags(openapi_spec: OpenAPISpec) -> int:
 
         removed = sorted(present - set(authoritative))
         if removed:
-            logger.warning(
+            logger.info(
                 "Scope tag correction on %s %s: removing %s (router requires %s)",
                 method.upper(),
                 path,
@@ -593,9 +595,6 @@ def _reconcile_scope_tags(openapi_spec: OpenAPISpec) -> int:
 
         non_scope = [tag for tag in tags if tag not in TAG_TO_SCOPE]
         new_tags = non_scope + [tag for tag in authoritative if tag not in non_scope]
-        if new_tags == tags:
-            continue
-
         operation["tags"] = new_tags
         reconciled += 1
         logger.debug(

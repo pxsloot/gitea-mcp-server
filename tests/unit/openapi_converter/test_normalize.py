@@ -732,6 +732,24 @@ class TestReconcileScopeTags:
         op = cast("dict[str, Any]", spec["paths"]["/user/repos"]["get"])
         assert op["tags"] == ["user", "repository"]
 
+    def test_appends_route_scope_under_group(self) -> None:
+        """A route-level scope under a group is appended to the group's tag.
+
+        ``GET /users/{username}/repos`` is under the ``/users`` group (user)
+        with a route-level ``repository`` scope, but the spec tags only ``user``.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/users/{username}/repos": {
+                    "get": {"operationId": "userListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast("dict[str, Any]", spec["paths"]["/users/{username}/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+
     def test_corrects_mis_tagged_scope(self) -> None:
         """A scope tag the router does not require is replaced.
 
@@ -1133,3 +1151,22 @@ class TestNormalizeSpec:
         assert good_op["x-param-rename"] == {"do": "Do"}
         # The bad operation was skipped, not fatal.
         assert "Failed to normalize operation POST /bad" in caplog.text
+
+    def test_reconciles_scope_tags(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """``normalize_spec`` applies Rule D and logs the reconciliation."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {"operationId": "userCurrentListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        with caplog.at_level(logging.INFO, logger="gitea_mcp_server.openapi_converter.normalize"):
+            normalize_spec(spec)
+
+        op = cast("dict[str, Any]", spec["paths"]["/user/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+        assert "Reconciled scope tags on 1 operations" in caplog.text

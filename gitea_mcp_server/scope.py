@@ -9,12 +9,15 @@ conjunction), and the Swagger tag set is a subset of those categories — the
 spec's per-operation ``tags`` cannot express parent-group middleware scopes.
 The derived requirement is therefore the *set* of scopes implied by the tags,
 and sufficiency requires every one of them.  This is deterministic (no set
-iteration order is observable) and never hides a tool the token can actually
-use, because a usable token holds every true category and hence every tag.
+iteration order is observable).  Because a usable token holds every true
+category, the conjunction is sound whenever the tags are a subset of the true
+categories: it can only over-show a tool (the API then answers 403), never hide
+a usable one.
 
 The converter reconciles the known cases where the generated tags disagree
-with the router (``openapi_converter/normalize.py``, Rule D), so this module
-stays generic: it only ever reads the operation tags.
+with the router (``openapi_converter/normalize.py``, Rule D) — both omissions
+and upstream mis-tags — so this module stays generic: it only reads the
+operation tags.
 """
 
 from collections.abc import Collection, Iterable

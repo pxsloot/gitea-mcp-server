@@ -84,23 +84,59 @@ server that silently hides half its tools.
 **Module**: `gitea_mcp_server/scope.py`
 
 ```
-derive_required_scope(swagger_tags, method) → str | None
+derive_required_scope(swagger_tags, method) → frozenset[str] | None
 ```
 
 | Input | Source | Example |
 |-------|--------|---------|
-| `swagger_tags` | OpenAPI `tags` array on the operation | `{"repository", "issue"}` |
+| `swagger_tags` | OpenAPI `tags` array on the operation | `{"repository", "user"}` |
 | `method` | HTTP method | `"GET"`, `"POST"`, `"DELETE"` |
 
 Logic:
 
-1. Scan `swagger_tags` for the first tag that appears in `TAG_TO_SCOPE`
-   (defined in `constants.py`). That gives the scope *resource name*.
-2. If the resource name is `"sudo"`, return `"sudo"` regardless of method.
-3. If method is GET/HEAD/OPTIONS → `"read:{resource}"`.
-4. Otherwise → `"write:{resource}"`.
+1. Map every tag that appears in `TAG_TO_SCOPE` (defined in `constants.py`)
+   to its scope *resource name*.  Unknown tags are ignored.
+2. A tag mapping to `"sudo"` contributes the literal `"sudo"` regardless of
+   method.
+3. For every other tag, a safe method (GET/HEAD/OPTIONS) contributes
+   `"read:{resource}"`; otherwise `"write:{resource}"`.
+4. Return the **set** of contributed scopes, or `None` when no tag maps.
+
+Because the result is a set built by mapping every tag (never a first match),
+the outcome is deterministic and independent of tag iteration order / process
+hash seed.
+
+### Multi-tag operations require **all** scopes
+
+An operation carrying several scope tags requires a conjunction, not one of
+them.  Gitea/Forgejo enforce *all* scope categories declared for a route:
+`tokenRequiresScopes(...)` delegates to `AccessTokenScope.HasScope`, which
+loops over the required scopes and fails if any is missing (its
+"at least one" error string is stale — the code is conjunctive).  Parent-group
+middleware adds its own categories, so e.g. every route under the `/user`
+group requires the `user` category in addition to any route-level category.
+
+The spec's per-operation `tags` are a **subset** of the true categories: a
+per-operation tag list cannot express parent-group middleware.  A usable token
+holds every true category and therefore every tag, so conjunctive derivation
+never hides a tool the token can actually use.  The residual is fail-open: an
+operation whose tags omit a category (e.g. `GET /user/repos`, tagged `[user]`
+but truly requiring `user` **and** `repository`) may be shown to a token that
+lacks the omitted scope, and the API then answers 403.
+
+The converter repairs the known under-reported cases at spec-prep time —
+**Rule D** in `openapi_converter/normalize.py` appends the missing scope tags
+from a table curated from the router (`_SCOPE_TAG_OVERRIDES`).  It is a
+source-driven exception like Rule C, with a drift guard that warns both when a
+table entry's operation disappears and when its scope tags already match (the
+upstream annotation was fixed).  The rule also corrects upstream **mis-tags**
+— e.g. `GET /repos/{owner}/{repo}/issues/pinned` is tagged `repository` but
+lives in the Issue group — by removing scope tags the router does not require,
+while preserving non-scope tags.  This keeps `scope.py` generic: it only ever
+reads operation tags.
 
 ### TAG_TO_SCOPE mapping (`constants.py`)
+
 
 | Swagger tag | Scope resource name |
 |-------------|-------------------|
@@ -116,17 +152,19 @@ Logic:
 
 ### Where the derived scope is stored
 
-**On tools**: `mcp_builder.py:_customize_metadata()` stores it in
-`component.meta["required_scope"]`, alongside other metadata.
+**On tools**: nowhere.  Tool scope is decided solely by spec-level filtering
+(see below); the tool's ``meta`` carries no scope field.  This keeps one
+source of truth — a per-tool meta copy previously existed and could drift
+from the filtering decision.
 
 **On resources**: auto-generated resources (`resources/auto.py`) and custom
-resources (`resources/custom.py`) now use the ``ResourceMeta`` dataclass
+resources (`resources/custom.py`) use the ``ResourceMeta`` dataclass
 (``resources/meta.py``) for typed registration metadata.  ``ResourceMeta``
-wraps ``required_scope`` alongside ``size_hint``, ``default_detail``, and
-``optional_params``, serialised via ``.to_dict()``:
+wraps ``required_scopes`` (a list, or ``None``) alongside ``size_hint``,
+``default_detail``, and ``optional_params``, serialised via ``.to_dict()``:
 
 ```python
-_meta = ResourceMeta(required_scope="read:repository", size_hint="medium").to_dict()
+_meta = ResourceMeta(required_scopes=["read:repository"], size_hint="medium").to_dict()
 ```
 
 The re-export chain (`scope.py` → `resources/scope.py` → `resources/__init__.py`)
@@ -157,17 +195,21 @@ source, so they can never diverge.
 
 ### Scope sufficiency rules
 
-These rules (in `scope.has_sufficient_scope`) determine whether an operation
-is excluded by scope:
+`scope.has_sufficient_scope(required, available)` takes a *collection* of
+required scopes and passes only when **every** one is satisfied:
 
 | Required | Available | Result |
 |----------|-----------|--------|
-| `None` | anything | ✅ allowed |
+| `None` / empty | anything | ✅ allowed |
 | anything | `"sudo"` | ✅ allowed |
 | anything | `"all"` | ✅ allowed (Gitea full-access shorthand) |
-| `"read:repository"` | `"read:repository"` | ✅ exact match |
-| `"read:repository"` | `"write:repository"` | ✅ write implies read |
-| `"write:issue"` | `"read:issue"` | ❌ read does not imply write |
+| `{"read:repository"}` | `"read:repository"` | ✅ exact match |
+| `{"read:repository"}` | `"write:repository"` | ✅ write implies read |
+| `{"write:issue"}` | `"read:issue"` | ❌ read does not imply write |
+| `{"write:repository", "write:user"}` | `"write:repository"` | ❌ one scope missing |
+| `{"write:repository", "write:user"}` | both | ✅ all present |
+
+The per-scope rules are applied independently and combined with `all(...)`.
 
 ---
 
@@ -209,11 +251,11 @@ changes needed.
 | `scope.py` | `derive_required_scope()` + `has_sufficient_scope()` — core utilities |
 | `resources/scope.py` | Re-exports from `scope.py` for package-internal consumers |
 | `constants.py` | `TAG_TO_SCOPE` mapping table |
+| `openapi_converter/normalize.py` | Rule D — reconciles under-reported/mis-tagged scope tags (`_SCOPE_TAG_OVERRIDES`) |
 | `server_setup/spec_loader.py` | `load_exclusion_config()` + `fetch_token_scopes()` + `_compute_excluded_routes()` |
 | `tools/virtual_params.py` | `apply_scope_filter()` — virtual param visibility |
 | `tools/filter_info.py` | `compute_filtered_tools_info()` — single source of truth for tool/resource visibility |
 | `server.py` | Orchestration in `create_mcp_server()` → threads `filtered_tools_info` and `available_scopes` to registration |
-| `mcp_builder.py` | Stores derived scope in `component.meta["required_scope"]` at customization time |
 | `server_setup/resource_setup.py` | Orchestrates resource registration; passes filtered data to auto + custom |
 | `resources/auto.py` | Registers auto-generated resources; skips filtered operationIds via `filtered_tools_info` |
 | `resources/custom.py` | Registers custom wrapper resources; skips via `has_sufficient_scope()` against `available_scopes` |
@@ -230,7 +272,7 @@ at spec-prep time:
 - **Auto resources**: `register_auto_generated_resources` skips operations whose
   ``operationId`` appears in ``filtered_tools_info["filtered"]``.
 - **Custom resources**: ``register_custom_resources`` skips resources whose
-  ``required_scope`` is not satisfied by the token's available scopes.
+  ``required_scopes`` are not satisfied by the token's available scopes.
 
 All three use the same underlying data (``filtered_tools_info``) or its direct
 subset (``available_scopes``), so the visible tool set and the visible resource

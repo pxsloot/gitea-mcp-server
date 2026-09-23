@@ -213,7 +213,7 @@ class TestMakeApiResourceRegistration:
             spec,
             uri="gitea://repos/{owner}/{repo}",
             api_path="/repos/{owner}/{repo}",
-            scope="read:admin",
+            scopes=["read:admin"],
             available_scopes={"read:repository"},
         )
 

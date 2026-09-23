@@ -109,37 +109,47 @@ class TestHasSufficientScope:
     """Tests for the has_sufficient_scope helper function."""
 
     def test_sudo_grants_any_scope(self) -> None:
-        assert has_sufficient_scope("read:repository", {"sudo"}) is True
-        assert has_sufficient_scope("write:issue", {"sudo"}) is True
-        assert has_sufficient_scope("sudo", {"sudo"}) is True
+        assert has_sufficient_scope({"read:repository"}, {"sudo"}) is True
+        assert has_sufficient_scope({"write:issue"}, {"sudo"}) is True
+        assert has_sufficient_scope({"sudo"}, {"sudo"}) is True
 
     def test_all_grants_any_scope(self) -> None:
-        assert has_sufficient_scope("read:repository", {"all"}) is True
-        assert has_sufficient_scope("write:issue", {"all"}) is True
-        assert has_sufficient_scope("sudo", {"all"}) is True
+        assert has_sufficient_scope({"read:repository"}, {"all"}) is True
+        assert has_sufficient_scope({"write:issue"}, {"all"}) is True
+        assert has_sufficient_scope({"sudo"}, {"all"}) is True
         assert has_sufficient_scope(None, {"all"}) is True
 
     def test_exact_read_scope_match(self) -> None:
-        assert has_sufficient_scope("read:repository", {"read:repository"}) is True
+        assert has_sufficient_scope({"read:repository"}, {"read:repository"}) is True
 
     def test_exact_write_scope_match(self) -> None:
-        assert has_sufficient_scope("write:issue", {"write:issue"}) is True
+        assert has_sufficient_scope({"write:issue"}, {"write:issue"}) is True
 
     def test_write_scope_grants_read(self) -> None:
-        assert has_sufficient_scope("read:repository", {"write:repository"}) is True
+        assert has_sufficient_scope({"read:repository"}, {"write:repository"}) is True
 
     def test_read_scope_does_not_grant_write(self) -> None:
-        assert has_sufficient_scope("write:repository", {"read:repository"}) is False
+        assert has_sufficient_scope({"write:repository"}, {"read:repository"}) is False
 
     def test_unrelated_scope_does_not_suffice(self) -> None:
-        assert has_sufficient_scope("write:issue", {"read:repository"}) is False
+        assert has_sufficient_scope({"write:issue"}, {"read:repository"}) is False
 
     def test_none_required_always_sufficient(self) -> None:
         assert has_sufficient_scope(None, set()) is True
         assert has_sufficient_scope(None, {"read:repository"}) is True
+        assert has_sufficient_scope(set(), {"read:repository"}) is True
 
     def test_empty_available_is_insufficient(self) -> None:
-        assert has_sufficient_scope("read:repository", set()) is False
+        assert has_sufficient_scope({"read:repository"}, set()) is False
+
+    def test_all_required_scopes_must_be_satisfied(self) -> None:
+        """Multiple required scopes are a conjunction."""
+        required = {"write:repository", "write:user"}
+        assert has_sufficient_scope(required, {"write:repository", "write:user"}) is True
+        assert has_sufficient_scope(required, {"write:repository"}) is False
+        assert has_sufficient_scope(required, {"write:user"}) is False
+        assert has_sufficient_scope(required, {"sudo"}) is True
+        assert has_sufficient_scope(required, {"all"}) is True
 
 
 # ═══════════════════════════════════════════════════════════════════════

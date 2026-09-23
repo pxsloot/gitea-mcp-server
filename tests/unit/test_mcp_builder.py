@@ -2353,29 +2353,10 @@ class TestApplyToolIdentity:
         tool.tags = set()
         tool.parameters = {"properties": {}}
 
-        scope = _apply_tool_identity(route, tool)
+        _apply_tool_identity(route, tool)
 
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
-        assert scope is not None  # scope derived from tags
-
-    def test_returns_required_scope(self) -> None:
-        """Return value is the derived required_scope string."""
-        route = MagicMock(
-            path="/repos/{owner}/{repo}/issues",
-            operation_id="issue_create_issue",
-            method="POST",
-        )
-        tool = MagicMock(spec=OpenAPITool)
-        tool.name = "issue_create_issue"
-        tool.annotations = {}
-        tool.tags = set()
-        tool.parameters = {"properties": {}}
-
-        scope = _apply_tool_identity(route, tool)
-
-        assert isinstance(scope, str)
-        assert "write" in scope
 
     def test_adds_category_tag(self) -> None:
         """Category tag is added to tool.tags."""
@@ -2589,14 +2570,12 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope="read:repository",
             schema=schema,
             has_labels=False,
             has_no_content=False,
         )
 
         meta = component.meta
-        assert meta["required_scope"] == "read:repository"
         assert "_customization" in meta
         assert meta["_contract_wrap"] is True
         assert meta["_customization"].route_path == "/repos/{owner}/{repo}"
@@ -2619,7 +2598,6 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope="read:repository",
             schema=schema,
             has_labels=False,
             has_no_content=False,
@@ -2643,7 +2621,6 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope="read:repository",
             schema=schema,
             has_labels=False,
             has_no_content=False,
@@ -2668,7 +2645,6 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope="read:repository",
             schema=schema,
             has_labels=False,
             has_no_content=False,
@@ -2696,7 +2672,6 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope=None,
             schema=schema,
             has_labels=False,
             has_no_content=False,
@@ -2720,7 +2695,6 @@ class TestBuildCustomizationMeta:
 
         _build_customization_meta(
             component,
-            required_scope="read:repository",
             schema=schema,
             has_labels=True,
             has_no_content=True,

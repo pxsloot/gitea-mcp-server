@@ -312,9 +312,9 @@ class TestExclusionIntegration:
 
     @pytest.mark.asyncio
     async def test_scoped_custom_resources_filtered(self) -> None:
-        """Custom resources whose required_scope is not satisfied by the token's
+        """Custom resources whose required_scopes are not satisfied by the token's
         available scopes should be skipped at registration time, while those
-        with no required scope or a matching scope remain visible."""
+        with no required scope or matching scopes remain visible."""
         spec = {
             "swagger": "2.0",
             "info": {"title": "Gitea API", "version": "1.0"},

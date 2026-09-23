@@ -7,7 +7,7 @@ across both registration paths (factory and static).
 Usage::
 
     meta = ResourceMeta(
-        required_scope="read:repository",
+        required_scopes=["read:repository"],
         size_hint="large",
         default_detail="concise",
         optional_params=[{"name": "state", "type": "string"}],
@@ -16,7 +16,7 @@ Usage::
 
 Or with auto-derivation::
 
-    meta = ResourceMeta.for_schema(schema, required_scope="read:repository")
+    meta = ResourceMeta.for_schema(schema, required_scopes=["read:repository"])
     mcp.resource(uri, description="...", meta=meta.to_dict())(handler)
 """
 
@@ -68,20 +68,20 @@ class ResourceMeta:
 
     Build via the constructor for explicit values::
 
-        ResourceMeta(required_scope="read:repository", size_hint="medium")
+        ResourceMeta(required_scopes=["read:repository"], size_hint="medium")
 
     Or via ``for_schema()`` for auto-derived ``size_hint``::
 
-        ResourceMeta.for_schema(schema, required_scope="read:repository")
+        ResourceMeta.for_schema(schema, required_scopes=["read:repository"])
 
     ``for_schema`` derives ``size_hint`` from the response schema's structure
     when not provided explicitly, and derives ``default_detail`` from the
-    resulting ``size_hint``.  Other fields (``required_scope``, ``cache_ttl``,
+    resulting ``size_hint``.  Other fields (``required_scopes``, ``cache_ttl``,
     ``optional_params``) pass through untouched — they are configuration, not
     schema-derived.
     """
 
-    required_scope: str | None = None
+    required_scopes: list[str] | None = None
     cache_ttl: float | None = None
     optional_params: list[dict[str, Any]] | None = None
     size_hint: str | None = None
@@ -104,8 +104,8 @@ class ResourceMeta:
             via ``list_resources`` before reading.
         """
         result: dict[str, Any] = {}
-        if self.required_scope is not None:
-            result["required_scope"] = self.required_scope
+        if self.required_scopes is not None:
+            result["required_scopes"] = self.required_scopes
         if self.cache_ttl is not None:
             result["cache_ttl"] = self.cache_ttl
         if self.optional_params is not None:
@@ -121,7 +121,7 @@ class ResourceMeta:
         cls,
         schema: dict[str, Any] | None,
         *,
-        required_scope: str | None = None,
+        required_scopes: list[str] | None = None,
         cache_ttl: float | None = None,
         optional_params: list[dict[str, Any]] | None = None,
         size_hint: str | None = None,
@@ -134,7 +134,7 @@ class ResourceMeta:
         array-ness, and nesting depth via :func:`derive_size_hint_from_schema`.
         ``default_detail`` is then derived from ``size_hint``.
 
-        The remaining fields (``required_scope``, ``cache_ttl``,
+        The remaining fields (``required_scopes``, ``cache_ttl``,
         ``optional_params``) pass through as-is — they are configuration,
         not schema-derived.  This avoids callers having to construct two
         separate metadata dicts.
@@ -146,7 +146,7 @@ class ResourceMeta:
         resolved_size = size_hint or derive_size_hint_from_schema(schema)
         resolved_detail = default_detail or default_detail_for(resolved_size)
         return cls(
-            required_scope=required_scope,
+            required_scopes=required_scopes,
             cache_ttl=cache_ttl,
             optional_params=optional_params,
             size_hint=resolved_size,

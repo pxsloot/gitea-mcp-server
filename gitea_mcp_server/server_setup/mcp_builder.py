@@ -7,7 +7,7 @@ Startup-time customization is orchestrated by :func:`_customize_metadata`
 (via FastMCP's public ``mcp_component_fn`` hook) and delegated to four focused
 phases:
 - :func:`_apply_tool_identity` — title, annotations, hints, category,
-  scope, cache invalidation
+  cache invalidation
 - :func:`_detect_has_labels` — detect array-typed labels parameter
 - :func:`_compute_tool_schema` (pure) — schema derivation, response
   classification, route identity; followed by
@@ -52,7 +52,6 @@ from gitea_mcp_server.pagination import (
     PAGINATION_SCHEMA_PROPERTIES,
     pagination_ctx,
 )
-from gitea_mcp_server.scope import derive_required_scope
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.customize import (
     _detect_has_labels,
@@ -402,16 +401,13 @@ def _apply_schema_postprocessing(
 def _apply_tool_identity(
     route: Any,
     component: OpenAPITool,
-) -> str | None:
-    """Apply title, annotations, category, hints, scope, and invalidation.
+) -> None:
+    """Apply title, annotations, category, hints, and invalidation.
 
     Mutates ``component`` in-place: sets ``annotations`` and ``tags``.
     Records write tools for cache-invalidation derivation — targets are
     derived later from the spec + resource surface (issue #743), not
     declared here.
-
-    Returns:
-        The derived ``required_scope`` (``str | None``).
     """
     title = generate_tool_title(route)
     annotations = _prepare_annotations(component, title)
@@ -429,15 +425,9 @@ def _apply_tool_identity(
         # surface — no hardcoded URI templates (issue #743).
         record_write_tool(component.name, route.path, method)
 
-    return derive_required_scope(
-        set(component.tags) if component.tags else None,
-        method,
-    )
-
 
 def _build_customization_meta(
     component: OpenAPITool,
-    required_scope: str | None,
     schema: _ComputedSchema,
     *,
     has_labels: bool,
@@ -445,15 +435,13 @@ def _build_customization_meta(
 ) -> None:
     """Build and attach the ``component.meta`` dict consumed by runtime transforms.
 
-    Mutates ``component.meta`` in-place.  Sets ``required_scope``,
-    ``output_schema_raw``, ``response_type``, ``view_hints``,
-    ``_customization``, and ``_WRAP_ME``.
+    Mutates ``component.meta`` in-place.  Sets ``output_schema_raw``,
+    ``response_type``, ``view_hints``, ``_customization``, and ``_WRAP_ME``.
 
     All per-tool metadata comes from ``schema`` (:class:`_ComputedSchema`)
     — no direct ``route`` or ``openapi_spec`` access needed.
     """
     component_meta = dict(component.meta) if component.meta else {}
-    component_meta["required_scope"] = required_scope
 
     if schema.raw_schema is not None:
         component_meta["output_schema_raw"] = unwrap_result_schema(schema.raw_schema)
@@ -658,7 +646,7 @@ def _customize_metadata(
     if not isinstance(component, OpenAPITool):
         return
 
-    required_scope = _apply_tool_identity(route, component)
+    _apply_tool_identity(route, component)
 
     # Fix parameter_map for renamed body properties (collision resolution)
     # and renamed path/query/header/cookie parameters (snake_case
@@ -681,7 +669,6 @@ def _customize_metadata(
 
     _build_customization_meta(
         component,
-        required_scope,
         schema,
         has_labels=has_labels,
         has_no_content=has_no_content,

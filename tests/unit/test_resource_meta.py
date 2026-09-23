@@ -164,14 +164,14 @@ class TestResourceMeta:
     def test_to_dict_includes_set_fields(self) -> None:
         """to_dict should include non-None fields."""
         meta = ResourceMeta(
-            required_scope="read:repository",
+            required_scopes=["read:repository"],
             size_hint="large",
             default_detail="concise",
             optional_params=[{"name": "state", "type": "string"}],
             cache_ttl=60.0,
         )
         result = meta.to_dict()
-        assert result["required_scope"] == "read:repository"
+        assert result["required_scopes"] == ["read:repository"]
         assert result["size_hint"] == "large"
         assert result["default_detail"] == "concise"
         assert result["optional_params"] == [{"name": "state", "type": "string"}]
@@ -179,9 +179,9 @@ class TestResourceMeta:
 
     def test_to_dict_partial_fields(self) -> None:
         """to_dict should include only the explicitly set non-None fields."""
-        meta = ResourceMeta(required_scope="read:issue")
+        meta = ResourceMeta(required_scopes=["read:issue"])
         result = meta.to_dict()
-        assert result == {"required_scope": "read:issue"}
+        assert result == {"required_scopes": ["read:issue"]}
 
     def test_for_schema_derives_size_hint(self) -> None:
         """for_schema should auto-derive size_hint when not explicitly set."""
@@ -189,9 +189,9 @@ class TestResourceMeta:
             "type": "object",
             "properties": {str(i): {"type": "string"} for i in range(6)},
         }
-        meta = ResourceMeta.for_schema(schema, required_scope="read:repository")
+        meta = ResourceMeta.for_schema(schema, required_scopes=["read:repository"])
         assert meta.size_hint == SIZE_MEDIUM
-        assert meta.required_scope == "read:repository"
+        assert meta.required_scopes == ["read:repository"]
 
     def test_for_schema_explicit_size_hint_overrides(self) -> None:
         """for_schema should use explicit size_hint instead of deriving."""
@@ -200,10 +200,10 @@ class TestResourceMeta:
             "properties": {str(i): {"type": "string"} for i in range(6)},
         }
         meta = ResourceMeta.for_schema(
-            schema, required_scope="read:repository", size_hint=SIZE_TINY
+            schema, required_scopes=["read:repository"], size_hint=SIZE_TINY
         )
         assert meta.size_hint == SIZE_TINY
-        assert meta.required_scope == "read:repository"
+        assert meta.required_scopes == ["read:repository"]
 
     def test_for_schema_derives_default_detail_from_size_hint(self) -> None:
         """for_schema should derive default_detail from the (explicit or derived) size_hint."""

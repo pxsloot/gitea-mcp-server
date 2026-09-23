@@ -108,7 +108,7 @@ def _get_filter_reason(  # noqa: PLR0913 - all params needed for the check
         if required is not None and not has_sufficient_scope(required, available_scopes):
             return {
                 "reason": "scope",
-                "required_scope": required,
+                "required_scopes": sorted(required),
             }
 
     return None
@@ -143,7 +143,7 @@ def compute_filtered_tools_info(
                 "filtered": {
                     "admin_create_user": {
                         "reason": "scope",
-                        "required_scope": "sudo",
+                        "required_scopes": ["sudo"],
                     },
                     "repo_deprecated_endpoint": {
                         "reason": "deprecated",
@@ -259,14 +259,15 @@ def build_filtered_tools_message(
     reason: str = filter_entry.get("reason", "unknown")
 
     if reason == "scope":
-        required: str = filter_entry.get("required_scope", "unknown")
+        required: list[str] = filter_entry.get("required_scopes", [])
         available: list[str] = (
             filtered_tools_info.get("available_scopes", []) if filtered_tools_info else []
         )
 
+        required_text = ", ".join(f"'{scope}'" for scope in required) or "unknown"
         msg = (
             f"Tool '{name}' exists but is restricted by your token scopes. "
-            f"Required scope: '{required}'. "
+            f"Required scope(s): {required_text}. "
         )
         if available:
             msg += f"Your token has: {', '.join(available)}. "

@@ -542,14 +542,12 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
         info = _prefix_cross_refs(info) if info else info
         return json.dumps(info, indent=2) if info else "{}"
 
-    # No required_scope: the type index is built from the OpenAPI spec
+    # No required_scopes: the type index is built from the OpenAPI spec
     # which is fetched from a public endpoint — reading it is scope-free.
     # Tools and resources outside the agent's token scope are filtered at
     # spec-prep time (route_map_fn), so the type index cannot leak data
     # from unreachable endpoints.
-    _type_meta = ResourceMeta(
-        required_scope=None, size_hint="medium", default_detail="full"
-    ).to_dict()
+    _type_meta = ResourceMeta(size_hint="medium", default_detail="full").to_dict()
 
     mcp.resource(
         uri="gitea://types/{typeName}",

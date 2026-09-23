@@ -82,11 +82,11 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
             """Add metadata fields to a resource entry from the resource's meta dict.
 
             Extracts discoverable fields that agents can inspect before calling
-            ``read_resource``: ``required_scope``, ``optional_params``,
+            ``read_resource``: ``required_scopes``, ``optional_params``,
             ``size_hint``, and ``default_detail``.  All are optional — missing
             fields are simply absent from the entry.
             """
-            base["required_scope"] = meta.get("required_scope") if meta else None
+            base["required_scopes"] = meta.get("required_scopes") if meta else None
             if meta:
                 optional_params = meta.get("optional_params")
                 if optional_params:
@@ -246,9 +246,12 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                         "items": {"type": "string"},
                         "description": "Categorization tags",
                     },
-                    "required_scope": {
-                        "oneOf": [{"type": "string"}, {"type": "null"}],
-                        "description": "Required token scope or null",
+                    "required_scopes": {
+                        "oneOf": [
+                            {"type": "array", "items": {"type": "string"}},
+                            {"type": "null"},
+                        ],
+                        "description": "Required token scopes, or null",
                     },
                     "optional_params": {
                         "oneOf": [
@@ -295,7 +298,7 @@ _LIST_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                     "mimeType": "application/json",
                     "type": "template",
                     "tags": ["wrapper", "repository"],
-                    "required_scope": "read:repository",
+                    "required_scopes": ["read:repository"],
                 },
             ],
         },
@@ -366,7 +369,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
     - `mimeType`: MIME type of the content (e.g., "text/markdown", "application/json")
     - `type`: Either "resource" or "template"
     - `tags`: List of tags categorizing the resource (e.g., ["repository", "wrapper"])
-    - `required_scope`: Token scope required to access this resource (e.g., "read:repository"),
+    - `required_scopes`: Token scopes required to access this resource (e.g., ["read:repository"]),
       or `null` if no specific scope is required
     - `optional_params`: Optional list of dicts describing available query parameters
       (e.g., ``[{"name": "state", "type": "string", "values": ["open", "closed"]}]``),
@@ -402,10 +405,11 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
       wrapper resources, ``text/plain`` for raw text).
     - ``format`` and ``detail`` are the shared output contract; their
       descriptions come from this tool's schema (via ``tool_info``).
-    - The `required_scope` field tells you what Gitea token scope is needed:
-      - `"read:repository"` - needs read access to repositories
-      - `"read:issue"` - needs read access to issues
+    - The `required_scopes` field tells you what Gitea token scopes are needed:
+      - `["read:repository"]` - needs read access to repositories
+      - `["read:issue"]` - needs read access to issues
       - `null` - requires no specific scope (public info)
+      When more than one scope is listed, the token must hold **all** of them.
     - The `size_hint` field estimates token cost. For ``"large"`` resources
       (e.g., ``pulls``, ``issues``), pass ``detail="concise"`` to save tokens.
     - The `default_detail` field recommends a detail level. Respect it unless
@@ -423,7 +427,7 @@ async def _list_resources_tool(  # noqa: PLR0913 - ctx is FastMCP DI plumbing
                 "mimeType": "application/json",
                 "type": "template",
                 "tags": ["wrapper", "repository"],
-                "required_scope": "read:repository",
+                "required_scopes": ["read:repository"],
                 "size_hint": "large",
                 "default_detail": "concise"
             },
@@ -730,9 +734,7 @@ def register_mcp_resource_tools(
         "Use after search_tools to inspect parameter details and see an output example.",
         mime_type="application/json",
         tags={"synthetic", "tool-schema", "schema"},
-        meta=ResourceMeta(
-            required_scope=None, size_hint="large", default_detail="concise"
-        ).to_dict(),
+        meta=ResourceMeta(size_hint="large", default_detail="concise").to_dict(),
     )(_make_tool_schema_resource_handler(openapi_spec))
 
     logger.info(

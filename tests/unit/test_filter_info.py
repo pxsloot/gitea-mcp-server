@@ -189,7 +189,7 @@ class TestComputeFilteredToolsInfo:
         filtered = result["filtered"]
         assert "admin_list_users" in filtered
         assert filtered["admin_list_users"]["reason"] == "scope"
-        assert filtered["admin_list_users"]["required_scope"] == "sudo"
+        assert filtered["admin_list_users"]["required_scopes"] == ["sudo"]
 
     def test_deprecated_endpoint_filtered(self, spec_with_deprecated_endpoint: OpenAPISpec) -> None:
         """Endpoint with deprecated:true → filtered as deprecated."""
@@ -233,7 +233,7 @@ class TestComputeFilteredToolsInfo:
 
         # Scope-restricted
         assert filtered["admin_list_users"]["reason"] == "scope"
-        assert filtered["admin_list_users"]["required_scope"] == "sudo"
+        assert filtered["admin_list_users"]["required_scopes"] == ["sudo"]
 
         # Deprecated
         assert filtered["old_get_endpoint"]["reason"] == "deprecated"
@@ -335,11 +335,47 @@ class TestComputeFilteredToolsInfo:
         result = compute_filtered_tools_info(spec, available_scopes={"read:issue"})
         assert "issue_create_issue" in result["filtered"]
         assert result["filtered"]["issue_create_issue"]["reason"] == "scope"
-        assert result["filtered"]["issue_create_issue"]["required_scope"] == "write:issue"
+        assert result["filtered"]["issue_create_issue"]["required_scopes"] == ["write:issue"]
 
         # Token has write → visible
         result2 = compute_filtered_tools_info(spec, available_scopes={"write:issue"})
         assert result2["filtered"] == {}
+
+    def test_multi_tag_operation_requires_all_scopes(self) -> None:
+        """A multi-tag operation is filtered unless every scope is present.
+
+        Regression for the one multi-tag operation in the live spec,
+        ``POST /user/repos`` (``createCurrentUserRepo``): tags
+        ``["repository", "user"]``, router requires both categories.
+        """
+        spec = make_openapi_spec(
+            openapi="3.1.0",
+            info={"title": "Test", "version": "1"},
+            paths={
+                "/user/repos": {
+                    "post": {
+                        "operationId": "createCurrentUserRepo",
+                        "tags": ["repository", "user"],
+                        "summary": "Create a repository",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        )
+
+        both = compute_filtered_tools_info(
+            spec, available_scopes={"write:repository", "write:user"}
+        )
+        assert both["filtered"] == {}
+
+        repo_only = compute_filtered_tools_info(spec, available_scopes={"write:repository"})
+        assert repo_only["filtered"]["createCurrentUserRepo"]["required_scopes"] == [
+            "write:repository",
+            "write:user",
+        ]
+
+        user_only = compute_filtered_tools_info(spec, available_scopes={"write:user"})
+        assert user_only["filtered"]["createCurrentUserRepo"]["reason"] == "scope"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -373,7 +409,7 @@ class TestGetFilteredToolInfo:
 
     def test_strips_prefix_to_find_tool(self) -> None:
         """Prefixed name is stripped before lookup."""
-        info = {"filtered": {"repo_get": {"reason": "scope", "required_scope": "sudo"}}}
+        info = {"filtered": {"repo_get": {"reason": "scope", "required_scopes": ["sudo"]}}}
         result = get_filtered_tool_info("gitea_repo_get", info, tool_prefix="gitea_")
         assert result is not None
         assert result["reason"] == "scope"
@@ -417,9 +453,9 @@ class TestIsExcluded:
 class TestBuildFilteredToolsMessage:
     """Agent-facing error message formatting."""
 
-    def test_scope_reason_mentions_required_scope(self) -> None:
-        """Scope-filtered message includes 'Required scope'."""
-        entry = {"reason": "scope", "required_scope": "sudo"}
+    def test_scope_reason_mentions_required_scopes(self) -> None:
+        """Scope-filtered message includes 'Required scope(s)'."""
+        entry = {"reason": "scope", "required_scopes": ["sudo"]}
         msg = build_filtered_tools_message("admin_list_users", entry)
         assert "admin_list_users" in msg
         assert "sudo" in msg
@@ -427,7 +463,7 @@ class TestBuildFilteredToolsMessage:
 
     def test_scope_reason_includes_available_scopes(self) -> None:
         """When filtered_tools_info has available_scopes, include them."""
-        entry = {"reason": "scope", "required_scope": "sudo"}
+        entry = {"reason": "scope", "required_scopes": ["sudo"]}
         info = {"available_scopes": ["read:repository", "write:issue"]}
         msg = build_filtered_tools_message("admin_list_users", entry, info)
         assert "read:repository" in msg
@@ -435,7 +471,7 @@ class TestBuildFilteredToolsMessage:
 
     def test_scope_reason_without_available_scopes(self) -> None:
         """Scope message works even when filtered_tools_info is None."""
-        entry = {"reason": "scope", "required_scope": "sudo"}
+        entry = {"reason": "scope", "required_scopes": ["sudo"]}
         msg = build_filtered_tools_message("admin_list_users", entry)
         assert "sudo" in msg
         assert "search_tools()" in msg
@@ -479,7 +515,7 @@ class TestFilteredToolMiddleware:
             "filtered": {
                 "admin_create_user": {
                     "reason": "scope",
-                    "required_scope": "sudo",
+                    "required_scopes": ["sudo"],
                 },
             },
         }

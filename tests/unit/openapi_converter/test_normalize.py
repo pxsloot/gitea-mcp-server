@@ -4,6 +4,7 @@ Tests the normalization rules:
 - Rule A: snake_case parameter/body-property renames (query/header/cookie/body).
 - Rule B: boolean-check response annotation.
 - Rule C: wildcard path-param annotation (source-driven exception).
+- Rule D: scope-tag augmentation (source-driven exception).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from gitea_mcp_server.openapi_converter.normalize import (
     _merge_rename_map,
     _normalize_operation_body,
     _normalize_operation_parameters,
+    _reconcile_scope_tags,
     normalize_spec,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
@@ -711,6 +713,96 @@ class TestAnnotateWildcardPathParams:
             annotated = _annotate_wildcard_path_params(spec)
         assert annotated == 0
         assert "has no operations" in caplog.text
+
+
+class TestReconcileScopeTags:
+    """Rule D — scope-tag reconciliation for under-reported/mis-tagged ops."""
+
+    def test_appends_missing_scope_tags(self) -> None:
+        """A tag set that under-reports a router scope gets the missing tag."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {"operationId": "userCurrentListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast("dict[str, Any]", spec["paths"]["/user/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+
+    def test_corrects_mis_tagged_scope(self) -> None:
+        """A scope tag the router does not require is replaced.
+
+        ``GET /repos/{owner}/{repo}/issues/pinned`` is in the Issue group but
+        the generated spec tags it ``repository`` (upstream mis-tag).
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/pinned": {
+                    "get": {"operationId": "repoListPinnedIssues", "tags": ["repository"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/issues/pinned"]["get"],
+        )
+        assert op["tags"] == ["issue"]
+
+    def test_preserves_non_scope_tags(self) -> None:
+        """Search-category tags that map to no scope survive reconciliation."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/starred": {
+                    "get": {
+                        "operationId": "userCurrentListStarred",
+                        "tags": ["user", "pull_request"],
+                    },
+                },
+            },
+        )
+        _reconcile_scope_tags(spec)
+        op = cast("dict[str, Any]", spec["paths"]["/user/starred"]["get"])
+        assert op["tags"] == ["pull_request", "user", "repository"]
+
+    def test_obsolete_entry_warns(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An entry whose scope tags already match warns (upstream fixed)."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {
+                        "operationId": "userCurrentListRepos",
+                        "tags": ["user", "repository"],
+                    },
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 0
+        assert "already matches" in caplog.text
+
+    def test_missing_entry_warns_loudly(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A table entry absent from the fetched spec warns (drift guard)."""
+        spec = make_openapi_spec(paths={})
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 0
+        assert "not found in fetched spec" in caplog.text
 
 
 class TestNormalizeSpec:

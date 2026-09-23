@@ -16,17 +16,19 @@ what errors look like.
 `format` picks the shape of the result. The server sets the default; the tool
 schema shows it.
 
-- `json` / `raw` — the machine contract. The complete API data in a
-  `{"result": ...}` envelope, with pagination (`has_more`, `next_offset`,
-  `total_count`) beside `result`. Prefer these when you need specific fields or
-  will feed a result to code.
+- `json` / `raw` — the machine contract. The API data in a `{"result": ...}`
+  envelope, with pagination (`has_more`, `next_offset`, `total_count`) beside
+  `result`. Prefer these when you need specific fields or will feed a result to
+  code. `raw` is never compacted.
 - `markdown` — the reading contract. A schema-derived view, not a copy of the
   payload: a collection shows the type's fields (scalars complete) with nested
   relations compacted to an identity; a single item shows the full payload.
 
-So read with `markdown`, extract with `json`/`raw`. A field missing from a
-markdown collection is a compacted relation or a deliberately omitted noise
-field — `json`/`raw` always carries it. For file resources such as a README,
+So read with `markdown`, extract with `json`/`raw`. At the default
+`detail="full"`, a field missing from a markdown collection is a compacted
+relation or a deliberately omitted noise field, and `json`/`raw` carry it. At
+`detail="concise"`, `json` and `markdown` both show the `$ref` marker; only
+`raw` carries the full nested value. For file resources such as a README,
 `read_resource` returns the decoded text directly.
 
 ## Keeping results small

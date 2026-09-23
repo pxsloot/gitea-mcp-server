@@ -280,8 +280,10 @@ _VIRTUAL_PARAMS["format"] = VirtualParam(
     default=_NO_DEFAULT,
     description=(
         "Response format.  "
-        '"json"/"raw" — the complete API data in a {"result": ...} envelope '
+        '"json"/"raw" — the API data in a {"result": ...} envelope '
         "(pagination included); the machine contract.  "
+        '"raw" is never compacted; "json" compacts nested relations at '
+        'detail="concise".  '
         '"markdown" — a schema-derived reading view: collections show the '
         "type's fields with nested relations compacted; a single item shows "
         "the full payload."

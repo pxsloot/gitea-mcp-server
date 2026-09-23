@@ -1233,32 +1233,41 @@ class TestServerEdgeCases:
         detail_desc = _VIRTUAL_PARAMS["detail"].description
         instructions = _served_instructions()
 
-        # The canonical dev-time statement names both channels.
+        # The canonical dev-time statement names both contracts and the
+        # detail interaction.
         canonical = result_pipeline.__doc__
         assert canonical is not None
         for anchor in (
             "machine contract",
             "reading contract",
-            "complete API data",
             "schema-derived",
+            "never compacted",
         ):
             assert anchor in canonical, f"result_pipeline.py contract missing: {anchor!r}"
 
         # The agent-time guide echoes the contract, including the
-        # collection-vs-single-item distinction.
+        # collection-vs-single-item distinction and raw's exemption.
         for anchor in (
             "machine contract",
             "reading contract",
-            "complete API data",
             "schema-derived",
             "single item",
+            "never compacted",
         ):
             assert anchor in guide.full_content, f"guide contract missing: {anchor!r}"
 
-        # The registry descriptions agree: json/raw complete, markdown a view.
-        assert "complete API data" in format_desc
+        # The registry descriptions agree: markdown a view, raw never compacted.
+        assert "machine contract" in format_desc
         assert "schema-derived reading view" in format_desc
+        assert "never compacted" in format_desc
         assert "both json and markdown" in detail_desc
+
+        # The canonical statement and the registry description agree that
+        # detail=concise compacts json and markdown, and never raw.
+        assert "json and markdown" in canonical
+        assert "json and markdown" in detail_desc
+        assert "never compacted" in canonical
+        assert "never compacted" in detail_desc
 
         # The injected doc carries the one-liner.
         assert "schema-derived reading view" in instructions

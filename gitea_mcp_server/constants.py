@@ -36,7 +36,7 @@ their own ``detail`` parameter with it."""
 DETAIL_VALUES: tuple[str, ...] = get_args(DetailLiteral)
 """The ``detail`` values, derived from :data:`DetailLiteral`."""
 
-DEFAULT_DETAIL = "full"
+DEFAULT_DETAIL: DetailLiteral = "full"
 """Canonical ``detail`` default for the tool surface.
 
 ``DETAIL_PARAM_SCHEMA`` assembles this value, and the ``detail`` virtual-param
@@ -63,7 +63,7 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
         "$ref-backed relations collapse to the marker "
         '{"$ref": "TypeName"} ({"$ref": "TypeName", "count": N} for a '
         "collapsed list; rendered $ref:TypeName in markdown) in both json and "
-        "markdown."
+        "markdown (raw is never compacted)."
     ),
 }
 """JSON Schema for the ``detail`` parameter used by all tools.
@@ -84,6 +84,8 @@ collapsed list) in **both** json and markdown.  The default is ``"full"``.
 
 DETAIL_PARAM_SCHEMA_CONCISE: dict[str, object] = {
     **DETAIL_PARAM_SCHEMA,
+    # Copy the enum list so this variant never aliases the canonical one.
+    "enum": list(DETAIL_VALUES),
     "default": DEFAULT_DETAIL_CONCISE,
 }
 """Variant of :data:`DETAIL_PARAM_SCHEMA`  that defaults to ``"concise"``.

@@ -23,22 +23,24 @@ Output contract (canonical):
     source of truth for what each channel carries — every other home points
     here.
 
-    - ``json`` / ``raw`` — the **machine contract**: the complete API data in
-      the ``{"result": ...}`` envelope, with pagination (``has_more`` /
+    - ``json`` / ``raw`` — the **machine contract**: the API data in the
+      ``{"result": ...}`` envelope, with pagination (``has_more`` /
       ``next_offset`` / ``total_count``) beside ``result``.  ``raw`` is that
-      same envelope as deterministic JSON text.
+      same envelope as deterministic JSON text, and is **never** compacted.
     - ``markdown`` — the **reading contract**: a schema-derived view, not a
       copy of the payload.  A collection shows the bound type's fields —
       scalars complete — with ``$ref``-backed relations compacted to an
       identity/label (a few curated noise fields omitted); a single item
       shows the full payload.
-    - ``detail="concise"`` collapses nested ``$ref``-backed relations to the
-      canonical marker in **both** channels; ``detail="full"`` (default)
-      expands them.
+    - ``detail="concise"`` compacts nested ``$ref``-backed relations in
+      json and markdown alike; ``raw`` is never compacted.
+      ``detail="full"`` (default) expands them.
 
-    A field absent from a markdown collection is therefore a compacted
-    relation or a deliberately omitted noise field — ``json`` / ``raw``
-    always carry it.  The registry's ``format`` / ``detail`` descriptions
+    So a field absent from a markdown collection is a compacted relation or a
+    deliberately omitted noise field.  At ``detail="full"`` (the default)
+    ``json`` and ``raw`` carry it; at ``detail="concise"`` ``json`` shows the
+    ``$ref`` marker too, and only ``raw`` still carries the full nested value.
+    The registry's ``format`` / ``detail`` descriptions
     (:mod:`gitea_mcp_server.tools.virtual_params`) are the agent-facing echo;
     ``format.py`` (the renderer) points here, and the agent-time guide
     (``gitea_mcp_server/docs/guides/tool-output-format.md``) echoes it.

@@ -149,10 +149,11 @@ understand, a guide is often faster than trial and error.
 
 Most tools and resources accept `format` (`json` | `markdown` | `raw`; the
 server sets the default) and `detail` (`full` default | `concise`); `tool_info`
-shows what a given tool accepts. Use `markdown` to read, `json` to extract
-complete data, and `raw` for the API payload as JSON text. In `json` and `raw`,
-paginated results carry `has_more`, `next_offset`, and `total_count`; an empty
-or out-of-range page is not an error.
+shows what a given tool accepts. `json`/`raw` carry the complete data; `markdown`
+is a schema-derived reading view (collections compact nested relations). Use
+`markdown` to read, `json` to extract. In `json` and `raw`, paginated results
+carry `has_more`, `next_offset`, and `total_count`; an empty or out-of-range page
+is not an error.
 
 The full guide to reading results -- formats, compact mode (`$ref` markers),
 paging, and error shapes -- is `read_doc("tool-output-format")`.

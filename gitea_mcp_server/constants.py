@@ -37,27 +37,35 @@ is static (not server config), so it is not threaded from ``Config``."""
 DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "type": "string",
     "enum": [
-        "concise",
         "full",
+        "concise",
     ],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
     "default": DEFAULT_DETAIL,
     "description": (
         "Output detail level.  "
-        '"full" (default) — complete information, full object expansion.  '
-        '"concise" — root items are summarized (scalar fields intact); '
-        "nested $ref-backed objects collapse to the marker "
+        '"full" (default) — complete information, nested $ref-backed '
+        "relations expanded.  "
+        '"concise" — root items are summarized (scalar fields intact); nested '
+        "$ref-backed relations collapse to the marker "
         '{"$ref": "TypeName"} ({"$ref": "TypeName", "count": N} for a '
-        "collapsed list), rendered as $ref:TypeName in markdown."
+        "collapsed list; rendered $ref:TypeName in markdown) in both json and "
+        "markdown."
     ),
 }
 """JSON Schema for the ``detail`` parameter used by all tools.
 
-Controls how much detail is shown in tool output.  ``"full"`` renders
-everything recursively; ``"concise"`` summarizes root items (scalar fields
-intact) and collapses nested ``$ref``-backed objects to the canonical
+**Single source** for the ``detail`` parameter (type, enum, default, and
+description).  The virtual-param registry (``tools/virtual_params.py``)
+derives its ``detail`` entry from this value, and the introspection tools
+(``tool_info``, ``resolve_type``) use :data:`DETAIL_PARAM_SCHEMA_CONCISE`, so
+the agent-facing ``detail`` schema cannot drift between the two (#788).
+
+Controls how much detail is shown in tool output.  ``"full"`` expands nested
+``$ref``-backed relations; ``"concise"`` summarizes root items (scalar fields
+intact) and collapses nested ``$ref``-backed relations to the canonical
 agent-facing marker (``{"$ref": "TypeName"}``, or with ``count`` for a
-collapsed list — #759, #763).  The default is ``"full"`` (backward
-compatible).
+collapsed list — #759, #763) in **both** json and markdown.  The default is
+``"full"``.
 
 .. note::
     The ``enum`` values **must** stay in sync with the

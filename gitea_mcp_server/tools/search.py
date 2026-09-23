@@ -1159,7 +1159,13 @@ def register_synthetic_tools(
                                 {"type": "number"},
                                 {"type": "null"},
                             ],
-                            "description": "Compact type-summary example (fields with type names for refs; primitives for scalar-result tools like boolean checks)",
+                            "description": (
+                                "Compact example of the json/raw result shape "
+                                "(fields with type names for refs; primitives "
+                                "for scalar-result tools like boolean checks). "
+                                "Markdown renders a schema-derived view, not "
+                                "this full shape."
+                            ),
                         },
                         "output_schema": {
                             "type": "object",

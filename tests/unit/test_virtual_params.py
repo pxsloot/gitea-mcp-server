@@ -814,3 +814,25 @@ class TestWrapIntegration:
             with pytest.raises(ValueError, match="format must be one of"):
                 await wrapped.run({"owner": "test", "format": "bogus"})
             mock_run.assert_not_called()
+
+
+class TestDetailSchemaSingleSource:
+    """The registry ``detail`` entry derives from ``constants`` (#788)."""
+
+    def test_registry_detail_matches_constants(self) -> None:
+        from gitea_mcp_server.constants import (
+            DETAIL_PARAM_SCHEMA,
+            DETAIL_PARAM_SCHEMA_CONCISE,
+        )
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        vp = _VIRTUAL_PARAMS["detail"]
+        assert vp.schema == DETAIL_PARAM_SCHEMA
+        assert vp.description == DETAIL_PARAM_SCHEMA["description"]
+        assert vp.default == DETAIL_PARAM_SCHEMA["default"]
+
+        # The concise variant differs only in its default.
+        base = {k: v for k, v in DETAIL_PARAM_SCHEMA.items() if k != "default"}
+        concise = {k: v for k, v in DETAIL_PARAM_SCHEMA_CONCISE.items() if k != "default"}
+        assert concise == base
+        assert DETAIL_PARAM_SCHEMA_CONCISE["default"] == "concise"

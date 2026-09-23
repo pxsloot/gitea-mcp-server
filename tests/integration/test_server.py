@@ -1207,6 +1207,73 @@ class TestServerEdgeCases:
         )
 
     @pytest.mark.asyncio
+    async def test_markdown_vs_json_contract(self) -> None:
+        """The output contract is stated once and echoed consistently (#772).
+
+        Canonical home: ``virtual_params.py``'s module docstring.  Agent-facing
+        echoes: the ``tool-output-format`` guide, the registry ``format`` /
+        ``detail`` descriptions, and the injected doc.  No surface may imply
+        markdown carries every schema field.
+        """
+        import re
+
+        from gitea_mcp_server.server import _build_server_instructions
+        from gitea_mcp_server.tools import virtual_params
+        from gitea_mcp_server.tools.docs_tools import DocManager
+        from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
+
+        guide = DocManager().get("tool-output-format")
+        assert guide is not None, "tool-output-format guide is missing"
+
+        format_desc = _VIRTUAL_PARAMS["format"].description
+        detail_desc = _VIRTUAL_PARAMS["detail"].description
+        instructions = _build_server_instructions()
+
+        # The canonical dev-time statement names both channels.
+        canonical = virtual_params.__doc__
+        assert canonical is not None
+        for anchor in (
+            "machine contract",
+            "reading contract",
+            "complete API data",
+            "schema-derived",
+        ):
+            assert anchor in canonical, f"virtual_params.py contract missing: {anchor!r}"
+
+        # The agent-time guide echoes the contract, including the
+        # collection-vs-single-item distinction.
+        for anchor in (
+            "machine contract",
+            "reading contract",
+            "complete API data",
+            "schema-derived",
+            "single item",
+        ):
+            assert anchor in guide.full_content, f"guide contract missing: {anchor!r}"
+
+        # The registry descriptions agree: json/raw complete, markdown a view.
+        assert "complete API data" in format_desc
+        assert "schema-derived reading view" in format_desc
+        assert "both json and markdown" in detail_desc
+
+        # The injected doc carries the one-liner.
+        assert "schema-derived reading view" in instructions
+
+        # No agent-facing surface claims markdown is complete.
+        bad = re.compile(
+            r"markdown[^.\n]{0,40}\b(?:complete|every field|all fields|full field set)\b",
+            re.IGNORECASE,
+        )
+        surfaces = {
+            "guide": guide.full_content,
+            "format description": format_desc,
+            "injected instructions": instructions,
+        }
+        for label, text in surfaces.items():
+            match = bad.search(text)
+            assert match is None, f"{label} implies markdown is complete: {match.group(0)!r}"
+
+    @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:
         """Served instructions contain key anchor phrases from the #461 review."""
         from gitea_mcp_server.server import _build_server_instructions

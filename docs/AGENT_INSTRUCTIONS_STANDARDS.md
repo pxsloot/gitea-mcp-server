@@ -174,6 +174,9 @@ When you add something to the injected doc, first ask whether it can be a
 - `gitea_mcp_server/docs/guides/tool-output-format.md` -- agent-facing guide to
   reading results: formats, compact mode, paging, `$ref` markers, and error
   shapes (the injected doc points here).
+- `gitea_mcp_server/tools/virtual_params.py` (module docstring) -- the dev-time
+  canonical output contract (json/raw vs markdown, `detail`); the agent-time
+  guide and the injected doc echo it, and `format.py` points here (#772).
 - `docs/TOOL_ANNOTATIONS.md` -- canonical reference for annotation semantics
   (the agent doc carries only the condensed table).
 - `docs/SCOPE_MODEL.md` -- canonical reference for scope/permission mechanics.
@@ -193,6 +196,7 @@ The assertable invariants are guarded by these tests in
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
 | ``test_agent_surfaces_do_not_hardcode_format_default`` | No agent-facing surface (instructions, ``tool-output-format`` guide, synthetic ``read_resource``/``list_resources`` descriptions) claims a fixed ``format`` default; the default is server config (#781) |
 | ``test_tool_output_format_guide_pointer`` | The doc's ``read_doc("tool-output-format")`` pointer resolves to a real, described guide |
+| ``test_markdown_vs_json_contract`` | The guide, the registry ``format``/``detail`` descriptions, and the injected doc agree that ``json``/``raw`` carry the complete data while ``markdown`` is a schema-derived reading view; no surface claims markdown is complete (#772) |
 
 A regression in any of these fails ``make test``. This file guards the
 *intent* that a test cannot express. Both must be updated together when

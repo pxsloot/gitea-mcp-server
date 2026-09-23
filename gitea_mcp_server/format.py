@@ -47,6 +47,16 @@ Formatter contract and registry:
 The single result pipeline for tools and resources lives in
 ``tools/result_pipeline.py``; this module provides the shared formatting
 primitives it builds on.
+
+Output contract:
+    The canonical statement of what each channel carries lives in the
+    virtual-param registry's module docstring
+    (:mod:`gitea_mcp_server.tools.virtual_params`, #772) — ``json`` / ``raw``
+    are the complete machine contract, ``markdown`` is a schema-derived
+    reading view.  This module is the renderer; it does not restate the
+    contract.  See :func:`_generic_collection_view` for the view and
+    :func:`~gitea_mcp_server.openapi_converter.display_hints.view_hints_for`
+    for the curated omissions.
 """
 
 from __future__ import annotations
@@ -1254,6 +1264,11 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     example = schema.get("output_example")
     if example is not None:
         lines.append(_format_json_section("Output Example", example))
+        # The example is the json/raw shape; markdown is a schema-derived view
+        # (#772) — say so where an agent reads it.
+        lines.append("_This is the `json`/`raw` shape; `markdown` renders a")
+        lines.append("schema-derived view, not this full shape._")
+        lines.append("")
 
     annotations = schema.get("annotations")
     if isinstance(annotations, dict):

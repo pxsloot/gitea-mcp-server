@@ -37,7 +37,31 @@ Lifecycle for every tool call::
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
-``tool_predicate`` — then the injection call site must pass ``tool``)."""
+``tool_predicate`` — then the injection call site must pass ``tool``).
+
+Output contract (canonical, #772):
+    The ``format`` / ``detail`` entries below are the **canonical home** for
+    the agent-facing output contract — the single statement every other home
+    points at.  ``format.py`` (the renderer) and the agent-time guide
+    (``gitea_mcp_server/docs/guides/tool-output-format.md``) point here; the
+    injected agent instructions carry the one-line summary.
+
+    - ``json`` / ``raw`` — the **machine contract**: the complete API data in
+      the ``{"result": ...}`` envelope, with pagination (``has_more`` /
+      ``next_offset`` / ``total_count``) beside ``result``.  ``raw`` is that
+      same envelope as deterministic JSON text.
+    - ``markdown`` — the **reading contract**: a schema-derived view, not a
+      copy of the payload.  A collection shows the bound type's fields —
+      scalars complete — with ``$ref``-backed relations compacted to an
+      identity/label (a few curated noise fields omitted); a single item
+      shows the full payload.
+    - ``detail="concise"`` collapses nested ``$ref``-backed relations to the
+      canonical marker in **both** channels; ``detail="full"`` (default)
+      expands them.
+
+    A field absent from a markdown collection is therefore a compacted
+    relation or a deliberately omitted noise field — ``json`` / ``raw``
+    always carry it."""
 
 from __future__ import annotations
 
@@ -47,7 +71,10 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from gitea_mcp_server.constants import DEFAULT_DETAIL, RESPONSE_FORMATS
+from gitea_mcp_server.constants import (
+    DETAIL_PARAM_SCHEMA,
+    RESPONSE_FORMATS,
+)
 from gitea_mcp_server.validation import validate_enum
 
 logger = logging.getLogger(__name__)
@@ -237,19 +264,22 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 # the executor's raw ExecutionResult.  They stay in the registry so the
 # schema injection + kwarg extraction machinery is shared — but they carry
 # no hooks, and no display logic lives here.
+#
+# The output contract these two params describe is stated canonically in this
+# module's docstring (json/raw = the complete machine contract; markdown = a
+# schema-derived reading view; detail collapses relations in both channels,
+# #772).  The descriptions below are the agent-facing statement.
 
 # ``detail`` registered before ``format`` so both are present in the
 # extracted dict in a stable order.  No hooks — the pipeline reads them.
+#
+# ``detail`` derives from ``constants.DETAIL_PARAM_SCHEMA`` — the single
+# source — so the injected schema and the introspection tools cannot drift
+# (#788).
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
-    schema={"type": "string", "enum": ["full", "concise"]},
-    default=DEFAULT_DETAIL,
-    description=(
-        'Output detail level.  "full" (default) — complete information. '
-        '"concise" — root items summarized (scalars intact), nested '
-        "$ref-backed objects collapsed to the ``$ref`` marker "
-        '(``{"$ref": "TypeName"}``, or with ``"count"`` for a collapsed list; '
-        "rendered as ``$ref:TypeName`` in markdown)."
-    ),
+    schema=dict(DETAIL_PARAM_SCHEMA),
+    default=DETAIL_PARAM_SCHEMA["default"],
+    description=str(DETAIL_PARAM_SCHEMA["description"]),
 )
 
 _VIRTUAL_PARAMS["format"] = VirtualParam(
@@ -263,10 +293,12 @@ _VIRTUAL_PARAMS["format"] = VirtualParam(
     # literal fallback either.
     default=_NO_DEFAULT,
     description=(
-        "Response format control.  "
-        '"json" — raw JSON.  '
-        '"markdown" — formatted tables for human/agent reading.  '
-        '"raw" — unprocessed API response.'
+        "Response format.  "
+        '"json"/"raw" — the complete API data in a {"result": ...} envelope '
+        "(pagination included); the machine contract.  "
+        '"markdown" — a schema-derived reading view: collections show the '
+        "type's fields with nested relations compacted; a single item shows "
+        "the full payload."
     ),
 )
 

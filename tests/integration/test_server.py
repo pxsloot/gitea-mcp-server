@@ -1208,18 +1208,22 @@ class TestServerEdgeCases:
 
     @pytest.mark.asyncio
     async def test_markdown_vs_json_contract(self) -> None:
-        """The output contract is stated once and echoed consistently (#772).
+        """The output contract is stated once and echoed consistently.
 
         Canonical home: ``virtual_params.py``'s module docstring.  Agent-facing
         echoes: the ``tool-output-format`` guide, the registry ``format`` /
-        ``detail`` descriptions, and the injected doc.  No surface may imply
-        markdown carries every schema field.
+        ``detail`` descriptions, and the injected doc.  The agent-facing
+        ``read_resource`` / ``list_resources`` docstrings must not hand-copy
+        the parameter text (the drift class this contract exists to kill);
+        behavioral completeness is locked by the real-spec view tests
+        (``test_display_real_spec.py``).
         """
-        import re
+        import inspect
 
         from gitea_mcp_server.server import _build_server_instructions
         from gitea_mcp_server.tools import virtual_params
         from gitea_mcp_server.tools.docs_tools import DocManager
+        from gitea_mcp_server.tools.mcp_tools import _list_resources_tool, _read_resource_tool
         from gitea_mcp_server.tools.virtual_params import _VIRTUAL_PARAMS
 
         guide = DocManager().get("tool-output-format")
@@ -1259,19 +1263,17 @@ class TestServerEdgeCases:
         # The injected doc carries the one-liner.
         assert "schema-derived reading view" in instructions
 
-        # No agent-facing surface claims markdown is complete.
-        bad = re.compile(
-            r"markdown[^.\n]{0,40}\b(?:complete|every field|all fields|full field set)\b",
-            re.IGNORECASE,
-        )
-        surfaces = {
-            "guide": guide.full_content,
-            "format description": format_desc,
-            "injected instructions": instructions,
-        }
-        for label, text in surfaces.items():
-            match = bad.search(text)
-            assert match is None, f"{label} implies markdown is complete: {match.group(0)!r}"
+        # No agent-facing docstring hand-copies the virtual-param text: the
+        # registry owns it, so a copy is a drift surface.  A surface that
+        # carries no parameter prose cannot contradict the contract.
+        for label, fn in (
+            ("read_resource", _read_resource_tool),
+            ("list_resources", _list_resources_tool),
+        ):
+            text = inspect.getdoc(fn) or ""
+            assert "## Parameter: format" not in text, f"{label} hand-copies format"
+            assert "## Parameter: detail" not in text, f"{label} hand-copies detail"
+            assert "full object expansion" not in text, f"{label} carries stale detail text"
 
     @pytest.mark.asyncio
     async def test_served_instructions_key_anchors(self) -> None:

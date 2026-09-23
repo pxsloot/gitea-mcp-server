@@ -157,12 +157,12 @@ re-teaching it:
 | If the content is... | It belongs in... |
 |----------------------|------------------|
 | A tool's parameters, output example, schema | ``tool_info`` (and the tool schema) |
-| ``format`` / ``detail`` / ``fetch_all`` / ``sudo`` usage | the ``tool-output-format`` guide (+ the tool schema for per-tool availability) |
+| ``format`` / ``detail`` / ``fetch_all`` / ``sudo`` usage | the ``tool-output-format`` guide, which echoes the canonical output contract in ``tools/virtual_params.py`` (+ the tool schema for per-tool availability) |
 | Paging, compact mode, ``$ref`` markers, ``resolve_type``, error shapes | the ``tool-output-format`` workflow guide (``read_doc("tool-output-format")``) |
 | A Gitea/Forgejo feature's mechanics | the matching workflow guide |
 | Annotation semantics | ``TOOL_ANNOTATIONS.md`` (the doc carries the condensed table) |
 | Scope/permission mechanics | ``SCOPE_MODEL.md`` (the doc carries the universal-filtering point) |
-| Implementation contracts (dual channel, deterministic ``raw``, envelope location, base64, skip-slice) | ``ARCHITECTURE.md`` (developer docs) -- never the agent surface |
+| Pipeline internals (dual channel, deterministic ``raw``, envelope location, base64, skip-slice) | ``ARCHITECTURE.md`` (developer docs) -- never the agent surface.  The *contract* -- what each format carries -- is canonical in ``tools/virtual_params.py`` |
 
 When you add something to the injected doc, first ask whether it can be a
 ``tool_info`` result, a guide, or a pointer. The default is *point*, not
@@ -176,7 +176,7 @@ When you add something to the injected doc, first ask whether it can be a
   shapes (the injected doc points here).
 - `gitea_mcp_server/tools/virtual_params.py` (module docstring) -- the dev-time
   canonical output contract (json/raw vs markdown, `detail`); the agent-time
-  guide and the injected doc echo it, and `format.py` points here (#772).
+  guide and the injected doc echo it, and `format.py` points here.
 - `docs/TOOL_ANNOTATIONS.md` -- canonical reference for annotation semantics
   (the agent doc carries only the condensed table).
 - `docs/SCOPE_MODEL.md` -- canonical reference for scope/permission mechanics.
@@ -196,7 +196,7 @@ The assertable invariants are guarded by these tests in
 | ``test_served_instructions_key_anchors`` | Key phrases present (filter explanation, scope universality, configurable prefix, ``tool_info`` invite) |
 | ``test_agent_surfaces_do_not_hardcode_format_default`` | No agent-facing surface (instructions, ``tool-output-format`` guide, synthetic ``read_resource``/``list_resources`` descriptions) claims a fixed ``format`` default; the default is server config (#781) |
 | ``test_tool_output_format_guide_pointer`` | The doc's ``read_doc("tool-output-format")`` pointer resolves to a real, described guide |
-| ``test_markdown_vs_json_contract`` | The guide, the registry ``format``/``detail`` descriptions, and the injected doc agree that ``json``/``raw`` carry the complete data while ``markdown`` is a schema-derived reading view; no surface claims markdown is complete (#772) |
+| ``test_markdown_vs_json_contract`` | The guide, the registry ``format``/``detail`` descriptions, and the injected doc agree that ``json``/``raw`` carry the complete data while ``markdown`` is a schema-derived reading view; agent-facing docstrings do not hand-copy the parameter text |
 
 A regression in any of these fails ``make test``. This file guards the
 *intent* that a test cannot express. Both must be updated together when

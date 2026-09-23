@@ -1679,7 +1679,7 @@ class TestFormatToolInfoMarkdown:
         assert "object" in result
 
     def test_output_example_note_clarifies_json_shape(self) -> None:
-        """The Output Example section says it is the json/raw shape (#772)."""
+        """The Output Example section says it is the json/raw shape."""
         from gitea_mcp_server.format import format_tool_info_markdown
 
         schema: ToolSchemaResult = {

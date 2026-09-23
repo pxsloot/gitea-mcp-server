@@ -817,7 +817,7 @@ class TestWrapIntegration:
 
 
 class TestDetailSchemaSingleSource:
-    """The registry ``detail`` entry derives from ``constants`` (#788)."""
+    """The registry ``detail`` entry derives from ``constants``."""
 
     def test_registry_detail_matches_constants(self) -> None:
         from gitea_mcp_server.constants import (

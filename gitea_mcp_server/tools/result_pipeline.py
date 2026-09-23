@@ -18,6 +18,12 @@ the serialized envelope dict — the two channels never disagree.  For
 envelope's ``result``, not the executor's full data) while
 ``structured_content`` carries the envelope.
 
+The output contract — what each channel carries for ``json``/``raw`` vs
+``markdown``, and what ``detail`` collapses — is stated canonically in the
+virtual-param registry's module docstring
+(:mod:`gitea_mcp_server.tools.virtual_params`); this module is the single
+writer that implements it.
+
 Executors may attach a per-result ``schema`` (``ExecutionResult.schema``) for
 ``$ref``-aware collapse when the tool-level schema does not describe the
 result (e.g. ``read_resource``, whose schema varies per URI); it takes

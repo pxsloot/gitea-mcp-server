@@ -39,7 +39,7 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
     "enum": [
         "full",
         "concise",
-    ],  # Keep in sync with Literal["concise", "full"] in tools/search.py and tools/type_info.py
+    ],  # Values must match the Literal in tools/search.py / tools/type_info.py; order is agent-facing
     "default": DEFAULT_DETAIL,
     "description": (
         "Output detail level.  "
@@ -58,7 +58,7 @@ DETAIL_PARAM_SCHEMA: dict[str, object] = {
 description).  The virtual-param registry (``tools/virtual_params.py``)
 derives its ``detail`` entry from this value, and the introspection tools
 (``tool_info``, ``resolve_type``) use :data:`DETAIL_PARAM_SCHEMA_CONCISE`, so
-the agent-facing ``detail`` schema cannot drift between the two (#788).
+the agent-facing ``detail`` schema cannot drift between the two.
 
 Controls how much detail is shown in tool output.  ``"full"`` expands nested
 ``$ref``-backed relations; ``"concise"`` summarizes root items (scalar fields

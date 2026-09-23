@@ -51,7 +51,7 @@ primitives it builds on.
 Output contract:
     The canonical statement of what each channel carries lives in the
     virtual-param registry's module docstring
-    (:mod:`gitea_mcp_server.tools.virtual_params`, #772) — ``json`` / ``raw``
+    (:mod:`gitea_mcp_server.tools.virtual_params`) — ``json`` / ``raw``
     are the complete machine contract, ``markdown`` is a schema-derived
     reading view.  This module is the renderer; it does not restate the
     contract.  See :func:`_generic_collection_view` for the view and
@@ -1234,7 +1234,8 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     parse reliably:
 
     - ``## Parameters`` — table with ``Parameter | Type | Required | Description``
-    - ``## Output Example`` — JSON code block
+    - ``## Output Example`` — JSON code block, with a note that it is the
+      ``json``/``raw`` shape and not the markdown view
     - ``## Annotations`` — table with ``Hint | Value``
     - ``## Tags`` — comma-separated list
     - ``## Output Schema`` — JSON code block (only when ``output_schema`` present)
@@ -1265,7 +1266,7 @@ def format_tool_info_markdown(schema: ToolSchemaResult) -> str:
     if example is not None:
         lines.append(_format_json_section("Output Example", example))
         # The example is the json/raw shape; markdown is a schema-derived view
-        # (#772) — say so where an agent reads it.
+        # — say so where an agent reads it.
         lines.append("_This is the `json`/`raw` shape; `markdown` renders a")
         lines.append("schema-derived view, not this full shape._")
         lines.append("")

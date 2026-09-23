@@ -507,29 +507,10 @@ async def _read_resource_tool(
 
     URI format: `gitea://<path>` where path follows the Gitea API structure.
 
-    ## Parameter: format
-
-    Output format:
-    - ``markdown``: schema-aware Markdown with tables and sections (for JSON resources).
-      Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
-    - ``raw``: the executor-produced data serialized as the ``{"result": ...}``
-      envelope — the same deterministic raw contract as every tool.  Base64
-      content is decoded (the executor always produces the data).
-    - ``json``: pretty-printed JSON (for JSON resources). For non-JSON resources,
-      wraps content in ``{"result": "..."}`` for consistent structured output.
-      Base64-encoded Gitea ContentsResponse is auto-decoded to plain text.
-
-    ## Parameter: detail
-
-    Output detail level:
-    - ``"full"`` (default): complete information, full object expansion.
-    - ``"concise"``: root items are summarized — scalar fields stay intact
-      while nested ``$ref``-backed fields collapse to the canonical ``$ref``
-      marker (``{"$ref": "TypeName"}``, or ``{"$ref": "TypeName", "count":
-      N}`` for a collapsed list; rendered as ``$ref:TypeName`` in markdown)
-      (#759, #763).  Affects both JSON and Markdown output.  Schema-aware
-      ``$ref`` collapse is applied when the resource carries a response
-      schema.
+    ``format`` and ``detail`` are the shared output contract; their
+    descriptions come from the virtual-param registry and are shown in this
+    tool's schema (via ``tool_info``).  For file resources, base64-encoded
+    Gitea ContentsResponse content is auto-decoded to plain text.
 
     ## Return Value
 

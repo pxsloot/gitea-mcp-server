@@ -39,11 +39,11 @@ Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
 ``tool_predicate`` — then the injection call site must pass ``tool``).
 
-Output contract (canonical, #772):
+Output contract (canonical):
     The ``format`` / ``detail`` entries below are the **canonical home** for
     the agent-facing output contract — the single statement every other home
-    points at.  ``format.py`` (the renderer) and the agent-time guide
-    (``gitea_mcp_server/docs/guides/tool-output-format.md``) point here; the
+    points at.  ``format.py`` (the renderer) points here; the agent-time guide
+    (``gitea_mcp_server/docs/guides/tool-output-format.md``) echoes it; the
     injected agent instructions carry the one-line summary.
 
     - ``json`` / ``raw`` — the **machine contract**: the complete API data in
@@ -267,15 +267,14 @@ _VIRTUAL_PARAMS["content_type"] = VirtualParam(
 #
 # The output contract these two params describe is stated canonically in this
 # module's docstring (json/raw = the complete machine contract; markdown = a
-# schema-derived reading view; detail collapses relations in both channels,
-# #772).  The descriptions below are the agent-facing statement.
+# schema-derived reading view; detail collapses relations in both channels).
+# The descriptions below are the agent-facing statement.
 
 # ``detail`` registered before ``format`` so both are present in the
 # extracted dict in a stable order.  No hooks — the pipeline reads them.
 #
 # ``detail`` derives from ``constants.DETAIL_PARAM_SCHEMA`` — the single
-# source — so the injected schema and the introspection tools cannot drift
-# (#788).
+# source — so the injected schema and the introspection tools cannot drift.
 _VIRTUAL_PARAMS["detail"] = VirtualParam(
     schema=dict(DETAIL_PARAM_SCHEMA),
     default=DETAIL_PARAM_SCHEMA["default"],

@@ -20,6 +20,7 @@ from gitea_mcp_server.validation import (
     _resolve_local_refs,
     _validate_enum_from_schema,
     augment_schema_with_validation,
+    validate_enum,
     validate_filepath,
     validate_labels,
     validate_owner_repo,
@@ -655,6 +656,32 @@ class TestValidateEnumFromSchema:
     def test_case_sensitive(self) -> None:
         with pytest.raises(ValidationError):
             _validate_enum_from_schema("A", field="test", enum_values=["a", "b"])
+
+
+class TestValidateEnum:
+    """Tests for the public schema-driven enum validator (validate_enum)."""
+
+    def test_valid_value_returns_true(self) -> None:
+        """A declared enum validates the value and reports it was present."""
+        assert validate_enum("json", field="format", schema={"enum": ["json", "raw"]}) is True
+
+    def test_invalid_value_raises(self) -> None:
+        with pytest.raises(ValidationError, match="format must be one of: json, raw"):
+            validate_enum("bogus", field="format", schema={"enum": ["json", "raw"]})
+
+    def test_no_enum_returns_false(self) -> None:
+        """A schema without an enum is a no-op (returns False, never raises)."""
+        assert validate_enum("anything", field="sudo", schema={"type": "string"}) is False
+
+    def test_empty_schema_returns_false(self) -> None:
+        assert validate_enum("anything", field="x", schema={}) is False
+
+    def test_enum_through_anyof(self) -> None:
+        """anyOf-wrapped enums (e.g. nullable spec params) are found."""
+        schema = {"anyOf": [{"type": "string", "enum": ["open", "closed"]}, {"type": "null"}]}
+        assert validate_enum("open", field="state", schema=schema) is True
+        with pytest.raises(ValidationError, match="state must be one of"):
+            validate_enum("bogus", field="state", schema=schema)
 
 
 class TestFindStringSchema:

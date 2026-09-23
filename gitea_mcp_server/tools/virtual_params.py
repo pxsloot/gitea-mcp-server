@@ -28,9 +28,12 @@ Lifecycle for every tool call::
     2. extract_from(kwargs, only=tool.meta["_virtual_params"])  ← pops before
        HTTP call; params not injected (e.g. ``fetch_all`` on autogen tools)
        stay in kwargs and are rejected as unknown by validation
-    3. apply_pre_hooks(extracted, kwargs)       ← runs pre-hooks (may mutate kwargs)
-    4. executor(kwargs, extracted, ctx)         ← backend execution (HTTP or local)
-    5. apply_to(result, extracted)      ← runs post-hooks (sudo cleanup only)
+    3. validate_extracted(extracted)            ← validates each popped value
+       against its registry schema (enum), before the executor — so an invalid
+       ``format``/``detail``/``content_type`` never reaches the API
+    4. apply_pre_hooks(extracted, kwargs)       ← runs pre-hooks (may mutate kwargs)
+    5. executor(kwargs, extracted, ctx)         ← backend execution (HTTP or local)
+    6. apply_to(result, extracted)      ← runs post-hooks (sudo cleanup only)
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
@@ -45,6 +48,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from gitea_mcp_server.constants import DEFAULT_DETAIL, RESPONSE_FORMATS
+from gitea_mcp_server.validation import validate_enum
 
 logger = logging.getLogger(__name__)
 
@@ -416,6 +420,33 @@ def extract_from(
     return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS}
 
 
+def validate_extracted(extracted: dict[str, Any]) -> None:
+    """Validate extracted virtual-parameter values against their schemas.
+
+    The registry schema is the single source for both injection
+    (:func:`inject_into`) and validation.  Called by the contract spine
+    **after** :func:`extract_from` and **before** the executor, so an invalid
+    value is rejected before any HTTP call (no side effect for a write tool).
+
+    Only params whose schema declares an ``enum`` are constrained — ``format``,
+    ``detail``, and ``content_type``.  Params with no enum (``sudo``,
+    ``fetch_all``) are a no-op, and a key with no registry entry is ignored
+    (defensive: pipeline metadata such as ``_raw_schema`` is attached to the
+    same dict later, not before this call).
+
+    Args:
+        extracted: The ``{name: value}`` dict returned by :func:`extract_from`.
+
+    Raises:
+        ValidationError: If a value is not one of its schema's declared values.
+    """
+    for name, value in extracted.items():
+        vp = _VIRTUAL_PARAMS.get(name)
+        if vp is None:
+            continue
+        validate_enum(value, field=name, schema=vp.schema)
+
+
 def apply_pre_hooks(extracted: dict[str, Any], kwargs: dict[str, Any] | None = None) -> None:
     """Run pre-hooks for every extracted virtual parameter.
 
@@ -462,4 +493,5 @@ __all__ = [
     "extract_from",
     "inject_into",
     "sudo_context",
+    "validate_extracted",
 ]

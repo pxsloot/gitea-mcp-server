@@ -18,25 +18,30 @@ for both tool families:
        popped — an off-profile registry-name key (e.g. ``fetch_all`` on an
        autogen tool) stays in kwargs and is rejected as unknown rather than
        silently dropped.
-    2. ``apply_pre_hooks(...)`` — run pre-hooks (may mutate kwargs, e.g.
+    2. ``validate_extracted(...)`` — validate each popped value against its
+       registry schema (enum) **before** the executor, so an invalid
+       ``format``/``detail``/``content_type`` never reaches the API (and a
+       write never runs before the error).  The registry schema is the single
+       source for injection and validation.
+    3. ``apply_pre_hooks(...)`` — run pre-hooks (may mutate kwargs, e.g.
        content_type base64-encodes ``content``).
-    3. Resolve the MCP ``Context`` via
+    4. Resolve the MCP ``Context`` via
        :func:`~gitea_mcp_server.context_utils.resolve_current_context` —
        progress reporting and structured logging degrade to no-ops when no
        session is active.
-    4. ``executor(kwargs, extracted, ctx)`` — backend-specific execution.
+    5. ``executor(kwargs, extracted, ctx)`` — backend-specific execution.
        Executors return raw data only — an
        :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
        (data, total_count, result shape).  The single result pipeline
        (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
        shape → paginate → format → ``ToolResult``.
-    5. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
+    6. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
        from ``tool.meta``) so the pipeline can render schema-aware output
        (``detail=concise``), dispatch a type-bound domain markdown formatter,
        and refine the generic schema-anchored view with the curated
        display-view deficiencies, and derive the formatter context (``extra``)
        from the call's path/query args so the formatter sees repo/type context.
-    6. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
+    7. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
 ExecutionResult`` with the ``Tool`` bound by closure at wrap time.  Autogen
@@ -64,8 +69,14 @@ from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
 from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE
 from gitea_mcp_server.context_utils import resolve_current_context
+from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
-from gitea_mcp_server.tools.virtual_params import apply_pre_hooks, apply_to, extract_from
+from gitea_mcp_server.tools.virtual_params import (
+    apply_pre_hooks,
+    apply_to,
+    extract_from,
+    validate_extracted,
+)
 
 if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
@@ -123,10 +134,11 @@ def build_transform_fn(
     """Build the per-call :func:`transform_fn` closure for a tool.
 
     The returned callable receives ``**kwargs`` (the agent's arguments) and
-    runs the full agent-facing contract spine: extract virtual params, run
-    pre-hooks, resolve the context, delegate to *executor*, render the raw
-    ``ExecutionResult`` through the single result pipeline, then hand off
-    to :func:`apply_to` for post-hooks (sudo cleanup).
+    runs the full agent-facing contract spine: extract virtual params, validate
+    them against their registry schemas, run pre-hooks, resolve the context,
+    delegate to *executor*, render the raw ``ExecutionResult`` through the
+    single result pipeline, then hand off to :func:`apply_to` for post-hooks
+    (sudo cleanup).
 
     ``openapi_spec`` is captured by the closure and forwarded to
     :func:`render` — it enables root-list item summaries under
@@ -179,6 +191,18 @@ def build_transform_fn(
             only=(tool.meta or {}).get("_virtual_params"),
         )
 
+        # Validate the popped values against their registry schemas (enum)
+        # *before* the executor: an invalid format/detail/content_type must be
+        # rejected here, not after the HTTP call (and never after a write has
+        # already run).  The registry schema is the single source for both
+        # injection and validation.  ValidationError is the validation layer's
+        # type; the agent-facing surface is a plain ValueError, matching the
+        # executors' boundary convention.
+        try:
+            validate_extracted(virtual_values)
+        except ValidationError as e:
+            raise ValueError(str(e)) from e
+
         # Run pre-hooks.  Hooks may mutate kwargs (e.g. content_type
         # base64-encodes ``content``).
         apply_pre_hooks(virtual_values, kwargs)
@@ -221,8 +245,8 @@ def build_transform_fn(
         return apply_to(
             render(
                 result,
-                fmt=virtual_values.get("format") or default_format,
-                detail=virtual_values.get("detail") or DEFAULT_DETAIL,
+                fmt=virtual_values.get("format", default_format),
+                detail=virtual_values.get("detail", DEFAULT_DETAIL),
                 page=page,
                 limit=limit,
                 fetch_all=virtual_values.get("fetch_all", False),

@@ -5,10 +5,13 @@ tool arguments meet Gitea API requirements before execution.
 
 Architecture — two layers of enum validation:
 
-1. **Schema-driven validation** (runtime in ``run_validation``):
-   Before calling a hardcoded ``SINGLE_VALIDATORS`` entry, ``run_validation``
-   checks whether the parameter's own JSON Schema defines an ``enum``. If it
-   does, validation uses that enum — no hardcoded values needed.
+1. **Schema-driven validation** (runtime): :func:`validate_enum` is the shared
+   public entry.  It checks whether a parameter's own JSON Schema defines an
+   ``enum`` (walking ``anyOf``/``oneOf``) and validates against it — no
+   hardcoded values needed.  Both real-parameter validation
+   (``tools.errors.run_validation``) and virtual-parameter validation
+   (``tools.virtual_params.validate_extracted``) delegate to it, so the two
+   surfaces share one mechanism and one error shape.
 
 2. **Description-to-enum inference** (schema time in
    ``augment_schema_with_validation``): Some Gitea spec types (e.g.
@@ -275,6 +278,37 @@ def _validate_enum_from_schema(
     if value not in enum_values:
         valid = ", ".join(str(v) for v in enum_values)
         _raise_validation_error(f"{field} must be one of: {valid}", field)
+
+
+def validate_enum(value: Any, *, field: str, schema: dict[str, Any]) -> bool:
+    """Validate *value* against the ``enum`` declared in *schema*, if any.
+
+    The public, single-source entry point for schema-driven enum validation,
+    shared by real-parameter validation (:func:`~tools.errors.run_validation`)
+    and virtual-parameter validation
+    (:func:`~tools.virtual_params.validate_extracted`).  It walks
+    ``anyOf``/``oneOf`` for the enum (see :func:`_collect_enum_values`).
+
+    Args:
+        value: The value to validate.
+        field: Parameter name for error messages.
+        schema: The parameter's JSON Schema fragment.
+
+    Returns:
+        ``True`` when *schema* declares an enum (the value was validated
+        against it), ``False`` when it declares none (nothing to check).  The
+        boolean lets an orchestrator skip further validators once the schema's
+        enum is the whole contract for the parameter.
+
+    Raises:
+        ValidationError: If *schema* declares an enum and *value* is not one
+            of its allowed values.
+    """
+    enum_values = _collect_enum_values(schema)
+    if enum_values is None:
+        return False
+    _validate_enum_from_schema(value, field=field, enum_values=enum_values)
+    return True
 
 
 # ---------------------------------------------------------------------------

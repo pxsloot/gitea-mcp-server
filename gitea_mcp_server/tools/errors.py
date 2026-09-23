@@ -19,7 +19,7 @@ from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
     ValidationError,
     _collect_enum_values,
-    _validate_enum_from_schema,
+    validate_enum,
     validate_pagination,
 )
 
@@ -190,12 +190,12 @@ def run_validation(
         # an enum (resolved from the spec or inferred from description),
         # validate against it.  This handles all tools, even those without
         # a hardcoded validator entry (e.g. ``state`` on the commit status
-        # tool, whose enum comes from description inference).
-        if param_properties and isinstance(param_properties.get(name), dict):
-            enum_values = _collect_enum_values(param_properties[name])
-            if enum_values is not None:
-                _validate_enum_from_schema(value, field=name, enum_values=enum_values)
-                continue
+        # tool, whose enum comes from description inference).  When an enum
+        # is present it is the whole contract, so the hardcoded validator is
+        # skipped.
+        schema = param_properties.get(name) if param_properties else None
+        if isinstance(schema, dict) and validate_enum(value, field=name, schema=schema):
+            continue
         if name in SINGLE_VALIDATORS:
             if _param_is_boolean(param_properties, name):
                 continue

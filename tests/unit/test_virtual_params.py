@@ -13,6 +13,7 @@ import pytest
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
+from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.tools.virtual_params import (
     VirtualParam,
@@ -21,6 +22,7 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_to,
     extract_from,
     inject_into,
+    validate_extracted,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -242,6 +244,51 @@ class TestInjectInto:
         ):
             inject_into(params)
         assert params["properties"]["sudo_like"]["default"] is None
+
+
+# ---------------------------------------------------------------------------
+# validate_extracted
+# ---------------------------------------------------------------------------
+
+
+class TestValidateExtracted:
+    """Tests for validate_extracted — pre-executor virtual-param validation.
+
+    The registry schema is the single source for injection and validation;
+    only enum-bearing params (``format``/``detail``/``content_type``) are
+    constrained (#789).
+    """
+
+    def test_valid_values_pass(self) -> None:
+        validate_extracted({"format": "json", "detail": "concise", "content_type": "text"})
+
+    def test_invalid_format_raises(self) -> None:
+        with pytest.raises(ValidationError, match="format must be one of"):
+            validate_extracted({"format": "bogus"})
+
+    def test_invalid_detail_raises(self) -> None:
+        with pytest.raises(ValidationError, match="detail must be one of"):
+            validate_extracted({"detail": "bogus"})
+
+    def test_invalid_content_type_raises(self) -> None:
+        with pytest.raises(ValidationError, match="content_type must be one of"):
+            validate_extracted({"content_type": "bogus"})
+
+    def test_none_value_rejected(self) -> None:
+        """An explicit null is not a declared value — rejected, not defaulted."""
+        with pytest.raises(ValidationError, match="format must be one of"):
+            validate_extracted({"format": None})
+
+    def test_params_without_enum_pass(self) -> None:
+        """sudo/fetch_all declare no enum, so any value is a no-op."""
+        validate_extracted({"sudo": "alice", "fetch_all": True})
+
+    def test_unknown_key_ignored(self) -> None:
+        """Non-registry keys (pipeline metadata) are ignored defensively."""
+        validate_extracted({"not_a_virtual_param": "x"})
+
+    def test_empty_noop(self) -> None:
+        validate_extracted({})
 
 
 # ---------------------------------------------------------------------------
@@ -744,3 +791,26 @@ class TestWrapIntegration:
 
             result = await wrapped.run({"owner": "test"})
             assert result.structured_content == {"result": [{"id": 1}]}
+
+    @pytest.mark.asyncio
+    async def test_invalid_format_rejected_before_execution(self) -> None:
+        """An invalid format fails before the HTTP execution path (#789).
+
+        Guards the regression where an invalid ``format`` reached ``render``
+        only after the API call (and, for a write, after the side effect).
+        """
+        from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+
+        transform = _ToolWrappingTransform(
+            openapi_spec=make_openapi_spec(include_defaults=False),
+            response_format="markdown",
+        )
+        [wrapped] = await transform.list_tools([self._make_tool()])
+
+        with patch(
+            "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            with pytest.raises(ValueError, match="format must be one of"):
+                await wrapped.run({"owner": "test", "format": "bogus"})
+            mock_run.assert_not_called()

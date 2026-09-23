@@ -209,7 +209,9 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     ├─▶ GiteaNamespace            - strip gitea_ prefix
     ├─▶ _ToolWrappingTransform    — server-level contract transform
     │     │                         (spine: tools/contract.build_transform_fn)
-    │     │                         validate (OTEL: .validate span)
+    │     │                         extract + validate virtual params
+    │     │                         (registry schema enum, before executor)
+    │     │                         validate real args (OTEL: .validate span)
     │     │                         → log context (ctx.info)
     │     │                         → report progress (ctx.report_progress)
     │     │                         → call inner tool's run()
@@ -302,7 +304,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/synthetic_contract.py` | Synthetic registration contract — `SyntheticToolSpec` declarative specs + `register_all_synthetic_tools`, wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource |
 | `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + guide resources |
-| `tools/virtual_params.py` | virtual parameter registry + lifecycle (inject/extract/apply) |
+| `tools/virtual_params.py` | virtual parameter registry + lifecycle (inject/extract/validate/apply) |
 | `tools/namespace.py` | ``GiteaNamespace`` transform (prefixes tools, passes resources through) |
 
 The customization layers as applied during server startup:
@@ -1249,6 +1251,7 @@ Agent: call_tool("gitea_issue_create_issue", {...})
         └─▶ transform_fn — the shared contract spine
             (tools/contract.build_transform_fn):
             ├─▶ extract virtual params from kwargs → stash
+            ├─▶ validate virtual params against registry schema (enum)
             ├─▶ resolve MCP Context via context_utils.resolve_current_context()
             ├─▶ executor: validate arguments (validation.py)
             ├─▶ log validation result (ctx.info)

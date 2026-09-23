@@ -107,6 +107,82 @@ class TestBuildTransformFn:
         assert captured["content"] == base64.b64encode(b"hello").decode()
 
     @pytest.mark.asyncio
+    async def test_invalid_format_rejected_before_executor(self) -> None:
+        """An invalid ``format`` fails before the executor — no side effect (#789)."""
+        calls = {"n": 0}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with pytest.raises(ValueError, match="format must be one of"):
+            await transform_fn(query="q", format="bogus")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_detail_rejected_before_executor(self) -> None:
+        """An invalid ``detail`` fails before the executor (#789)."""
+        calls = {"n": 0}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with pytest.raises(ValueError, match="detail must be one of"):
+            await transform_fn(query="q", detail="bogus")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_content_type_rejected_before_pre_hook(self) -> None:
+        """A bad ``content_type`` is rejected before the pre-hook encodes content."""
+        calls = {"n": 0}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with pytest.raises(ValueError, match="content_type must be one of"):
+            await transform_fn(content="hello", content_type="bogus")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_absent_format_uses_spine_default(self) -> None:
+        """When ``format`` is omitted, the configured default renders the result."""
+        received: dict[str, Any] = {}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            received["extracted"] = dict(extracted or {})
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="json")
+        result = await transform_fn(query="q")
+
+        assert "format" not in received["extracted"]
+        assert result.structured_content == {"result": "ok"}
+
+    @pytest.mark.asyncio
     async def test_raw_schema_attached_for_post_hooks(self, monkeypatch: Any) -> None:
         """tool.meta['output_schema_raw'] reaches the post-hook as _raw_schema."""
         raw_schema = {"type": "object", "properties": {"name": {"type": "string"}}}

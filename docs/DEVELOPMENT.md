@@ -334,15 +334,19 @@ The lifecycle functions are called automatically in the transform pipeline:
 2. ``extract_from(kwargs, only=tool.meta["_virtual_params"])`` — pops it from
    kwargs before the HTTP request; params not injected (e.g. ``fetch_all`` on
    an autogen tool) stay in kwargs and are rejected as unknown
-3. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
+3. ``validate_extracted(extracted)`` — validates each popped value against its
+   registry schema (``enum``), **before** the executor, so an invalid
+   ``format``/``detail``/``content_type`` never reaches the API.  Params with
+   no enum (``sudo``, ``fetch_all``) are a no-op.
+4. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
    ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
-4. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
+5. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
    synthetic impl) with ``ctx`` for progress reporting and logging; returns
    raw data (``ExecutionResult``)
-5. ``render(execution_result, ...)`` — the single result pipeline
+6. ``render(execution_result, ...)`` — the single result pipeline
    (``tools/result_pipeline.py``) applies shape → paginate → format →
    ``ToolResult``; the single writer of both channels
-6. ``apply_to(result, extracted)`` — runs post-hooks (sudo cleanup only)
+7. ``apply_to(result, extracted)`` — runs post-hooks (sudo cleanup only)
 
 .. note::
 
@@ -390,6 +394,7 @@ From this doc's how-to angle: to add a new scope-gated param, set
 All parameters — including ``format``, ``detail``, and ``content_type`` — follow
 the standard :ref:`virtual params lifecycle <virtual-params-lifecycle>`:
 ``inject_into`` (schema) → ``extract_from`` (pop from kwargs) →
+``validate_extracted`` (schema enum, before the executor) →
 ``apply_pre_hooks`` (mutate kwargs, e.g. content encoding) →
 HTTP call → ``render`` (the result pipeline) → ``apply_to`` (sudo cleanup).
 The registry retains only pre-request concerns (``sudo``, ``content_type``);

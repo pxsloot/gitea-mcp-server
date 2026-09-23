@@ -1117,6 +1117,44 @@ class TestToolWrappingTransform:
             await wrapped.run({"query": "q", "typo": 1})
 
     @pytest.mark.asyncio
+    async def test_synthetic_invalid_virtual_param_rejected_before_executor(self) -> None:
+        """Invalid virtual-param values fail before the synthetic executor (#789).
+
+        The spine validates extracted values against the registry schema, so a
+        synthetic tool never executes with a bad ``format`` (and, for a write,
+        never runs the side effect before erroring).
+        """
+        calls = {"n": 0}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any | None,
+        ) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = Tool(
+            name="synth_fmt",
+            description="Synthetic tool.",
+            parameters={"properties": {"query": {"type": "string"}}},
+            meta={
+                "_contract_wrap": True,
+                "_synthetic": True,
+                "_executor_id": "synth_fmt",
+                "_virtual_params": {"format"},
+            },
+        )
+        transform = self.make_transform()
+        transform._synthetic_executors.register("synth_fmt", executor)
+        [wrapped] = await transform.list_tools([tool])
+
+        with pytest.raises(ValueError, match="format must be one of"):
+            await wrapped.run({"query": "q", "format": "bogus"})
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
     async def test_inject_params_respects_virtual_params_allowlist(self) -> None:
         """Synthetic tools stamp _virtual_params; only those are injected."""
         tool = Tool(

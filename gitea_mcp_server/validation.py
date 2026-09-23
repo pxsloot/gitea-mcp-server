@@ -277,6 +277,37 @@ def _validate_enum_from_schema(
         _raise_validation_error(f"{field} must be one of: {valid}", field)
 
 
+def validate_enum(value: Any, *, field: str, schema: dict[str, Any]) -> bool:
+    """Validate *value* against the ``enum`` declared in *schema*, if any.
+
+    The public, single-source entry point for schema-driven enum validation,
+    shared by real-parameter validation (:func:`~tools.errors.run_validation`)
+    and virtual-parameter validation
+    (:func:`~tools.virtual_params.validate_extracted`).  It walks
+    ``anyOf``/``oneOf`` for the enum (see :func:`_collect_enum_values`).
+
+    Args:
+        value: The value to validate.
+        field: Parameter name for error messages.
+        schema: The parameter's JSON Schema fragment.
+
+    Returns:
+        ``True`` when *schema* declares an enum (the value was validated
+        against it), ``False`` when it declares none (nothing to check).  The
+        boolean lets an orchestrator skip further validators once the schema's
+        enum is the whole contract for the parameter.
+
+    Raises:
+        ValidationError: If *schema* declares an enum and *value* is not one
+            of its allowed values.
+    """
+    enum_values = _collect_enum_values(schema)
+    if enum_values is None:
+        return False
+    _validate_enum_from_schema(value, field=field, enum_values=enum_values)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Description-to-enum inference
 # ---------------------------------------------------------------------------

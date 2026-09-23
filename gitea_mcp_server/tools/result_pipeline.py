@@ -232,6 +232,11 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         for empty/out-of-range results, the message (so the text channel
         never disagrees with the envelope).
     """
+    # Defensive only: ``fmt`` is validated upstream by the contract spine
+    # (``tools/virtual_params.validate_extracted``) before the executor runs,
+    # so an invalid format can no longer reach here from a tool call.  The
+    # check stays as a last-resort invariant for direct ``render`` callers —
+    # the display layer is not the input validator.
     if fmt not in _VALID_FORMATS:
         msg = f"Unsupported format '{fmt}'. Use 'markdown', 'json', or 'raw'."
         raise ValueError(msg)

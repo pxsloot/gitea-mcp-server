@@ -377,7 +377,7 @@ class TestInjectSudo:
     @pytest.mark.asyncio
     async def test_injects_sudo_query_param(self) -> None:
         """Adds ?sudo=<username> when sudo_context is set."""
-        from gitea_mcp_server.tools.virtual_params import sudo_context
+        from gitea_mcp_server.request_context import sudo_context
 
         sudo_context.set("alice")
         try:
@@ -394,7 +394,7 @@ class TestInjectSudo:
     @pytest.mark.asyncio
     async def test_preserves_existing_query_params(self) -> None:
         """Appends sudo= to existing query params, preserving them."""
-        from gitea_mcp_server.tools.virtual_params import sudo_context
+        from gitea_mcp_server.request_context import sudo_context
 
         sudo_context.set("bob")
         try:
@@ -416,7 +416,7 @@ class TestInjectSudo:
     @pytest.mark.asyncio
     async def test_no_op_when_sudo_not_set(self) -> None:
         """Does not modify URL when sudo_context is None."""
-        from gitea_mcp_server.tools.virtual_params import sudo_context
+        from gitea_mcp_server.request_context import sudo_context
 
         # ContextVar is already None from suite-level fixture; keep try/finally
         # for documentation consistency with other tests in this class.
@@ -433,7 +433,7 @@ class TestInjectSudo:
     @pytest.mark.asyncio
     async def test_empty_string_is_no_op(self) -> None:
         """Empty string sudo is treated as unset (does not inject ?sudo=)."""
-        from gitea_mcp_server.tools.virtual_params import sudo_context
+        from gitea_mcp_server.request_context import sudo_context
 
         sudo_context.set("")
         try:

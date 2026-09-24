@@ -164,7 +164,9 @@ across the entire module tree:
 
 | Test file | What it verifies | Added in |
 |---|---|---|
-| `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. **Must be updated** when a new module is added to any subpackage — add its dotted name to ``ALL_MODULES``. | #552 |
+| `tests/unit/test_module_imports.py` | All modules import cleanly (no circular imports); `__all__` exports match defined names; all exported names are importable. The module surface is discovered from the filesystem — no list to maintain. Holds the runtime/registry guards the static graph cannot express. | #552, #800 |
+| `tests/unit/test_architecture_doc.py` | Every production module appears in `docs/ARCHITECTURE.md`'s Module Map, every file the map names exists, and every named package exists. | #800 |
+| `tests/unit/test_layer_contract.py` | The package's dependency direction: no import points to a higher layer, explicitly forbidden edges are absent, and every module is placed in a layer (see `docs/ARCHITECTURE.md` decision #19). | #800 |
 | `tests/unit/test_spec_fixture_convention.py` | No test builds a spec as an inline dict literal — annotated or passed as `openapi_spec=`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
 | `tests/unit/test_config_docs.py` | Every `Config` field is documented in `README.md` and `.env.example`; `ConfigProtocol` mirrors `Config`. | #785 |
 

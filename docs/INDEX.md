@@ -54,6 +54,7 @@ truth. Other mentions point here.
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
 | Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #4) |
 | Module map | `ARCHITECTURE.md` |
+| Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (design decision #19) |
 | Transform execution order | `ARCHITECTURE.md` |
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
 | Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |

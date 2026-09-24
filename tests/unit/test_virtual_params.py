@@ -372,10 +372,8 @@ class TestSudoHooks:
 
     def test_sudo_pre_hook_sets_context(self) -> None:
         """_sudo_pre_hook sets sudo_context to the string value."""
-        from gitea_mcp_server.tools.virtual_params import (
-            _sudo_pre_hook,
-            sudo_context,
-        )
+        from gitea_mcp_server.request_context import sudo_context
+        from gitea_mcp_server.tools.virtual_params import _sudo_pre_hook
 
         assert sudo_context.get() is None
         _sudo_pre_hook("alice", {})
@@ -383,10 +381,8 @@ class TestSudoHooks:
 
     def test_sudo_pre_hook_skips_none(self) -> None:
         """_sudo_pre_hook does not set context when value is None."""
-        from gitea_mcp_server.tools.virtual_params import (
-            _sudo_pre_hook,
-            sudo_context,
-        )
+        from gitea_mcp_server.request_context import sudo_context
+        from gitea_mcp_server.tools.virtual_params import _sudo_pre_hook
 
         sudo_context.set("previous")
         _sudo_pre_hook(None, {})
@@ -394,10 +390,8 @@ class TestSudoHooks:
 
     def test_sudo_post_hook_clears_context(self) -> None:
         """_sudo_post_hook clears sudo_context."""
-        from gitea_mcp_server.tools.virtual_params import (
-            _sudo_post_hook,
-            sudo_context,
-        )
+        from gitea_mcp_server.request_context import sudo_context
+        from gitea_mcp_server.tools.virtual_params import _sudo_post_hook
 
         sudo_context.set("bob")
         result = ToolResult(content=[TextContent(type="text", text="ok")])
@@ -521,11 +515,11 @@ class TestSudoErrorPaths:
 
     def test_extract_and_pre_hook_clear_post_hook_restores(self) -> None:
         """Full lifecycle: extract sets context, apply_to clears it."""
+        from gitea_mcp_server.request_context import sudo_context
         from gitea_mcp_server.tools.virtual_params import (
             apply_pre_hooks,
             apply_to,
             extract_from,
-            sudo_context,
         )
 
         kwargs = {"owner": "test", "repo": "x", "sudo": "alice"}
@@ -562,10 +556,8 @@ class TestSudoErrorPaths:
 
     def test_post_hook_double_clear_is_safe(self) -> None:
         """Calling post_hook when context is already None is safe (no-op)."""
-        from gitea_mcp_server.tools.virtual_params import (
-            _sudo_post_hook,
-            sudo_context,
-        )
+        from gitea_mcp_server.request_context import sudo_context
+        from gitea_mcp_server.tools.virtual_params import _sudo_post_hook
 
         sudo_context.set(None)
         result = ToolResult(content=[TextContent(type="text", text="ok")])

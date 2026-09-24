@@ -167,9 +167,11 @@ _meta = ResourceMeta(required_scopes=["read:repository"], size_hint="medium").to
 ```
 
 The re-export chain (`scope.py` → `resources/scope.py` → `resources/__init__.py`)
-follows the circular-import breaker pattern documented in `ARCHITECTURE.md`
-design decision #7: the flat `scope.py` avoids package-level imports that would
-create cyclic dependencies between the `tools/` and `resources/` packages.
+follows the shared-leaf pattern documented in `ARCHITECTURE.md` design
+decision #7: the flat `scope.py` is a `leaf`-tier module any layer may import
+downward, so `tools/` and `resources/` share scope derivation without a
+package-level import between them.  The layer contract (design decision #19)
+enforces the direction.
 
 ---
 
@@ -289,5 +291,5 @@ from the spec).
 - `gitea_mcp_server/tools/virtual_params.py` — apply_scope_filter
 - `gitea_mcp_server/constants.py` — TAG_TO_SCOPE
 - `gitea_mcp_server/server.py`::`_apply_virtual_param_scope_filter` — startup orchestration
-- `docs/ARCHITECTURE.md` — design decision #7 (circular-import breaker), module map
+- `docs/ARCHITECTURE.md` — design decision #7 (shared-leaf pattern), decision #19 (layer contract), module map
 - `docs/DEVELOPMENT.md` — "Scope-gating" section under virtual params

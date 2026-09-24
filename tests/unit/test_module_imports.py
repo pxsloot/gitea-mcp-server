@@ -1,93 +1,29 @@
-"""Smoke tests verifying module-level imports and __all__ exports.
+"""Structural guards: the module tree imports cleanly and stays layered.
 
-These tests ensure the entire module tree can be imported without circular
-imports or missing dependencies, and that ``__all__`` in each module
-actually references existing names.
+These tests import the whole module tree — discovered from the filesystem, so
+the surface cannot drift from a hand-maintained list — and validate ``__all__``
+exports.  The dependency *direction* is governed by ``test_layer_contract``;
+this file keeps the runtime and registry checks that a static import graph
+cannot express.
 
 Reasons to keep this file:
-- Catches circular import regressions (Python fails hard on those)
-- Catches ``__all__`` drift — when a public name is renamed or removed but
-  ``__all__`` is not updated, the mismatch is visible here
-- Low-maintenance: module list rarely changes, and ``__all__`` validation
-  is data-driven (iterates module attributes, no hardcoded names)
+- Catches import regressions — Python fails hard on a broken import
+- Catches ``__all__`` drift — a renamed/removed name still listed in ``__all__``
+- Locks the runtime import side effects the layer contract cannot see
 """
 
 from __future__ import annotations
 
-import ast
 import importlib
+import inspect
 import subprocess
 import sys
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# All public modules in the gitea_mcp_server package.
-#
-# Keep this list in sync with the actual module tree:
-# ``docs/DEVELOPMENT.md`` (Code Organization Rules) describes the directory
-# layout; when a new module is added to any subpackage, it must be added
-# here too so the import-smoke and __all__-validation tests cover it.
-# ---------------------------------------------------------------------------
+from tests.helpers.import_graph import discover_modules
 
-ALL_MODULES: list[str] = [
-    # Flat modules
-    "gitea_mcp_server",
-    "gitea_mcp_server.cache_invalidation",
-    "gitea_mcp_server.client",
-    "gitea_mcp_server.config",
-    "gitea_mcp_server.constants",
-    "gitea_mcp_server.exceptions",
-    "gitea_mcp_server.format",
-    "gitea_mcp_server.label_service",
-    "gitea_mcp_server.logging_config",
-    "gitea_mcp_server.models",
-    "gitea_mcp_server.openapi_types",
-    "gitea_mcp_server.pagination",
-    "gitea_mcp_server.schema_utils",
-    "gitea_mcp_server.scope",
-    "gitea_mcp_server.search",
-    "gitea_mcp_server.server",
-    "gitea_mcp_server.validation",
-    # Subpackages
-    "gitea_mcp_server.openapi_converter",
-    "gitea_mcp_server.openapi_converter.core",
-    "gitea_mcp_server.openapi_converter.param_collision",
-    "gitea_mcp_server.openapi_converter.schema",
-    "gitea_mcp_server.resources",
-    "gitea_mcp_server.resources.auto",
-    "gitea_mcp_server.resources.custom",
-    "gitea_mcp_server.resources.factory",
-    "gitea_mcp_server.resources.meta",
-    "gitea_mcp_server.resources.scope",
-    "gitea_mcp_server.server_setup",
-    "gitea_mcp_server.server_setup.http_server",
-    "gitea_mcp_server.server_setup.mcp_builder",
-    "gitea_mcp_server.server_setup.mcp_extensions",
-    "gitea_mcp_server.server_setup.resource_setup",
-    "gitea_mcp_server.server_setup.spec_loader",
-    "gitea_mcp_server.tools",
-    "gitea_mcp_server.tools.contract",
-    "gitea_mcp_server.tools.customize",
-    "gitea_mcp_server.tools.display",
-    "gitea_mcp_server.tools.docs_tools",
-    "gitea_mcp_server.tools.errors",
-    "gitea_mcp_server.tools.examples",
-    "gitea_mcp_server.tools.exclusion",
-    "gitea_mcp_server.tools.extensions_metadata",
-    "gitea_mcp_server.tools.filter_info",
-    "gitea_mcp_server.tools.label_transform",
-    "gitea_mcp_server.tools.labels",
-    "gitea_mcp_server.tools.mcp_tools",
-    "gitea_mcp_server.tools.namespace",
-    "gitea_mcp_server.tools.resource_display",
-    "gitea_mcp_server.tools.schemas",
-    "gitea_mcp_server.tools.search",
-    "gitea_mcp_server.tools.synthetic_contract",
-    "gitea_mcp_server.tools.type_info",
-    "gitea_mcp_server.tools.unified_search",
-    "gitea_mcp_server.tools.virtual_params",
-]
+ALL_MODULES: list[str] = sorted(discover_modules())
 
 
 class TestAllModulesImport:
@@ -193,93 +129,13 @@ class TestAllExportsAreValid:
                 assert imported is not None, f"from {module_name} import {name} returned None"
 
 
-class TestNoCircularImports:
-    """Verify all modules can be imported in a single session.
+class TestStructuralGuards:
+    """Runtime and registry guards the static layer contract cannot express.
 
-    This imports every known module in sequence to flush out
-    circular-import bugs that don't appear when importing one
-    module at a time.
-
-    Note: ``importlib.reload`` is NOT used here because it re-creates
-    exception classes (``ValidationError``, ``SpecError``), breaking
-    ``pytest.raises()`` in downstream tests that imported the old class
-    at module level.  ``importlib.import_module()`` is idempotent —
-    returning the already-cached module — which is sufficient for the
-    circular-import detection purpose.
+    The dependency direction is enforced in ``test_layer_contract``; these
+    tests cover runtime import side effects, the formatter registry's home, and
+    the display-hint regression lock (#775).
     """
-
-    def test_full_tree_import(self) -> None:
-        """All modules import cleanly in one pass."""
-        for mod in ALL_MODULES:
-            importlib.import_module(mod)
-
-
-_CONVERTER_PREFIX = "gitea_mcp_server.openapi_converter"
-
-
-def _import_from_targets(node: ast.ImportFrom, package: str) -> list[str]:
-    """Absolute module targets of an ``ImportFrom``, with relatives resolved.
-
-    ``package`` is the importing module's ``__package__`` (``gitea_mcp_server``
-    for ``format.py``).  Resolving ``node.level`` against it means
-    ``from .openapi_converter…`` and ``from . import openapi_converter`` are
-    caught, not only absolute imports.
-    """
-    module = node.module or ""
-    if node.level == 0:
-        # Absolute: also cover ``from pkg import sub``.
-        targets = [module] if module else []
-        targets.extend(f"{module}.{alias.name}" if module else alias.name for alias in node.names)
-        return targets
-    parts = package.split(".") if package else []
-    base_parts = parts[: len(parts) - (node.level - 1)] if node.level > 1 else parts
-    base = ".".join(base_parts)
-    if module:
-        return [f"{base}.{module}" if base else module]
-    # ``from . import name`` — each alias is a submodule.
-    return [f"{base}.{alias.name}" if base else alias.name for alias in node.names]
-
-
-def _converter_import_violations(source: str, package: str) -> list[str]:
-    """Return import targets in *source* that reach ``openapi_converter``."""
-    targets: list[str] = []
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import):
-            targets.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            targets.extend(_import_from_targets(node, package))
-    return [
-        target
-        for target in targets
-        if target == _CONVERTER_PREFIX or target.startswith(f"{_CONVERTER_PREFIX}.")
-    ]
-
-
-class TestLayerDependencies:
-    """The result pipeline must not depend on the domain formatter module.
-
-    The formatter registry lives in the format layer (``format.py``); the
-    domain formatters in ``tools/display.py`` are pure plugins.  This keeps
-    the dependency Result → Format → Display, so the generic pipeline can be
-    used and tested without the Gitea-specific formatter catalog.
-
-    This is a structural regression lock: a future edit that imports
-    ``tools.display`` back into ``result_pipeline`` (re-inverting the
-    layering) fails here, not in production.
-    """
-
-    def test_result_pipeline_does_not_import_display(self) -> None:
-        import gitea_mcp_server.tools.display as display_module
-        from gitea_mcp_server.tools import result_pipeline
-
-        for name, value in vars(result_pipeline).items():
-            assert value is not display_module, (
-                f"result_pipeline binds the display module as {name!r}; "
-                "the formatter registry belongs in the format layer"
-            )
-        # No symbol may be imported from display either.
-        assert "get_formatter_for_type" not in vars(result_pipeline)
-        assert "_extract_type_name" not in vars(result_pipeline)
 
     def test_registry_lives_in_format_layer(self) -> None:
         """The registry symbols are defined in ``format``, not ``display``."""
@@ -305,8 +161,7 @@ class TestLayerDependencies:
         Run in a fresh interpreter so the in-process registrations the test
         suite performs (``conftest``) cannot mask the real import graph: if
         ``tools/__init__.py`` re-grows a ``display`` side-effect import, this
-        fails even though ``test_result_pipeline_does_not_import_display``
-        (a namespace check) still passes.
+        fails even though a static namespace check would still pass.
         """
         code = (
             "import sys; import gitea_mcp_server.tools.result_pipeline; "
@@ -321,22 +176,16 @@ class TestLayerDependencies:
         )
         assert result.returncode == 0, result.stderr
 
-    def test_format_carries_no_hint_index_or_converter_import(self) -> None:
-        """The display layer carries hints as data, never derived from the spec.
+    def test_format_carries_no_hint_index(self) -> None:
+        """``format`` carries hints as data, never as a lazily-built index.
 
-        ``format`` has no hint lookup, no spec mutation, and no direct
-        ``openapi_converter`` import.  A ``sys.modules`` guard is deliberately
-        not used: ``format`` reaches the converter transitively through
-        ``ref_resolver``, so only the direct import is meaningful to lock.
+        The converter resolves view hints at registration (#775); the format
+        layer must hold no hint lookup and no spec mutation.  The direct
+        converter-import ban lives in ``test_layer_contract``.
         """
-        import inspect
-
         from gitea_mcp_server import format as format_module
 
         source = inspect.getsource(format_module)
-        package = format_module.__package__ or ""
-        assert _converter_import_violations(source, package) == []
-
         for symbol in (
             "_hint_index",
             "_HINT_INDEX_KEY",
@@ -345,17 +194,3 @@ class TestLayerDependencies:
             "x-mcp-hint-index",
         ):
             assert symbol not in source, f"format.py still references {symbol!r}"
-
-    def test_converter_import_guard_catches_relative_imports(self) -> None:
-        """The layering guard resolves relatives, so ``.openapi_converter`` can't slip through."""
-        package = "gitea_mcp_server"
-        for source in (
-            "from .openapi_converter.display_hints import view_hints_for",
-            "from .openapi_converter import display_hints",
-            "from . import openapi_converter",
-            "from gitea_mcp_server import openapi_converter",
-            "import gitea_mcp_server.openapi_converter.core",
-        ):
-            assert _converter_import_violations(source, package), source
-
-        assert _converter_import_violations("from gitea_mcp_server import models", package) == []

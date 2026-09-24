@@ -272,15 +272,14 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params, scope-tag reconciliation); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion orchestration (``core.py``); schema walker/normalizer (``schema.py``); param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params, scope-tag reconciliation); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
-| `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
-| `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
 | `server.py` | Assembly, main(), create_mcp_server(), lifespan, middleware wiring, server-level contract transform registration |
 | `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |
 | `exceptions.py` | Exception hierarchy (``GiteaMCPError`` → 5 subclasses) |
 | `format.py` | Schema-aware formatting shared by tools & resources; `MarkdownFormatter` (the canonical formatter contract) + `collapse_data` (the single collapse authority, owned by the pipeline) + `call_markdown_formatter` (signature-aware formatter dispatch) + the **formatter registry** (`register_formatter`/`get_formatter`/`get_formatter_for_type`) and `resolve_formatter` (the three-tier dispatch policy) + the **generic schema-anchored collection view** (`_generic_collection_view`, #771). Domain formatters register here; the result pipeline imports only this module (Result → Format → Display) |
+| `label_service.py` | Label cache and validation — name/ID mapping and conversion behind the label runtime |
 | `tools/unified_search.py` | Unified search across tools, docs, and resources |
 
 ### Tool Customization Stack (applied in order)
@@ -471,17 +470,19 @@ from the parameter schema.
 | `server_setup/mcp_builder.py` | Create provider + wire tools |
 | `server_setup/resource_setup.py` | Orchestrate resource registration (custom → auto) |
 | `server_setup/mcp_extensions.py` | YAML-based parameter extensions |
+| `server_setup/http_server.py` | HTTP transport runner (uvicorn) |
 
 ### Flat Infrastructure Modules (shared, not domain-specific)
 
 | Module | One-line role |
 |--------|---------------|
 | `context_utils.py` | Safe MCP context helpers (``safe_ctx_info``, ``safe_ctx_report_progress``) |
+| `request_context.py` | Request-scoped ContextVars shared across layers (``sudo_context``) |
 | `models.py` | TypedDict models for structured output types (zero runtime overhead) |
 | `marker.py` | Agent-facing ``$ref`` marker contract (``RefMarker`` / ``ref_marker`` / ``is_ref_marker`` / ``ref_marker_label``) |
 | `ref_resolver.py` | Shared payload-``$ref`` chain resolver (``resolve_ref_chain``) used by the collapse and the compact example generator |
-| `schema_utils.py` | Shared JSON Schema type utilities (circular-import breaker) |
-| `scope.py` | Scope derivation (circular-import breaker between tools/ and resources/) |
+| `schema_utils.py` | Shared JSON Schema type utilities (shared leaf) |
+| `scope.py` | Scope derivation (shared leaf between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
 | `pagination.py` | Pagination metadata, headers |
 | `uri_utils.py` | URI template helpers (``clean_resource_uri``, ``render_wildcard_segment``, ``wildcard_param_names``, ``expand_path_params``) shared by resources, tools, and display layers.  ``expand_path_params`` is the single percent-encoding contract for path substitution — the inverse of FastMCP's resource matcher; the module docstring carries the audited substitution-site sweep (#736) |
@@ -565,7 +566,7 @@ from the parameter schema.
 
 5. **Response schema wrapping** -- FastMCP requires `output_schema` to be
    `type: object`.  All response schemas are wrapped in `{"result": ...}` to
-   match the runtime shape.  This is done in `openapi_converter.py` via
+   match the runtime shape.  This is done in `openapi_converter/core.py` via
    `_wrap_success_response_schemas`.
 
    Consumers that need a schema matching the *actual API response shape*
@@ -631,10 +632,14 @@ from the parameter schema.
    The `CacheInvalidationMiddleware` computes concrete URIs from tool
    arguments and clears them from the cache after successful writes.
 
- 7. **Circular-import breaker pattern** -- `server_setup/permissions.py` is a thin
-    re-export of scope-filtering helpers, avoiding a circular import that would
-    occur if `server.py` imported those helpers directly.  Same pattern:
-    `resources/scope.py` re-exports from flat `scope.py`.
+  7. **Shared-leaf pattern** -- Low-level helpers that more than one layer needs
+     live in flat modules any layer may import downward: `schema_utils.py`
+     (schema type checks), `scope.py` (scope derivation), and
+     `request_context.py` (request-scoped ContextVars).  A subpackage-local
+     import path is a re-export, not a copy — `resources/scope.py` re-exports
+     the flat `scope.py`.  The allowed dependency directions are enforced by
+     the layer contract (design decision #19), not by convention: these modules
+     are `leaf`-tier and may not import upward.
 
   8. **OpenTelemetry instrumentation** -- FastMCP 3.x includes native OTEL
      instrumentation that auto-generates spans for all MCP operations (tool
@@ -1064,6 +1069,26 @@ from the parameter schema.
      ``labels`` view, which carries guidance the schema cannot express.  Any
      ``x-mcp-*`` key that reaches a schema node is stripped defensively by
      ``tools/schemas.deep_resolve_schema``.
+
+ 19. **Enforced dependency layers (the layer contract)** -- The intended
+     inter-module dependency direction is a check, not prose.
+     ``tests/unit/test_layer_contract.py`` orders the package into layers
+     (low → high: leaf → converter → payload-resolution → format → client →
+     runtime → setup → root) and fails on any import that points to a higher
+     layer, plus a small set of explicitly forbidden edges (the result pipeline
+     must not import the display plugin catalog; the format layer must not
+     import the converter).  A module that belongs to no layer also fails, so a
+     new top-level module forces a placement decision.  The graph is built by
+     ``tests/helpers/import_graph.py`` (filesystem discovery; relative imports
+     resolved).  A "needed to break a circular import" module is therefore
+     explained by a layer rule rather than by folklore.
+
+     The module map in this document is itself executable:
+     ``tests/unit/test_architecture_doc.py`` fails when a file named in the
+     Module Map is missing, when a production module is absent from the map, or
+     when a named package does not exist.  Together the two guards replace the
+     slow "find a detail, fix it systematically" loop with a mechanical one:
+     the seam is reported before a bug lands on it.
 
 ---
 ## Response Content-Type Handling

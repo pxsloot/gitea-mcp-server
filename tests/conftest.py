@@ -175,7 +175,7 @@ def _reset_module_contexts() -> None:
     Currently resets:
     - ``pagination_ctx`` (``pagination.py``): carries ``total_count`` from
       Gitea's ``X-Total-Count`` response header.
-    - ``sudo_context`` (``tools/virtual_params.py``): carries the sudo
+    - ``sudo_context`` (``request_context.py``): carries the sudo
       username for admin operations.
 
     These ContextVars are intentionally module-level — that is their design
@@ -188,7 +188,7 @@ def _reset_module_contexts() -> None:
     making the suite robust against ContextVar leakage.
     """
     from gitea_mcp_server.pagination import pagination_ctx
-    from gitea_mcp_server.tools.virtual_params import sudo_context
+    from gitea_mcp_server.request_context import sudo_context
 
     pagination_ctx.set({})
     sudo_context.set(None)

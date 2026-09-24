@@ -8,10 +8,13 @@ it to resolve a *payload* ``$ref`` one level, so the concise collapse
 (``tools.examples.schema_to_compact_example``) can never disagree about a
 referenced type's shape.
 
-Kept as a flat module (like :mod:`gitea_mcp_server.schema_utils` and
-:mod:`gitea_mcp_server.marker`) so any layer can import it without creating an
-import cycle.  It cannot live in ``schema_utils`` because
-``openapi_converter.core`` imports ``schema_utils``; this is its sibling.
+It is a ``payload-resolution``-tier module: it sits above
+:mod:`gitea_mcp_server.openapi_converter` (it calls the converter's
+``resolve_spec_ref``) and below :mod:`gitea_mcp_server.format` (which consumes
+it).  It cannot live in :mod:`gitea_mcp_server.schema_utils`: the converter
+imports ``schema_utils``, so putting the resolver there would make the
+converter import back into itself.  The layer contract
+(``tests/unit/test_layer_contract.py``) governs it.
 """
 
 from __future__ import annotations

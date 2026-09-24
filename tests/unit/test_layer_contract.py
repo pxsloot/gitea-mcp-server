@@ -21,10 +21,13 @@ from tests.helpers.import_graph import (
     resolve_import_targets,
 )
 
-# Ordered low -> high.  Each entry is (layer name, module prefixes); a module
-# belongs to the layer whose matching prefix is longest, so the bare package
-# prefix ``gitea_mcp_server`` captures only the package ``__init__``.
-LAYERS: list[tuple[str, tuple[str, ...]]] = [
+# Ordered low -> high.  Each entry is (layer name, package prefixes, exact
+# module names).  A package prefix matches the module and its submodules; an
+# exact name matches that module only.  A module belongs to the layer of its
+# longest match.  ``root`` names the bare package exactly, so it captures only
+# the package ``__init__`` — the bare name is a prefix of every module, and a
+# new top-level module must not be silently absorbed by it.
+LAYERS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     (
         "leaf",
         (
@@ -43,11 +46,12 @@ LAYERS: list[tuple[str, tuple[str, ...]]] = [
             "gitea_mcp_server.search",
             "gitea_mcp_server.scope",
         ),
+        (),
     ),
-    ("converter", ("gitea_mcp_server.openapi_converter",)),
-    ("payload-resolution", ("gitea_mcp_server.ref_resolver",)),
-    ("format", ("gitea_mcp_server.format",)),
-    ("client", ("gitea_mcp_server.client",)),
+    ("converter", ("gitea_mcp_server.openapi_converter",), ()),
+    ("payload-resolution", ("gitea_mcp_server.ref_resolver",), ()),
+    ("format", ("gitea_mcp_server.format",), ()),
+    ("client", ("gitea_mcp_server.client",), ()),
     (
         "runtime",
         (
@@ -58,9 +62,10 @@ LAYERS: list[tuple[str, tuple[str, ...]]] = [
             "gitea_mcp_server.response_cache",
             "gitea_mcp_server.validation",
         ),
+        (),
     ),
-    ("setup", ("gitea_mcp_server.server_setup",)),
-    ("root", ("gitea_mcp_server",)),
+    ("setup", ("gitea_mcp_server.server_setup",), ()),
+    ("root", ("gitea_mcp_server.server",), ("gitea_mcp_server",)),
 ]
 
 # Edges forbidden even though the layer order would permit them.
@@ -78,11 +83,14 @@ def _layer_index(module: str) -> int:
     """Return the index of the layer owning *module*, or ``-1`` if unplaced."""
     best_index = -1
     best_len = -1
-    for index, (_, prefixes) in enumerate(LAYERS):
+    for index, (_name, prefixes, exact) in enumerate(LAYERS):
         for prefix in prefixes:
             if (module == prefix or module.startswith(prefix + ".")) and len(prefix) > best_len:
                 best_len = len(prefix)
                 best_index = index
+        if module in exact and len(module) > best_len:
+            best_len = len(module)
+            best_index = index
     return best_index
 
 
@@ -93,6 +101,23 @@ def test_every_module_has_a_layer() -> None:
         "These modules are in no layer; add them to LAYERS so their "
         f"dependencies are governed: {unclassified}"
     )
+
+
+def test_unclassified_module_has_no_layer() -> None:
+    """A module with no matching layer resolves to ``-1``.
+
+    Locks the completeness guarantee against the bare package prefix
+    absorbing every new top-level module into ``root`` (which would make
+    ``test_every_module_has_a_layer`` vacuous).
+    """
+    assert _layer_index("gitea_mcp_server") >= 0
+    assert _layer_index("gitea_mcp_server.tools.contract") >= 0
+    for ghost in (
+        "gitea_mcp_server.ghost_xyz",
+        "gitea_mcp_server.newpkg",
+        "gitea_mcp_server.newpkg.sub",
+    ):
+        assert _layer_index(ghost) == -1, ghost
 
 
 def test_dependencies_point_downward_or_sideways() -> None:
@@ -110,6 +135,23 @@ def test_dependencies_point_downward_or_sideways() -> None:
     assert not violations, (
         "Dependencies must point to the same or a lower layer:\n  " + "\n  ".join(violations)
     )
+
+
+def test_ancestor_packages_are_not_dependencies() -> None:
+    """Importing a name from an ancestor package is structural, not a dependency.
+
+    Python imports a module's parent packages on every import; treating the
+    bare ancestor as a dependency would flag the idiomatic
+    ``from gitea_mcp_server import models`` as an upward import into ``root``.
+    """
+    graph = build_import_graph()
+    offenders: list[str] = []
+    for module, targets in graph.items():
+        ancestors = {".".join(module.split(".")[:i]) for i in range(1, module.count(".") + 1)}
+        leaked = sorted(targets & ancestors)
+        if leaked:
+            offenders.append(f"{module} -> {leaked}")
+    assert not offenders, "Ancestor packages leaked into the graph:\n  " + "\n  ".join(offenders)
 
 
 def test_forbidden_edges_are_absent() -> None:

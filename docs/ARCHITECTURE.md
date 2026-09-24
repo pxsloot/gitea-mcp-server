@@ -480,7 +480,7 @@ from the parameter schema.
 | `request_context.py` | Request-scoped ContextVars shared across layers (``sudo_context``) |
 | `models.py` | TypedDict models for structured output types (zero runtime overhead) |
 | `marker.py` | Agent-facing ``$ref`` marker contract (``RefMarker`` / ``ref_marker`` / ``is_ref_marker`` / ``ref_marker_label``) |
-| `ref_resolver.py` | Shared payload-``$ref`` chain resolver (``resolve_ref_chain``) used by the collapse and the compact example generator |
+| `ref_resolver.py` | Shared payload-``$ref`` chain resolver (``resolve_ref_chain``) used by the collapse and the compact example generator.  A ``payload-resolution``-tier module (above the converter, below format) — not a leaf |
 | `schema_utils.py` | Shared JSON Schema type utilities (shared leaf) |
 | `scope.py` | Scope derivation (shared leaf between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
@@ -1081,7 +1081,13 @@ from the parameter schema.
      new top-level module forces a placement decision.  The graph is built by
      ``tests/helpers/import_graph.py`` (filesystem discovery; relative imports
      resolved).  A "needed to break a circular import" module is therefore
-     explained by a layer rule rather than by folklore.
+     explained by a layer rule rather than by folklore.  ``ref_resolver``
+     occupies the ``payload-resolution`` layer because it calls the converter's
+     ``resolve_spec_ref`` and is consumed by ``format`` — unlike the shared
+     leaves (``schema_utils``, ``scope``, ``request_context``), which no layer
+     may import upward from.  The bare package name is an **exact** match in
+     the contract, so a new top-level module is not silently absorbed into the
+     top layer: it fails until it is placed.
 
      The module map in this document is itself executable:
      ``tests/unit/test_architecture_doc.py`` fails when a file named in the

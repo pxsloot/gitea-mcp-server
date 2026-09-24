@@ -11,7 +11,7 @@ side channels between httpx event hooks and the tool wrapping pipeline:
 
 - ``pagination_ctx`` (``gitea_mcp_server/pagination.py``): carries ``total_count``
   from Gitea's ``X-Total-Count`` response header.
-- ``sudo_context`` (``gitea_mcp_server/tools/virtual_params.py``): carries the
+- ``sudo_context`` (``gitea_mcp_server/request_context.py``): carries the
   sudo username for admin operations.
 
 This is an intentional design choice that avoids coupling to FastMCP internals,

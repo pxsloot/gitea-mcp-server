@@ -86,20 +86,32 @@ def _longest_known(target: str, known: set[str]) -> str | None:
     return None
 
 
+def _ancestor_packages(dotted: str) -> set[str]:
+    """Strict ancestor packages of *dotted* (imported by Python on every import)."""
+    parts = dotted.split(".")
+    return {".".join(parts[:i]) for i in range(1, len(parts))}
+
+
 def imported_project_modules(dotted: str, path: Path, known: set[str]) -> set[str]:
     """In-package modules imported by *dotted* (module-level and deferred).
 
     A target is normalized to the longest known module prefix, so
     ``from pkg import name`` resolves to ``pkg.name`` when ``name`` is a module
-    and to ``pkg`` otherwise.
+    and to ``pkg`` otherwise.  Ancestor packages of *dotted* are skipped: they
+    are structural (Python imports them implicitly), not dependencies, so
+    ``from gitea_mcp_server import models`` does not read as an import of the
+    package ``__init__``.
     """
     package = _package_of(dotted, path)
+    ancestors = _ancestor_packages(dotted)
     tree = ast.parse(path.read_text(), filename=str(path))
     found: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
         for target in resolve_import_targets(node, package):
+            if target in ancestors:
+                continue
             normalized = _longest_known(target, known)
             if normalized and normalized != dotted:
                 found.add(normalized)

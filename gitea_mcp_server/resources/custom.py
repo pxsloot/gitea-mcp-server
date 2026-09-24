@@ -5,10 +5,10 @@ response schema and a ``format_hint`` for the display layer.  No formatting is
 done at the resource level -- that is the responsibility of the unified display
 pipeline in ``tools/mcp_tools.py`` and ``tools/display.py``.
 
-**Migration complete**: 10 resources are registered via the factory
+**Registration**: 10 resources are registered via the factory
 (``make_api_resource()``).  The remaining 3 static resources (version,
 token/scopes, server/info) use direct ``mcp.resource()`` calls with inline
-scope guarding -- the legacy ``@_register`` decorator has been removed.
+scope guarding.
 
 **Naming**: every resource name is snake_case.  Factory resources derive
 their URI, name, description, and size_hint from the spec (path +

@@ -267,7 +267,7 @@ def build_filtered_tools_message(
         required_text = ", ".join(f"'{scope}'" for scope in required) or "unknown"
         msg = (
             f"Tool '{name}' exists but is restricted by your token scopes. "
-            f"Required scope(s): {required_text}. "
+            f"Scopes required (all): {required_text}. "
         )
         if available:
             msg += f"Your token has: {', '.join(available)}. "

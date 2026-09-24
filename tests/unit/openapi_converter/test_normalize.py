@@ -13,6 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.normalize import (
+    _SCOPE_TAG_OVERRIDES,
     _annotate_boolean_checks,
     _annotate_wildcard_path_params,
     _get_body_schema,
@@ -821,6 +822,79 @@ class TestReconcileScopeTags:
             reconciled = _reconcile_scope_tags(spec)
         assert reconciled == 0
         assert "not found in fetched spec" in caplog.text
+
+
+# The upstream (fetched spec) ``tags`` for every operation in
+# ``_SCOPE_TAG_OVERRIDES``, captured from the live Forgejo 16.0.3
+# (gitea-1.22.0) spec.  Kept in lockstep with the table: the first test asserts
+# the two key sets are equal, so adding or removing an override fails here
+# until this snapshot is refreshed.  (The real spec is not committed — it is
+# fetched at startup — so this snapshot is the committed baseline; the runtime
+# drift guard covers the live spec.)
+_UPSTREAM_SCOPE_TAGS: dict[tuple[str, str], list[str]] = {
+    ("get", "/user/repos"): ["user"],
+    ("get", "/user/starred"): ["user"],
+    ("get", "/user/starred/{owner}/{repo}"): ["user"],
+    ("put", "/user/starred/{owner}/{repo}"): ["user"],
+    ("delete", "/user/starred/{owner}/{repo}"): ["user"],
+    ("get", "/user/orgs"): ["organization"],
+    ("get", "/users/{username}/repos"): ["user"],
+    ("get", "/users/{username}/orgs"): ["organization"],
+    ("get", "/users/{username}/orgs/{org}/permissions"): ["organization"],
+    ("post", "/org/{org}/repos"): ["organization"],
+    ("get", "/repos/{owner}/{repo}/issues/pinned"): ["repository"],
+}
+
+
+class TestReconcileScopeTagsUpstreamBaseline:
+    """Lock the Rule D table to the real upstream tag shapes.
+
+    The live spec can only be guarded at runtime; this snapshot locks the
+    table's shape so a code regression (path lookup, guard logic) or an
+    un-refreshed table fails in CI instead of silently under/over-reporting.
+    """
+
+    def test_snapshot_covers_every_override(self) -> None:
+        """The upstream snapshot stays in lockstep with the override table."""
+        assert set(_UPSTREAM_SCOPE_TAGS) == set(_SCOPE_TAG_OVERRIDES)
+
+    def test_every_override_reconciles_without_drift_warnings(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """All entries reconcile; no missing/obsolete drift warnings fire."""
+        spec = make_openapi_spec(paths=self._upstream_paths())
+
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+
+        assert reconciled == len(_SCOPE_TAG_OVERRIDES)
+        assert "not found in fetched spec" not in caplog.text
+        assert "already matches" not in caplog.text
+
+    def test_every_override_yields_the_authoritative_tags(self) -> None:
+        """Reconciled tags equal the router categories (order-independent)."""
+        spec = make_openapi_spec(paths=self._upstream_paths())
+
+        _reconcile_scope_tags(spec)
+
+        paths = cast("dict[str, dict[str, Any]]", spec["paths"])
+        for (method, path), authoritative in _SCOPE_TAG_OVERRIDES.items():
+            op = paths[path][method]
+            assert set(op["tags"]) == set(authoritative)
+
+    @staticmethod
+    def _upstream_paths() -> dict[str, Any]:
+        """Build a spec ``paths`` block from the upstream-tag snapshot."""
+        paths: dict[str, Any] = {}
+        for (method, path), tags in _UPSTREAM_SCOPE_TAGS.items():
+            paths.setdefault(path, {})[method] = {
+                "operationId": "op",
+                "tags": list(tags),
+            }
+        return paths
 
 
 class TestNormalizeSpec:

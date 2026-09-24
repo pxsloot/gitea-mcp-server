@@ -76,7 +76,7 @@ This doc explains the server's architecture and design decisions. If you need:
 │  (per tool — 4 phases):   │  │    for common URIs       │
 │  • identity (title,       │  │    (override auto)       │
 │    annotations, hints,    │  │                          │
-│    category, scope)       │  │                          │
+│    category)              │  │                          │
 │  • description            │  │                          │
 │  • schema (computation    │  │                          │
 │    via _compute_tool_     │  │                          │

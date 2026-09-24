@@ -507,7 +507,7 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
 # annotation was fixed and the entry is obsolete).  Only NEW mismatches are
 # invisible — this audit catches those.
 #
-# Known cases in the Forgejo 15.0.2 (gitea-1.22.0) spec:
+# Known cases in the Forgejo 16.0.3 (gitea-1.22.0) spec:
 #   GET  /user/repos                          → /user group (user) + route (repository)
 #   GET  /user/starred                        → /user group (user) + nested group (repository)
 #   GET  /user/starred/{owner}/{repo}         → same

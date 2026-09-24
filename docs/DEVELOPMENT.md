@@ -153,7 +153,7 @@ The customization pipeline has two phases:
    per-tool at startup via OpenAPIProvider's ``mcp_component_fn`` hook:
 
    - ``_apply_tool_identity()`` — title, annotations, hints, category,
-     scope, cache-invalidation write-tool recording
+     cache-invalidation write-tool recording
    - ``_detect_has_labels()`` (in `tools/customize.py`) — detect
      array-typed labels parameter (drives schema augmentation)
    - ``_compute_tool_schema()`` — pure: bundles six spec queries
@@ -167,10 +167,10 @@ The customization pipeline has two phases:
        conditional schemas when ``output_schema`` is ``None``.
      * ``_inject_response_metadata()`` — single-source metadata injection
        — ``x-fastmcp-wrap-result`` and pagination metadata injection.
-    - ``_build_customization_meta()`` — the ``component.meta`` contract
-      (``output_schema_raw``, ``ToolCustomization``) consumed
-      by runtime transforms; stamps the ``_WRAP_ME`` ("wrap me") marker that
-      opts the tool into the server-level contract transform
+   - ``_build_customization_meta()`` — the ``component.meta`` contract
+     (``output_schema_raw``, ``ToolCustomization``) consumed
+     by runtime transforms; stamps the ``_WRAP_ME`` ("wrap me") marker that
+     opts the tool into the server-level contract transform
 
 2. **``_ToolWrappingTransform``** (registered **server-level** via
    ``mcp.add_transform()`` in ``server.py`` — the first transform in the

@@ -151,6 +151,15 @@ class TestHasSufficientScope:
         assert has_sufficient_scope(required, {"sudo"}) is True
         assert has_sufficient_scope(required, {"all"}) is True
 
+    def test_single_string_is_rejected(self) -> None:
+        """A bare scope string is rejected — ``str`` is a ``Collection[str]``.
+
+        Without the guard, a single string would iterate characters and
+        silently return a wrong answer, so it fails loudly instead.
+        """
+        with pytest.raises(TypeError, match="collection of scope strings"):
+            has_sufficient_scope("read:repository", {"read:repository"})
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # fetch_token_scopes

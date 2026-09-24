@@ -73,12 +73,24 @@ def has_sufficient_scope(required: Collection[str] | None, available: set[str]) 
       match, or ``write:xxx`` implies ``read:xxx``.
 
     Args:
-        required: Required scopes, or ``None``/empty for none.
+        required: Required scopes, or ``None``/empty for none.  A bare string
+            is rejected: ``str`` is itself a ``Collection[str]``, so accepting
+            it would iterate characters instead of scopes.
         available: Set of scope strings the user's token possesses.
 
     Returns:
         True if every required scope is covered by available scopes.
+
+    Raises:
+        TypeError: If ``required`` is a ``str`` rather than a collection of
+            scope strings.
     """
+    if isinstance(required, str):
+        msg = (
+            "required must be a collection of scope strings, not a single str "
+            "(e.g. pass {'read:repository'}, not 'read:repository')"
+        )
+        raise TypeError(msg) from None
     if not required:
         return True
     if "sudo" in available:

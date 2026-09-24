@@ -632,7 +632,7 @@ def _customize_metadata(
 
     Delegates to five focused phases:
     1. ``_apply_tool_identity`` — title, annotations, hints, category,
-       scope, cache invalidation
+       cache invalidation
     2. ``_apply_param_rename`` — fix ``parameter_map`` for renamed body
        properties (collision resolution) and renamed path/query/header/cookie
        parameters (snake_case normalization)

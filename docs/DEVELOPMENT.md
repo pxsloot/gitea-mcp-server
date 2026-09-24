@@ -153,7 +153,7 @@ The customization pipeline has two phases:
    per-tool at startup via OpenAPIProvider's ``mcp_component_fn`` hook:
 
    - ``_apply_tool_identity()`` — title, annotations, hints, category,
-     scope, cache-invalidation write-tool recording
+     cache-invalidation write-tool recording
    - ``_detect_has_labels()`` (in `tools/customize.py`) — detect
      array-typed labels parameter (drives schema augmentation)
    - ``_compute_tool_schema()`` — pure: bundles six spec queries
@@ -168,7 +168,7 @@ The customization pipeline has two phases:
      * ``_inject_response_metadata()`` — single-source metadata injection
        — ``x-fastmcp-wrap-result`` and pagination metadata injection.
    - ``_build_customization_meta()`` — the ``component.meta`` contract
-     (``required_scope``, ``output_schema_raw``, ``ToolCustomization``) consumed
+     (``output_schema_raw``, ``ToolCustomization``) consumed
      by runtime transforms; stamps the ``_WRAP_ME`` ("wrap me") marker that
      opts the tool into the server-level contract transform
 
@@ -980,7 +980,7 @@ mcp.resource(
     description="Get server application version.",
     mime_type="text/plain",
     tags={"wrapper", "server"},
-    meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
+    meta=ResourceMeta(size_hint="tiny", default_detail="full").to_dict(),
 )(get_version)
 ```
 
@@ -1057,7 +1057,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
             description="Description.",
             mime_type="application/json",
             annotations={"readOnlyHint": True, "idempotentHint": True},
-            meta=ResourceMeta(required_scope=scope, size_hint="medium").to_dict(),
+            meta=ResourceMeta(required_scopes=scopes, size_hint="medium").to_dict(),
             tags={"synthetic", "my-domain"},
         )(_my_resource)
    ```
@@ -1094,12 +1094,12 @@ OpenAPI spec). They live in the same codebase and register themselves via
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
 | Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
-| Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, required_scope, wrap). The loop builds the executor, stamps the wrap marker, and registers |
+| Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, wrap). The loop builds the executor, stamps the wrap marker, and registers |
 | Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}`` to reject ``detail``/``fetch_all`` entirely, or ``tool_info``/``resolve_type`` → ``{"format"}`` so the impl's own ``detail`` default (``"concise"``) is the single source; ``sudo`` is opt-in). Only allowlisted params are popped from kwargs — an off-profile registry-name key stays in kwargs and is rejected with "Unknown parameter(s)" rather than silently dropped. The executor re-supplies the popped values to the impl. ``format``/``detail``/``fetch_all`` are hook-less pipeline options read by the result pipeline — no display logic lives in the registry |
 | Impl return | Return raw data only — an ``ExecutionResult(data, total_count, shape)``. The single result pipeline slices (``list``), envelopes, and formats — and owns out-of-range handling for every shape: return the full item set (``shape="list"``) or the pre-sliced object (``shape="object"``, e.g. ``read_doc``/``tool_info``) and the pipeline emits the message envelope on out-of-range pages. Set ``message`` only for custom empty-result messages (e.g. cross-link hints). For bespoke markdown (e.g. ``tool_info``, ``read_doc``) set ``markdown_formatter`` / ``markdown_extras`` on the result |
 | ``detail`` param | Optional: ``"full"`` (default) or ``"concise"`` — controls data shaping: ``"concise"`` summarizes root items (scalars intact) and replaces nested ``$ref``-backed objects with the canonical ``{"$ref": "TypeName"}`` marker (``count`` added for a collapsed list); root-list items are never marker-replaced (#759). Affects both ``json`` and ``markdown`` output. |
 | Annotations | Use ``synthetic_annotations(read_only=True, open_world=False)`` for tools; annotate resources inline |
-| ``meta`` / scope | Use ``ResourceMeta(required_scope=scope, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |
+| ``meta`` / scope | Use ``ResourceMeta(required_scopes=scopes, ...).to_dict()`` or ``ResourceMeta.for_schema(schema, ...).to_dict()`` for typed, discoverable metadata including ``size_hint`` and ``default_detail``. |
 | Resource names | Snake_case everywhere, derived from the endpoint (operationId) for auto and wrapper resources; explicit snake_case names for static/synthetic resources. Never Title Case, never spaces, never FastMCP's function-name fallback (``"handler"``). See "Preferred: Use the factory" above |
 | ``openapi_spec`` parameter | Pass as ``OpenAPISpec \| None`` — handle ``None`` with a helpful error message |
 | URI templates / metadata | Agents discover resource metadata (``size_hint``, ``default_detail``, ``optional_params``) via ``list_resources`` output. For factory resources, set these via ``ResourceMeta.for_schema()`` (auto-derives ``size_hint``) or ``ResourceMeta(..., size_hint=..., optional_params=...).to_dict()``. For hand-written resources, include ``{?param}`` in the URI template for query params. The display layer (``clean_resource_uri``) strips ``{?...}`` from displayed URIs. When using ``make_api_resource()`` with ``param_config``, the factory auto-adds param names to the handler's ``__signature__``. |

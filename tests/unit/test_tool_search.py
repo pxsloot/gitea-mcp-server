@@ -1193,7 +1193,7 @@ class TestFilterInfoIntegration:
             "filtered": {
                 "admin_create_user": {
                     "reason": "scope",
-                    "required_scope": "sudo",
+                    "required_scopes": ["sudo"],
                 },
             },
         }
@@ -1984,10 +1984,10 @@ class TestListHiddenTools:
 
     _FILTERED = {
         "filtered": {
-            "admin_create_user": {"reason": "scope", "required_scope": "sudo"},
+            "admin_create_user": {"reason": "scope", "required_scopes": ["sudo"]},
             "repo_old_endpoint": {"reason": "deprecated"},
             "some_excluded": {"reason": "excluded"},
-            "admin_delete_user": {"reason": "scope", "required_scope": "sudo"},
+            "admin_delete_user": {"reason": "scope", "required_scopes": ["sudo"]},
         }
     }
 
@@ -2014,8 +2014,8 @@ class TestListHiddenTools:
         assert reasons["gitea_some_excluded"] == "excluded"
 
     @pytest.mark.asyncio
-    async def test_scope_entries_carry_required_scope(self) -> None:
-        """Scope-restricted entries include required_scope."""
+    async def test_scope_entries_carry_required_scopes(self) -> None:
+        """Scope-restricted entries include required_scopes."""
         result = _render(
             await _list_hidden_tools_impl(
                 "scope", filtered_tools_info=self._FILTERED, tool_prefix="gitea_"
@@ -2025,7 +2025,7 @@ class TestListHiddenTools:
         assert sc["total_count"] == 2
         for item in sc["result"]:
             assert item["reason"] == "scope"
-            assert item["required_scope"] == "sudo"
+            assert item["required_scopes"] == ["sudo"]
 
     @pytest.mark.asyncio
     async def test_reason_filter(self) -> None:

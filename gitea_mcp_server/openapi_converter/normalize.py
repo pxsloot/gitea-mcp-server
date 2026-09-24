@@ -7,8 +7,8 @@ and response shapes in ways that recur across many endpoints.  Rather than
 hand-fix individual tools, this module applies normalization rules to the
 whole spec before FastMCP sees it.
 
-Three rules live here — two shape-driven, one source-driven (documented
-exception):
+Four rules live here — two shape-driven, two source-driven (documented
+exceptions):
 
 **Rule A — snake_case parameter normalization.**  Gitea's spec mixes
 conventions: body properties like ``Do``/``MergeCommitID`` (on
@@ -59,6 +59,25 @@ from an ordinary path.  The table must be re-verified against the router
 when upgrading Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries
 the upgrade note and the known forward-drift example.
 
+**Rule D — scope-tag reconciliation (source-driven exception).**  Gitea/Forgejo
+derive token-scope requirements from the router's ``tokenRequiresScopes(...)``
+calls, including parent-group middleware, and enforce *all* declared
+categories.  The generated spec's per-operation ``tags`` list only a subset of
+those categories: a route inside the ``/user`` group that also requires
+``repository`` (e.g. ``GET /user/repos``) carries only ``[user]``, because a
+per-operation tag list cannot express the group middleware.  Downstream scope
+derivation reads the operation tags, so it under-reports.  The generated tags
+can also name a category the router does *not* require (e.g.
+``GET /repos/{owner}/{repo}/issues/pinned`` is tagged ``repository`` but lives
+in the Issue group).  This rule reconciles the scope-mapped tags on the
+operations in ``_SCOPE_TAG_OVERRIDES`` (curated from ``routers/api/v1/api.go``)
+with the router's authoritative categories — appending missing tags and
+removing mis-tagged ones — while preserving non-scope tags.  Like Rule C it is
+source-driven because the information is erased from the spec; its guard is
+stronger — it warns both when an entry's operation disappears *and* when the
+scope tags already match (upstream fixed the annotation).  Only *new*
+mismatches are invisible and need the upgrade audit.
+
 Rules A and B are **shape-driven, not name-driven**: they trigger on the shape
 of the spec (naming convention, response structure), never on a hardcoded
 list of operationIds.  This keeps the normalization generic so it keeps
@@ -72,7 +91,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from gitea_mcp_server.constants import HTTP_METHODS_ALL
+from gitea_mcp_server.constants import HTTP_METHODS_ALL, TAG_TO_SCOPE
 from gitea_mcp_server.openapi_converter.core import camel_to_snake, resolve_spec_ref
 
 if TYPE_CHECKING:
@@ -469,10 +488,129 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
     return annotated
 
 
+# ── Rule D — scope-tag reconciliation (source-driven exception) ─────────────
+#
+# Curated from the router source (``routers/api/v1/api.go``); the module
+# docstring carries the design rationale.  Keys are ``(lowercase_method,
+# spec_path)``; values are the *authoritative* scope-category tags the router
+# requires for that operation.  Tags are matched by ``constants.TAG_TO_SCOPE``
+# downstream, so only category names belong here.
+#
+# The rule reconciles the operation's scope-mapped tags to this set: it appends
+# missing scope tags and removes scope tags the router does not require (a
+# mis-tagged upstream annotation).  Non-scope tags (search categories such as
+# ``pull_request``) are preserved.
+#
+# Upgrade audit: when upgrading Gitea/Forgejo, re-verify this table against the
+# router.  The guard warns when an entry's operation vanishes from the fetched
+# spec and when the operation's scope tags already match (the upstream
+# annotation was fixed and the entry is obsolete).  Only NEW mismatches are
+# invisible — this audit catches those.
+#
+# Known cases in the Forgejo 16.0.3 (gitea-1.22.0) spec:
+#   GET  /user/repos                          → /user group (user) + route (repository)
+#   GET  /user/starred                        → /user group (user) + nested group (repository)
+#   GET  /user/starred/{owner}/{repo}         → same
+#   PUT  /user/starred/{owner}/{repo}         → same
+#   DELETE /user/starred/{owner}/{repo}       → same
+#   GET  /user/orgs                           → User + Organization
+#   GET  /users/{username}/repos              → /users group (user) + route (repository)
+#   GET  /users/{username}/orgs               → User + Organization
+#   GET  /users/{username}/orgs/{org}/permissions → User + Organization
+#   POST /org/{org}/repos                     → Organization + Repository
+#   GET  /repos/{owner}/{repo}/issues/pinned  → Issue group; the spec tag says
+#                                               repository (upstream mis-tag)
+_SCOPE_TAG_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("get", "/user/repos"): ("user", "repository"),
+    ("get", "/user/starred"): ("user", "repository"),
+    ("get", "/user/starred/{owner}/{repo}"): ("user", "repository"),
+    ("put", "/user/starred/{owner}/{repo}"): ("user", "repository"),
+    ("delete", "/user/starred/{owner}/{repo}"): ("user", "repository"),
+    ("get", "/user/orgs"): ("user", "organization"),
+    ("get", "/users/{username}/repos"): ("user", "repository"),
+    ("get", "/users/{username}/orgs"): ("user", "organization"),
+    ("get", "/users/{username}/orgs/{org}/permissions"): ("user", "organization"),
+    ("post", "/org/{org}/repos"): ("organization", "repository"),
+    ("get", "/repos/{owner}/{repo}/issues/pinned"): ("issue",),
+}
+
+
+def _reconcile_scope_tags(openapi_spec: OpenAPISpec) -> int:
+    """Reconcile operation tags with the router's scope categories (Rule D).
+
+    For each ``(method, path)`` in ``_SCOPE_TAG_OVERRIDES``, make the
+    operation's scope-mapped tags match the authoritative set: append missing
+    scope tags and drop scope tags the router does not require.  Non-scope tags
+    are preserved.  Downstream scope derivation
+    (``gitea_mcp_server.scope``) reads these tags, so this makes the derived
+    requirement match the router's ``tokenRequiresScopes(...)`` declaration.
+
+    Mutates ``openapi_spec`` in-place.  Returns the number of operations
+    reconciled.  Warns when an entry's operation is absent (stale table) or
+    when its scope tags already match (obsolete entry — upstream fixed the
+    annotation).  Removing a tag (an upstream mis-tag correction) is logged at
+    info level.
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (mutated in-place).
+    """
+    paths: dict[str, Any] = openapi_spec.get("paths", {}) or {}
+    reconciled = 0
+    for (method, path), authoritative in _SCOPE_TAG_OVERRIDES.items():
+        path_item = paths.get(path)
+        operation = path_item.get(method) if isinstance(path_item, dict) else None
+        if not isinstance(operation, dict):
+            logger.warning(
+                "Scope tag table entry %s %s not found in fetched spec — "
+                "verify against routers/api/v1 (route may have changed)",
+                method.upper(),
+                path,
+            )
+            continue
+
+        tags = operation.get("tags")
+        tags = list(tags) if isinstance(tags, list) else []
+        present = {tag for tag in tags if tag in TAG_TO_SCOPE}
+
+        if present == set(authoritative):
+            logger.warning(
+                "Scope tag table entry %s %s already matches %s — entry is "
+                "obsolete (upstream annotation fixed); remove it from "
+                "_SCOPE_TAG_OVERRIDES",
+                method.upper(),
+                path,
+                list(authoritative),
+            )
+            continue
+
+        removed = sorted(present - set(authoritative))
+        if removed:
+            logger.info(
+                "Scope tag correction on %s %s: removing %s (router requires %s)",
+                method.upper(),
+                path,
+                removed,
+                list(authoritative),
+            )
+
+        non_scope = [tag for tag in tags if tag not in TAG_TO_SCOPE]
+        new_tags = non_scope + [tag for tag in authoritative if tag not in non_scope]
+        operation["tags"] = new_tags
+        reconciled += 1
+        logger.debug(
+            "Reconciled scope tags on %s %s: %s -> %s",
+            method.upper(),
+            path,
+            tags,
+            new_tags,
+        )
+    return reconciled
+
+
 def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     """Normalize agent-misleading spec quirks across all operations.
 
-    Applies three rules:
+    Applies four rules:
 
     1. **snake_case parameters** — renames non-snake_case path/query/header/
        cookie parameters and body properties (converting both camelCase and
@@ -484,6 +622,10 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
     3. **wildcard path params** — stamps ``x-wildcard-path-param`` on the
        operations listed in ``_WILDCARD_PATH_PARAMS`` (source-driven
        exception, curated from the Gitea/Forgejo router).
+    4. **scope tags** — reconciles the scope-category tags on the operations
+       listed in ``_SCOPE_TAG_OVERRIDES`` with the router's required
+       categories (source-driven exception, curated from the Gitea/Forgejo
+       router): appends missing tags and removes mis-tagged ones.
 
     Mutates ``openapi_spec`` in-place.  Called after spec conversion and
     after :func:`resolve_param_collisions`, before FastMCP processes the spec.
@@ -537,6 +679,7 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
 
         boolean_checks = _annotate_boolean_checks(openapi_spec)
         wildcard_params = _annotate_wildcard_path_params(openapi_spec)
+        scope_tags = _reconcile_scope_tags(openapi_spec)
 
         if total_renames:
             logger.info(
@@ -554,6 +697,11 @@ def normalize_spec(openapi_spec: OpenAPISpec) -> None:
             logger.info(
                 "Annotated %d wildcard path params",
                 wildcard_params,
+            )
+        if scope_tags:
+            logger.info(
+                "Reconciled scope tags on %d operations",
+                scope_tags,
             )
     except Exception:
         # Broad catch is intentional: this function is called during spec

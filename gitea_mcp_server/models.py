@@ -88,7 +88,7 @@ class ResourceEntry(TypedDict, total=False):
     mimeType: str
     type: str  # "resource" or "template"; accessed via ["type"]
     tags: list[str]
-    required_scope: str | None
+    required_scopes: list[str] | None
     optional_params: list[dict[str, Any]] | None
     size_hint: str | None
     default_detail: str | None

@@ -206,8 +206,8 @@ class TestMcpListResourcesImpl:
         assert resource["description"] == ""
 
     @pytest.mark.asyncio
-    async def test_includes_required_scope_from_template_meta(self) -> None:
-        """Should include required_scope from template meta."""
+    async def test_includes_required_scopes_from_template_meta(self) -> None:
+        """Should include required_scopes from template meta."""
         ctx = MagicMock(spec=Context)
         template_mock = MagicMock()
         template_mock.uri_template = "gitea://repos/{owner}/{repo}"
@@ -215,7 +215,7 @@ class TestMcpListResourcesImpl:
         template_mock.description = "Repository metadata"
         template_mock.mime_type = "text/markdown"
         template_mock.tags = set()
-        template_mock.meta = {"required_scope": "read:repository"}
+        template_mock.meta = {"required_scopes": ["read:repository"]}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
@@ -224,11 +224,11 @@ class TestMcpListResourcesImpl:
         result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
-        assert resource["required_scope"] == "read:repository"
+        assert resource["required_scopes"] == ["read:repository"]
 
     @pytest.mark.asyncio
-    async def test_includes_required_scope_from_resource_meta(self) -> None:
-        """Should include required_scope from concrete resource meta."""
+    async def test_includes_required_scopes_from_resource_meta(self) -> None:
+        """Should include required_scopes from concrete resource meta."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
         resource_mock.uri = "gitea://version"
@@ -236,7 +236,7 @@ class TestMcpListResourcesImpl:
         resource_mock.description = "Server version"
         resource_mock.mime_type = "text/plain"
         resource_mock.tags = set()
-        resource_mock.meta = {"required_scope": None}
+        resource_mock.meta = {"required_scopes": None}
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
@@ -245,11 +245,11 @@ class TestMcpListResourcesImpl:
         result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
-        assert resource["required_scope"] is None
+        assert resource["required_scopes"] is None
 
     @pytest.mark.asyncio
-    async def test_required_scope_is_none_when_no_meta(self) -> None:
-        """Should return None for required_scope when meta is absent."""
+    async def test_required_scopes_is_none_when_no_meta(self) -> None:
+        """Should return None for required_scopes when meta is absent."""
         ctx = MagicMock(spec=Context)
         resource_mock = MagicMock()
         resource_mock.uri = "gitea://test"
@@ -266,7 +266,7 @@ class TestMcpListResourcesImpl:
         result = await mcp_list_resources_impl(ctx)
 
         resource = result["resources"][0]
-        assert resource["required_scope"] is None
+        assert resource["required_scopes"] is None
 
     @pytest.mark.asyncio
     async def test_handles_missing_name_and_mime_type(self) -> None:
@@ -860,7 +860,7 @@ class TestMcpListResourcesFormat:
         resource_mock.description = "Server version"
         resource_mock.mime_type = "text/plain"
         resource_mock.tags = set()
-        resource_mock.meta = None  # prevent MagicMock leakage into required_scope
+        resource_mock.meta = None  # prevent MagicMock leakage into required_scopes
         return resource_mock
 
     def _capture_tool(self, name: str) -> Callable[..., Any]:

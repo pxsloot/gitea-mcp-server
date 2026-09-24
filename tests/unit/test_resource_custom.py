@@ -204,12 +204,12 @@ class TestRegisterCustomResources:
         pulls_meta = registered_meta.get("gitea://repos/{owner}/{repo}/pulls{?state}")
 
         assert issues_meta is not None, "issues resource should have registered meta"
-        assert issues_meta.get("required_scope") == "read:issue", (
-            f"issues scope should be read:issue, got {issues_meta.get('required_scope')}"
+        assert issues_meta.get("required_scopes") == ["read:issue"], (
+            f"issues scope should be read:issue, got {issues_meta.get('required_scopes')}"
         )
         assert pulls_meta is not None, "pulls resource should have registered meta"
-        assert pulls_meta.get("required_scope") == "read:issue", (
-            f"pulls scope should be read:issue, got {pulls_meta.get('required_scope')}"
+        assert pulls_meta.get("required_scopes") == ["read:repository"], (
+            f"pulls scope should be read:repository, got {pulls_meta.get('required_scopes')}"
         )
 
     async def test_registers_all_custom_resources_with_server_info_md(

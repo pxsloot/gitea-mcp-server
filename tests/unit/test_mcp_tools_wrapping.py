@@ -41,7 +41,12 @@ class TestFunctionToolResultWrapping:
                         "mimeType": {"type": "string"},
                         "type": {"type": "string"},
                         "tags": {"type": "array", "items": {"type": "string"}},
-                        "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                        "required_scopes": {
+                            "oneOf": [
+                                {"type": "array", "items": {"type": "string"}},
+                                {"type": "null"},
+                            ]
+                        },
                     },
                 },
                 "description": "List of resource metadata entries",

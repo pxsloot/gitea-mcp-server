@@ -81,7 +81,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         gitea_client: GiteaClient for API calls.
         openapi_spec: Optional OpenAPI spec for schema derivation.
         available_scopes: Set of scopes the token has, or None (no filtering).
-            Resources whose ``required_scope`` is not satisfied are skipped.
+            Resources whose ``required_scopes`` are not satisfied are skipped.
             Also used to serve ``gitea://token/scopes`` content.
         version_str: Pre-fetched server version string.
         server_info_md: Pre-built server info markdown, or None.
@@ -109,7 +109,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}",
         method="GET",
         resource_type="repository",
-        scope="read:repository",
+        scopes=["read:repository"],
         cache_ttl=CACHE_TTL_REPOSITORY,
         tags={"wrapper", "repository"},
         error_message="Repository '{owner}/{repo}' not found.",
@@ -124,7 +124,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/users/{username}",
         method="GET",
         resource_type="user",
-        scope="read:user",
+        scopes=["read:user"],
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "user"},
         error_message="User '{username}' not found.",
@@ -139,7 +139,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/user",
         method="GET",
         resource_type="user",
-        scope="read:user",
+        scopes=["read:user"],
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "user"},
         error_message="Current user not found or not authenticated.",
@@ -154,7 +154,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/orgs/{org}",
         method="GET",
         resource_type="organization",
-        scope="read:organization",
+        scopes=["read:organization"],
         cache_ttl=CACHE_TTL_USERS,
         tags={"wrapper", "organization"},
         error_message="Organization '{org}' not found.",
@@ -169,7 +169,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}/releases",
         method="GET",
         resource_type="release",
-        scope="read:repository",
+        scopes=["read:repository"],
         cache_ttl=CACHE_TTL_RELEASES,
         tags={"wrapper", "releases"},
         error_message="Repository '{owner}/{repo}' not found or has no releases.",
@@ -195,7 +195,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}/labels",
         method="GET",
         format_hint="labels",
-        scope="read:issue",
+        scopes=["read:issue"],
         tags={"wrapper", "labels"},
         error_message="Labels not found for repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
@@ -216,7 +216,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}/issues",
         method="GET",
         resource_type="issues",
-        scope="read:issue",
+        scopes=["read:issue"],
         tags={"wrapper", "issues"},
         error_message="Repository '{owner}/{repo}' not found.",
         param_config=ResourceParamConfig(
@@ -244,7 +244,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         api_path="/repos/{owner}/{repo}/pulls",
         method="GET",
         resource_type="pulls",
-        scope="read:issue",
+        scopes=["read:repository"],
         tags={"wrapper", "pull_requests"},
         error_message="Repository '{owner}/{repo}' not found or has no pull requests.",
         param_config=ResourceParamConfig(
@@ -276,7 +276,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         method="GET",
         name="repo_get_readme",
         description="Get a repository's README",
-        scope="read:repository",
+        scopes=["read:repository"],
         cache_ttl=CACHE_TTL_README,
         size_hint="small",
         tags={"wrapper", "readme"},
@@ -306,7 +306,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         # query_params below.
         api_path="/repos/{owner}/{repo}/contents/{filepath}",
         method="GET",
-        scope="read:repository",
+        scopes=["read:repository"],
         tags={"wrapper", "files"},
         error_message="File '{filepath}' not found in repository '{owner}/{repo}'.",
         param_config=ResourceParamConfig(
@@ -344,7 +344,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         description="Get server application version.",
         mime_type="text/plain",
         tags={"wrapper", "server"},
-        meta=ResourceMeta(required_scope=None, size_hint="tiny", default_detail="full").to_dict(),
+        meta=ResourceMeta(size_hint="tiny", default_detail="full").to_dict(),
     )(get_version)
 
     # ── token scopes ────────────────────────────────────────────────────────
@@ -366,9 +366,9 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
         )
 
     _meta_scopes = ResourceMeta(
-        required_scope="read:user", size_hint="tiny", default_detail="full"
+        required_scopes=["read:user"], size_hint="tiny", default_detail="full"
     ).to_dict()
-    if available_scopes is None or has_sufficient_scope("read:user", available_scopes):
+    if available_scopes is None or has_sufficient_scope({"read:user"}, available_scopes):
         mcp.resource(
             "gitea://token/scopes",
             name="token_scopes",
@@ -401,9 +401,7 @@ def register_custom_resources(  # noqa: PLR0913 -- mcp + client + spec + scopes 
             description="Get server metadata from OpenAPI info block.",
             mime_type="text/markdown",
             tags={"wrapper", "server"},
-            meta=ResourceMeta(
-                required_scope=None, size_hint="small", default_detail="full"
-            ).to_dict(),
+            meta=ResourceMeta(size_hint="small", default_detail="full").to_dict(),
         )(get_server_info)
 
     # Return the URIs registered via make_api_resource()

@@ -49,8 +49,8 @@ Parameter                         Default        Purpose
                                                  ``text/plain``.
 ``resource_type``                 ``format_hint`` Machine-readable type for error responses.  Falls
                                                   back to ``"api"``.
-``scope``                         ``None``       Required token scope.  Resource silently skipped when
-                                                 absent from ``available_scopes``.
+``scopes``                        ``None``       Required token scopes.  Resource silently skipped
+                                                 when any is absent from ``available_scopes``.
 ``cache_ttl``                     ``None``       Cache TTL in seconds.
 ``tags``                          ``set()``      Tags for discovery.  Caller-owned — ``"wrapper"``
                                                  must be included explicitly when the resource has
@@ -66,7 +66,7 @@ Parameter                         Default        Purpose
 ``size_hint``                     auto-derived   ``"tiny"`` / ``"small"`` / ``"medium"`` / ``"large"``.
 ``default_detail``                auto-derived   ``"full"`` or ``"concise"``.  ``large`` → ``concise``.
 ``available_scopes``              ``None``       Token's available scopes.  When set and the token lacks
-                                                 ``scope``, resource is silently skipped.
+                                                 any of ``scopes``, resource is silently skipped.
 ================================  =============  ==========================================================
 """
 
@@ -664,7 +664,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     format_hint: str | None = None,
     handler_hook: Callable[[Any], Awaitable[str]] | None = None,
     resource_type: str | None = None,
-    scope: str | None = None,
+    scopes: list[str] | None = None,
     cache_ttl: float | None = None,
     tags: set[str] | None = None,
     error_message: str | None = None,
@@ -731,7 +731,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             raw API response data and returns a string.
         resource_type: Machine-readable resource type for error responses.
             Defaults to ``format_hint``, falling back to ``"api"``.
-        scope: Required token scope (e.g. ``"read:repository"``).
+        scopes: Required token scopes (e.g. ``["read:repository"]``).
         cache_ttl: Cache TTL in seconds (passed via resource meta).
         tags: Caller-owned set of resource tags (e.g. ``{"wrapper", "repository"}``).
             ``"wrapper"`` is NOT auto-added — include it explicitly when the
@@ -740,7 +740,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
             ``{param}`` placeholders from the handler kwargs.
             Default: ``"Resource not found."``.
         available_scopes: Set of scopes the token has, or ``None``
-            (no scope filtering).  When set and ``scope`` is not
+            (no scope filtering).  When set and ``scopes`` is not
             satisfied, the resource is silently skipped.
         param_config: A ``ResourceParamConfig`` instance grouping the
             parameter-routing configuration (``query_params``,
@@ -782,14 +782,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     """
     # Scope check.
     if (
-        scope is not None
+        scopes
         and available_scopes is not None
-        and not has_sufficient_scope(scope, available_scopes)
+        and not has_sufficient_scope(scopes, available_scopes)
     ):
         logger.debug(
-            "Skipping resource %s: requires scope %s",
+            "Skipping resource %s: requires scopes %s",
             uri,
-            scope,
+            scopes,
         )
         return None
 
@@ -882,7 +882,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # of size_hint from the response schema when not explicitly provided.
     meta = ResourceMeta.for_schema(
         response_schema,
-        required_scope=scope,
+        required_scopes=scopes,
         cache_ttl=cache_ttl,
         optional_params=optional_params or None,
         size_hint=size_hint,

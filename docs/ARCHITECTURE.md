@@ -76,7 +76,7 @@ This doc explains the server's architecture and design decisions. If you need:
 │  (per tool — 4 phases):   │  │    for common URIs       │
 │  • identity (title,       │  │    (override auto)       │
 │    annotations, hints,    │  │                          │
-│    category, scope)       │  │                          │
+│    category)              │  │                          │
 │  • description            │  │                          │
 │  • schema (computation    │  │                          │
 │    via _compute_tool_     │  │                          │
@@ -127,7 +127,7 @@ This doc explains the server's architecture and design decisions. If you need:
 │      (see Spec-Level Filtering)                         │
 │    • register_all_resources — skips resources whose     │
 │      operationId is filtered (auto) or whose            │
-│      required_scope is unavailable (custom)             │
+│      required_scopes are unavailable (custom)           │
 │      (see Spec-Level Filtering)                         │
 │                                                         │
 │  Middleware (chain order; each acts on its hooks):      │
@@ -272,7 +272,7 @@ Agent reads a resource:
 |--------|---------------|
 | `config.py` | Pydantic settings from env vars + ``ConfigProtocol`` structural protocol |
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
-| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
+| `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion; param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params, scope-tag reconciliation); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
 | `spec_loader.py` | Fetch spec, convert, apply extensions; compute excluded routes |
 | `mcp_builder.py` | Create ``OpenAPIProvider``, route filtering, per-tool metadata customization |
@@ -918,9 +918,9 @@ from the parameter schema.
      normalization rules to the whole spec before FastMCP sees it.  Rules A
      and B are **shape-driven**: they trigger on the *shape* of the spec
      (naming convention, response structure), never on a hardcoded list of
-     operationIds, so they keep working as the Gitea spec evolves.  Rule C is
-     a documented **source-driven exception** (see below).  Three rules live
-     here:
+     operationIds, so they keep working as the Gitea spec evolves.  Rules C and
+     D are documented **source-driven exceptions** (see below).  Four rules
+     live here:
 
      **Rule A — snake_case parameter normalization.**  Gitea's spec mixes
      naming conventions: body properties like ``Do``/``MergeCommitID`` (on
@@ -997,6 +997,29 @@ from the parameter schema.
      table must be re-verified against the router when upgrading
      Gitea/Forgejo (upgrade note and known forward drift: the
      ``_WILDCARD_PATH_PARAMS`` comment in ``normalize.py``).
+
+     **Rule D — scope-tag reconciliation (source-driven exception).**
+     Gitea/Forgejo derive token-scope requirements from the router's
+     ``tokenRequiresScopes(...)`` calls — including parent-group middleware —
+     and enforce *all* declared categories.  The generated spec's
+     per-operation ``tags`` list only a subset of those categories: a route
+     inside the ``/user`` group that also requires ``repository`` (e.g.
+     ``GET /user/repos``) carries only ``[user]``, because a per-operation tag
+     list cannot express the group middleware.  Downstream scope derivation
+     (``gitea_mcp_server.scope``) reads the operation tags, so it would
+     under-report.  The generated tags can also name a category the router does
+     *not* require: ``GET /repos/{owner}/{repo}/issues/pinned`` is tagged
+     ``repository`` but lives in the Issue group.  The rule reconciles the
+     scope-mapped tags on the operations in ``_SCOPE_TAG_OVERRIDES`` (curated
+     from ``routers/api/v1/api.go``) with the router's authoritative
+     categories — appending missing tags and removing mis-tagged ones, while
+     preserving non-scope tags — keeping scope derivation generic.  Like Rule C
+     it is source-driven because the information is erased from the spec; its
+     drift guard is stronger — it warns both when an entry's operation
+     disappears *and* when the scope tags already match (upstream fixed the
+     annotation).  Only *new* mismatches are invisible and need the upgrade
+     audit (upgrade note: the ``_SCOPE_TAG_OVERRIDES`` comment in
+     ``normalize.py``).  See ``docs/SCOPE_MODEL.md`` for the scope model itself.
 
      Everything else stays **intentionally mirrored** — the spec is the
      source of truth and the one-to-one mapping is what makes the surface

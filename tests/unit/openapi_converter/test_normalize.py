@@ -4,6 +4,7 @@ Tests the normalization rules:
 - Rule A: snake_case parameter/body-property renames (query/header/cookie/body).
 - Rule B: boolean-check response annotation.
 - Rule C: wildcard path-param annotation (source-driven exception).
+- Rule D: scope-tag augmentation (source-driven exception).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.normalize import (
+    _SCOPE_TAG_OVERRIDES,
     _annotate_boolean_checks,
     _annotate_wildcard_path_params,
     _get_body_schema,
@@ -20,6 +22,7 @@ from gitea_mcp_server.openapi_converter.normalize import (
     _merge_rename_map,
     _normalize_operation_body,
     _normalize_operation_parameters,
+    _reconcile_scope_tags,
     normalize_spec,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
@@ -713,6 +716,187 @@ class TestAnnotateWildcardPathParams:
         assert "has no operations" in caplog.text
 
 
+class TestReconcileScopeTags:
+    """Rule D — scope-tag reconciliation for under-reported/mis-tagged ops."""
+
+    def test_appends_missing_scope_tags(self) -> None:
+        """A tag set that under-reports a router scope gets the missing tag."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {"operationId": "userCurrentListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast("dict[str, Any]", spec["paths"]["/user/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+
+    def test_appends_route_scope_under_group(self) -> None:
+        """A route-level scope under a group is appended to the group's tag.
+
+        ``GET /users/{username}/repos`` is under the ``/users`` group (user)
+        with a route-level ``repository`` scope, but the spec tags only ``user``.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/users/{username}/repos": {
+                    "get": {"operationId": "userListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast("dict[str, Any]", spec["paths"]["/users/{username}/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+
+    def test_corrects_mis_tagged_scope(self) -> None:
+        """A scope tag the router does not require is replaced.
+
+        ``GET /repos/{owner}/{repo}/issues/pinned`` is in the Issue group but
+        the generated spec tags it ``repository`` (upstream mis-tag).
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/issues/pinned": {
+                    "get": {"operationId": "repoListPinnedIssues", "tags": ["repository"]},
+                },
+            },
+        )
+        reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 1
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/issues/pinned"]["get"],
+        )
+        assert op["tags"] == ["issue"]
+
+    def test_preserves_non_scope_tags(self) -> None:
+        """Search-category tags that map to no scope survive reconciliation."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/starred": {
+                    "get": {
+                        "operationId": "userCurrentListStarred",
+                        "tags": ["user", "pull_request"],
+                    },
+                },
+            },
+        )
+        _reconcile_scope_tags(spec)
+        op = cast("dict[str, Any]", spec["paths"]["/user/starred"]["get"])
+        assert op["tags"] == ["pull_request", "user", "repository"]
+
+    def test_obsolete_entry_warns(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An entry whose scope tags already match warns (upstream fixed)."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {
+                        "operationId": "userCurrentListRepos",
+                        "tags": ["user", "repository"],
+                    },
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 0
+        assert "already matches" in caplog.text
+
+    def test_missing_entry_warns_loudly(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A table entry absent from the fetched spec warns (drift guard)."""
+        spec = make_openapi_spec(paths={})
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+        assert reconciled == 0
+        assert "not found in fetched spec" in caplog.text
+
+
+# The upstream (fetched spec) ``tags`` for every operation in
+# ``_SCOPE_TAG_OVERRIDES``, captured from the live Forgejo 16.0.3
+# (gitea-1.22.0) spec.  Kept in lockstep with the table: the first test asserts
+# the two key sets are equal, so adding or removing an override fails here
+# until this snapshot is refreshed.  (The real spec is not committed — it is
+# fetched at startup — so this snapshot is the committed baseline; the runtime
+# drift guard covers the live spec.)
+_UPSTREAM_SCOPE_TAGS: dict[tuple[str, str], list[str]] = {
+    ("get", "/user/repos"): ["user"],
+    ("get", "/user/starred"): ["user"],
+    ("get", "/user/starred/{owner}/{repo}"): ["user"],
+    ("put", "/user/starred/{owner}/{repo}"): ["user"],
+    ("delete", "/user/starred/{owner}/{repo}"): ["user"],
+    ("get", "/user/orgs"): ["organization"],
+    ("get", "/users/{username}/repos"): ["user"],
+    ("get", "/users/{username}/orgs"): ["organization"],
+    ("get", "/users/{username}/orgs/{org}/permissions"): ["organization"],
+    ("post", "/org/{org}/repos"): ["organization"],
+    ("get", "/repos/{owner}/{repo}/issues/pinned"): ["repository"],
+}
+
+
+class TestReconcileScopeTagsUpstreamBaseline:
+    """Lock the Rule D table to the real upstream tag shapes.
+
+    The live spec can only be guarded at runtime; this snapshot locks the
+    table's shape so a code regression (path lookup, guard logic) or an
+    un-refreshed table fails in CI instead of silently under/over-reporting.
+    """
+
+    def test_snapshot_covers_every_override(self) -> None:
+        """The upstream snapshot stays in lockstep with the override table."""
+        assert set(_UPSTREAM_SCOPE_TAGS) == set(_SCOPE_TAG_OVERRIDES)
+
+    def test_every_override_reconciles_without_drift_warnings(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """All entries reconcile; no missing/obsolete drift warnings fire."""
+        spec = make_openapi_spec(paths=self._upstream_paths())
+
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            reconciled = _reconcile_scope_tags(spec)
+
+        assert reconciled == len(_SCOPE_TAG_OVERRIDES)
+        assert "not found in fetched spec" not in caplog.text
+        assert "already matches" not in caplog.text
+
+    def test_every_override_yields_the_authoritative_tags(self) -> None:
+        """Reconciled tags equal the router categories (order-independent)."""
+        spec = make_openapi_spec(paths=self._upstream_paths())
+
+        _reconcile_scope_tags(spec)
+
+        paths = cast("dict[str, dict[str, Any]]", spec["paths"])
+        for (method, path), authoritative in _SCOPE_TAG_OVERRIDES.items():
+            op = paths[path][method]
+            assert set(op["tags"]) == set(authoritative)
+
+    @staticmethod
+    def _upstream_paths() -> dict[str, Any]:
+        """Build a spec ``paths`` block from the upstream-tag snapshot."""
+        paths: dict[str, Any] = {}
+        for (method, path), tags in _UPSTREAM_SCOPE_TAGS.items():
+            paths.setdefault(path, {})[method] = {
+                "operationId": "op",
+                "tags": list(tags),
+            }
+        return paths
+
+
 class TestNormalizeSpec:
     def test_renames_params_and_annotates_boolean_checks(self) -> None:
         spec = make_openapi_spec(
@@ -1041,3 +1225,22 @@ class TestNormalizeSpec:
         assert good_op["x-param-rename"] == {"do": "Do"}
         # The bad operation was skipped, not fatal.
         assert "Failed to normalize operation POST /bad" in caplog.text
+
+    def test_reconciles_scope_tags(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """``normalize_spec`` applies Rule D and logs the reconciliation."""
+        spec = make_openapi_spec(
+            paths={
+                "/user/repos": {
+                    "get": {"operationId": "userCurrentListRepos", "tags": ["user"]},
+                },
+            },
+        )
+        with caplog.at_level(logging.INFO, logger="gitea_mcp_server.openapi_converter.normalize"):
+            normalize_spec(spec)
+
+        op = cast("dict[str, Any]", spec["paths"]["/user/repos"]["get"])
+        assert op["tags"] == ["user", "repository"]
+        assert "Reconciled scope tags on 1 operations" in caplog.text

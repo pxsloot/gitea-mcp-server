@@ -643,8 +643,8 @@ async def _list_hidden_tools_impl(  # noqa: PLR0913 - reason, page, limit, fetch
             "name": f"{tool_prefix}{op_id}",
             "reason": r,
         }
-        if r == "scope" and info.get("required_scope"):
-            entry["required_scope"] = info["required_scope"]
+        if r == "scope" and info.get("required_scopes"):
+            entry["required_scopes"] = info["required_scopes"]
         entries.append(entry)
     entries.sort(key=lambda e: e["name"])
 
@@ -876,7 +876,12 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                         "description": "Normalized relevance score (0.0-1.0). "
                         "1.0 is the top match for this query.",
                     },
-                    "required_scope": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                    "required_scopes": {
+                        "oneOf": [
+                            {"type": "array", "items": {"type": "string"}},
+                            {"type": "null"},
+                        ]
+                    },
                 },
                 "example": {
                     "uri": "gitea://repos/{owner}/{repo}",
@@ -886,7 +891,7 @@ _SEARCH_RESOURCES_OUTPUT_SCHEMA: dict[str, Any] = {
                     "type": "template",
                     "tags": ["wrapper", "repository"],
                     "score": 1.0,
-                    "required_scope": "read:repository",
+                    "required_scopes": ["read:repository"],
                 },
             },
             "description": "Matching resource definitions ranked by relevance",
@@ -1334,15 +1339,18 @@ def register_synthetic_tools(
                                 "type": "string",
                                 "description": "Why the tool is hidden: scope, excluded, or deprecated",
                             },
-                            "required_scope": {
-                                "oneOf": [{"type": "string"}, {"type": "null"}],
-                                "description": "Required scope (reason=scope only)",
+                            "required_scopes": {
+                                "oneOf": [
+                                    {"type": "array", "items": {"type": "string"}},
+                                    {"type": "null"},
+                                ],
+                                "description": "Required scopes (reason=scope only)",
                             },
                         },
                         "example": {
                             "name": "gitea_admin_create_user",
                             "reason": "scope",
-                            "required_scope": "sudo",
+                            "required_scopes": ["sudo"],
                         },
                     },
                     "description": "Hidden tools with their filter reason",

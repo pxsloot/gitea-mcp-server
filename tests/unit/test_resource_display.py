@@ -66,7 +66,7 @@ class TestContextMetaKeysPipeline:
             method="GET",
             format_hint="issues",
             resource_type="issues",
-            scope="read:repository",
+            scopes=["read:repository"],
             tags={"issues"},
             param_config=ResourceParamConfig(
                 query_params=["state", "type"],
@@ -142,7 +142,7 @@ class TestContextMetaKeysPipeline:
             api_path="/repos/{owner}/{repo}/test",
             method="GET",
             format_hint="repository",
-            scope="read:repository",
+            scopes=["read:repository"],
             tags={"test"},
             param_config=ResourceParamConfig(
                 query_params=["state"],
@@ -192,7 +192,7 @@ class TestContextMetaKeysPipeline:
             api_path="/repos/{owner}/{repo}/labels",
             method="GET",
             format_hint="labels",
-            scope="read:issue",
+            scopes=["read:issue"],
             tags={"labels"},
             error_message="Labels not found for repository '{owner}/{repo}'.",
             param_config=ResourceParamConfig(

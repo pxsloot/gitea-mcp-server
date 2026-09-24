@@ -279,7 +279,7 @@ class MCPCli(cmd.Cmd):
             mime = r.get("mimeType", "")
             desc = r.get("description", "").replace("\n", " ").strip()
             tags = r.get("tags", [])
-            scope = r.get("required_scope")
+            scopes = (r.get("_meta") or {}).get("required_scopes") or []
 
             print(f"  \033[1m{uri}\033[0m")
             if name:
@@ -292,8 +292,8 @@ class MCPCli(cmd.Cmd):
                 print(f"    {desc}")
             if tags:
                 print(f"    Tags: {', '.join(tags)}")
-            if scope:
-                print(f"    Scope: {scope}")
+            if scopes:
+                print(f"    Scope: {', '.join(scopes)}")
             print()
 
     do_lr = do_list_resources

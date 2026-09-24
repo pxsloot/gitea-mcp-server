@@ -474,7 +474,7 @@ def register_doc_tools(
         description=description,
         mime_type="text/markdown",
         tags={"docs", "guide", "workflow"},
-        meta=ResourceMeta(required_scope=None, size_hint="small", default_detail="full").to_dict(),
+        meta=ResourceMeta(size_hint="small", default_detail="full").to_dict(),
     )
     async def doc_resource(topic: str) -> str:
         """Get a workflow guide by topic name."""

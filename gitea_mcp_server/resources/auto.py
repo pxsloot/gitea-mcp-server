@@ -122,7 +122,7 @@ def register_auto_generated_resources(
                 # so auto resources and their custom siblings share one
                 # source of truth for naming.
                 swagger_tags = set(operation.get("tags", [])) or None
-                required_scope = derive_required_scope(swagger_tags, "GET")
+                required_scopes = derive_required_scope(swagger_tags, "GET")
 
                 # No tracking_set: auto resources are consumers of
                 # skip_uris (set by the orchestrator above), not
@@ -135,7 +135,7 @@ def register_auto_generated_resources(
                         uri=uri_template,
                         api_path=path,
                         method="GET",
-                        scope=required_scope,
+                        scopes=sorted(required_scopes) if required_scopes else None,
                         tags={"api", "raw", "auto"},
                     )
                     count += 1

@@ -36,7 +36,7 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.exceptions import GiteaAPIError
 from gitea_mcp_server.pagination import capture_pagination_headers
-from gitea_mcp_server.tools.virtual_params import sudo_context
+from gitea_mcp_server.request_context import sudo_context
 
 logger = logging.getLogger(__name__)
 

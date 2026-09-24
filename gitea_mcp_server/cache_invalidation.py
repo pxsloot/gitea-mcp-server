@@ -473,9 +473,7 @@ class CacheInvalidationMiddleware(Middleware):
         # Execute the tool
         result = await call_next(context)
 
-        # NOTE: use getattr for backward compat with fastmcp <3.4.0
-        # where ToolResult does not have an is_error attribute.
-        if result and not getattr(result, "is_error", False):
+        if result and not result.is_error:
             uris_to_invalidate = compute_uris_to_invalidate(
                 tool_name,
                 arguments,

@@ -1,151 +1,106 @@
-"""Unit tests for label conversion and formatting."""
+"""Unit tests for label parameter schema augmentation (``tools/labels.py``)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-import pytest
-
-from gitea_mcp_server.exceptions import ValidationError
-from gitea_mcp_server.label_service import LabelService
-from gitea_mcp_server.tools.labels import _convert_labels
-from tests.helpers.mock_tool import make_async_mock
+from gitea_mcp_server.tools.labels import update_labels_schema
 
 
-class TestConvertLabels:
-    """Tests for _convert_labels (thin adapter → LabelService)."""
+class TestUpdateLabelsSchema:
+    """``update_labels_schema`` widens the labels item type to string + integer."""
 
-    @pytest.fixture
-    def _gitea_client(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
-    def _label_service(self) -> AsyncMock:
-        return make_async_mock(LabelService)
-
-    @pytest.mark.asyncio
-    async def test_converts_known_string_labels_to_ids(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """Known string label names should be converted to integer IDs."""
-        _label_service.validate_and_convert.return_value = [1, 2]
-
-        kwargs = {
-            "owner": "test-owner",
-            "repo": "test-repo",
-            "labels": ["type/bug", "type/feature"],
+    def test_updates_integer_type_to_union(self) -> None:
+        """Schema with integer items.type should become [string, integer]."""
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                }
+            }
         }
-        await _convert_labels(kwargs, True, _label_service, _gitea_client)
 
-        assert kwargs["labels"] == [1, 2]
-        _label_service.validate_and_convert.assert_called_once_with(
-            ["type/bug", "type/feature"], "test-owner", "test-repo", _gitea_client
-        )
+        update_labels_schema(tool)
 
-    @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_strings(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """Unknown label names should raise ValidationError."""
-        _label_service.validate_and_convert.side_effect = ValidationError(
-            message="Unknown label name(s): ['type/nonexistent']", field="labels"
-        )
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
 
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/nonexistent"]}
-        with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, _label_service, _gitea_client)
+    def test_updates_string_type_to_union(self) -> None:
+        """Schema with string items.type should become [string, integer]."""
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                }
+            }
+        }
 
-        assert "type/nonexistent" in str(excinfo.value)
-        assert excinfo.value.field == "labels"
+        update_labels_schema(tool)
 
-    @pytest.mark.asyncio
-    async def test_passes_through_valid_integers(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """Valid integer IDs should pass through unchanged."""
-        _label_service.validate_and_convert.return_value = [1, 2, 3]
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
 
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [1, 2, 3]}
-        await _convert_labels(kwargs, True, _label_service, _gitea_client)
+    def test_preserves_existing_union(self) -> None:
+        """Schema already with union type should not be modified."""
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {"type": ["string", "integer"]},
+                }
+            }
+        }
 
-        assert kwargs["labels"] == [1, 2, 3]
-        _label_service.validate_and_convert.assert_called_once_with(
-            [1, 2, 3], "test-owner", "test-repo", _gitea_client
-        )
+        update_labels_schema(tool)
 
-    @pytest.mark.asyncio
-    async def test_raises_validation_error_for_unknown_integers(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """Unknown integer IDs should raise ValidationError."""
-        _label_service.validate_and_convert.side_effect = ValidationError(
-            message="Unknown label ID(s): [99999]", field="labels"
-        )
+        labels_schema = tool.parameters["properties"]["labels"]
+        assert labels_schema["items"]["type"] == ["string", "integer"]
 
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": [99999]}
-        with pytest.raises(ValidationError) as excinfo:
-            await _convert_labels(kwargs, True, _label_service, _gitea_client)
+    def test_skips_non_array_labels(self) -> None:
+        """If labels is not array type, schema should not be modified."""
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "labels": {"type": "string"},
+            }
+        }
 
-        assert "99999" in str(excinfo.value)
-        assert excinfo.value.field == "labels"
+        update_labels_schema(tool)
 
-    @pytest.mark.asyncio
-    async def test_skips_when_has_labels_is_false(self) -> None:
-        """When has_labels is False, no conversion should happen."""
-        kwargs = {"labels": ["type/bug"]}
-        await _convert_labels(kwargs, False, MagicMock())
-        assert kwargs["labels"] == ["type/bug"]
+        # Should remain unchanged
+        assert tool.parameters["properties"]["labels"]["type"] == "string"
 
-    @pytest.mark.asyncio
-    async def test_skips_when_labels_not_in_kwargs(self) -> None:
-        """When labels key is missing from kwargs, no conversion should happen."""
-        kwargs = {"owner": "test-owner", "repo": "test-repo"}
-        await _convert_labels(kwargs, True, MagicMock())
-        assert "labels" not in kwargs
+    def test_skips_no_labels_property(self) -> None:
+        """Tool without labels property should not be modified."""
+        tool = MagicMock()
+        tool.parameters = {
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+            }
+        }
 
-    @pytest.mark.asyncio
-    async def test_skips_when_labels_empty_list(self) -> None:
-        """When labels is an empty list, no conversion should happen."""
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": []}
-        await _convert_labels(kwargs, True, MagicMock())
-        assert kwargs["labels"] == []
+        update_labels_schema(tool)
 
-    @pytest.mark.asyncio
-    async def test_skips_when_owner_missing(self, _label_service: AsyncMock) -> None:
-        """When owner is missing, no conversion should happen."""
-        kwargs = {"repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, _label_service, AsyncMock())
-        assert kwargs["labels"] == ["type/bug"]
-        _label_service.validate_and_convert.assert_not_called()
+        # Should remain unchanged
+        assert "labels" not in tool.parameters["properties"]
 
-    @pytest.mark.asyncio
-    async def test_skips_when_gitea_client_missing(self, _label_service: AsyncMock) -> None:
-        """When gitea_client is None, no conversion should happen."""
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug"]}
-        await _convert_labels(kwargs, True, _label_service, gitea_client=None)
-        assert kwargs["labels"] == ["type/bug"]
-        _label_service.validate_and_convert.assert_not_called()
+    def test_skips_no_parameters(self) -> None:
+        """Tool without parameters attribute should not crash."""
+        tool = MagicMock()
+        # No parameters attribute
+        del tool.parameters
 
-    @pytest.mark.asyncio
-    async def test_handles_mixed_strings_and_integers(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """Mixed string and integer labels should all be converted/preserved."""
-        _label_service.validate_and_convert.return_value = [1, 42]
+        # Should not raise
+        update_labels_schema(tool)
 
-        kwargs = {"owner": "test-owner", "repo": "test-repo", "labels": ["type/bug", 42]}
-        await _convert_labels(kwargs, True, _label_service, _gitea_client)
+    def test_skips_empty_parameters(self) -> None:
+        """Tool with None parameters should not crash."""
+        tool = MagicMock()
+        tool.parameters = None
 
-        assert kwargs["labels"] == [1, 42]
-
-    @pytest.mark.asyncio
-    async def test_uses_org_as_fallback_for_owner(
-        self, _gitea_client: AsyncMock, _label_service: AsyncMock
-    ) -> None:
-        """When owner is absent but org is present, org should be used."""
-        _label_service.validate_and_convert.return_value = [1]
-
-        kwargs = {"org": "my-org", "repo": "test-repo", "labels": ["bug"]}
-        await _convert_labels(kwargs, True, _label_service, _gitea_client)
-
-        _label_service.validate_and_convert.assert_called_once_with(
-            ["bug"], "my-org", "test-repo", _gitea_client
-        )
+        # Should not raise
+        update_labels_schema(tool)

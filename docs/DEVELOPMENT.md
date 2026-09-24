@@ -109,18 +109,26 @@ See `docs/TESTING_STANDARDS.md` for full details.
 | `gitea_mcp_server/` | Core modules -- config, client, conversion, server assembly, exceptions, constants, `label_service`, `format` |
 | `gitea_mcp_server/tools/` | **Runtime** tool customization -- customize, contract, schemas, errors, labels, examples, exclusion, search, virtual_params, namespace |
 | `gitea_mcp_server/resources/` | **Runtime** resource system -- auto-generated, custom, format helpers, scope derivation, resource registration |
-| `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, permissions |
+| `gitea_mcp_server/server_setup/` | **Startup-only** -- spec loading, MCP builder, extensions, resource orchestration, HTTP transport |
 | `gitea_mcp_server/docs/` | **Agent-facing** documentation (loaded as MCP server instructions) |
 | `docs/` | **Developer-facing** documentation (this file, ARCHITECTURE.md, etc.) |
 | `tests/` | Unit tests (`unit/`) and integration tests (`integration/`) |
 
-### Keeping the Import-Smoke List in Sync
+### Structural guards: module surface and layering
 
-`tests/unit/test_module_imports.py` maintains an ``ALL_MODULES`` list that
-every production module must be added to.  When you add a new ``.py`` file
-to any subpackage under ``gitea_mcp_server/``, add its dotted module name
-to ``ALL_MODULES``.  The list is the single source of truth for import-smoke
-and ``__all__``-validation coverage.
+The module surface is discovered from the filesystem — there is no list to
+maintain.  Two executable guards keep the architecture honest:
+
+- `tests/unit/test_architecture_doc.py` checks that every production module
+  appears in `docs/ARCHITECTURE.md`'s Module Map, that every file the map names
+  exists, and that every package the map names exists.
+- `tests/unit/test_layer_contract.py` orders the package into layers
+  (leaf → converter → payload-resolution → format → client → runtime → setup →
+  root) and fails on any import that points to a higher layer, plus a small set
+  of explicitly forbidden edges.  A module that belongs to no layer fails too.
+
+When you add a module, update the Module Map and the contract's `LAYERS` — the
+tests tell you if you forget.  See `docs/ARCHITECTURE.md` design decision #19.
 
 ---
 
@@ -1232,7 +1240,7 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
    Integration tests need a real `.env` with credentials.
 5. **Cache confusion** -- Resource reads are cached.  If your changes don't
    appear, check cache TTL or invalidate manually.
-   6. **Schema changes** -- The `openapi_converter.py` transforms Swagger 2.0 → 3.1.
+   6. **Schema changes** -- The `openapi_converter/core.py` transforms Swagger 2.0 → 3.1.
     If you add a new schema feature, ensure the converter preserves it.  Note:
     the converter *intentionally* strips all `x-*` vendor extensions from
     schema objects (Gitea leaks `x-go-name`/`x-go-package` Go internals) -- this

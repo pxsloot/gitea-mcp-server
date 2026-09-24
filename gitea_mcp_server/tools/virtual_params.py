@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import base64
 import logging
-from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -59,6 +58,7 @@ from gitea_mcp_server.constants import (
     DETAIL_VALUES,
     RESPONSE_FORMATS,
 )
+from gitea_mcp_server.request_context import sudo_context
 from gitea_mcp_server.validation import validate_enum
 
 logger = logging.getLogger(__name__)
@@ -145,14 +145,6 @@ registered with this sentinel must get its default from the caller's
 # ---------------------------------------------------------------------------
 # sudo - impersonate a user via ?sudo= query parameter
 # ---------------------------------------------------------------------------
-
-sudo_context: ContextVar[str | None] = ContextVar("sudo_context", default=None)
-"""Async context variable carrying the target username for sudo.
-
-Set by the sudo pre-hook before each tool call; read by the httpx request
-hook in ``client.py`` to inject ``?sudo=<username>`` into the request URL.
-Cleared by the sudo post-hook after the response.
-"""
 
 
 def _sudo_pre_hook(value: Any, _kwargs: dict[str, Any]) -> None:
@@ -512,6 +504,5 @@ __all__ = [
     "apply_to",
     "extract_from",
     "inject_into",
-    "sudo_context",
     "validate_extracted",
 ]

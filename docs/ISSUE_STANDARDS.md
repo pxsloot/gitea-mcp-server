@@ -60,9 +60,9 @@ Examples:
 |---|---|---|
 | No ad-hoc registration meta keys remain; `registration` is the only sanctioned key | DoD | issue |
 | A test fails if any wrapped tool lacks a complete carrier | DoD | issue |
-| Delete the `_customization` re-read at `mcp_builder:996` | design note | plan |
-| Move the scope filter earlier in `server.py` | design note | plan |
-| `docs/ARCHITECTURE.md` lines 110, 176, 303 … | design note | plan (grep method) |
+| Delete the `_confabulator` re-read at `flinstone.py:554` | design note | plan |
+| Move the flan_spoon earlier in `recipe.py` | design note | plan |
+| `docs/PURPLE_BOX.md` lines 110, 176, 303 … | design note | plan (grep method) |
 
 ---
 

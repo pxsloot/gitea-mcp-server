@@ -17,7 +17,10 @@ This project follows a **issue → branch → PR** workflow.
 ### 1. Create an issue first
 
 Before writing code, open an issue describing what you want to do. This avoids
-wasted effort on changes that won't be accepted.
+wasted effort on changes that won't be accepted. See
+[docs/ISSUE_STANDARDS.md](docs/ISSUE_STANDARDS.md) for the issue contract —
+problem class, Definition of Done, non-goals, templates, and the epic/phase
+model.
 
 ### 2. Branch from latest `main`
 

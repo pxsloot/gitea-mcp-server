@@ -156,10 +156,9 @@ One of two things should then happen:
 
 ### How to create an issue
 
-- Title: short, clear description of the work.
-- Body: describe the motivation and what needs to change.
-- Labels: use the existing label set (`Kind/*`, `Priority/*`, etc.).
-- Acceptance criteria: what "done" looks like.
+- See `docs/ISSUE_STANDARDS.md` — the contract for problem class, Definition
+  of Done (invariants, not design), non-goals, templates, labels, and the
+  epic/phase model.
 
 ### How to review a PR
 

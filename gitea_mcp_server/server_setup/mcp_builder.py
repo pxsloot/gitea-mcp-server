@@ -52,6 +52,12 @@ from gitea_mcp_server.pagination import (
     PAGINATION_SCHEMA_PROPERTIES,
     pagination_ctx,
 )
+from gitea_mcp_server.registration import (
+    REGISTRATION_KEY,
+    ToolRegistration,
+    get_tool_registration,
+    set_registration,
+)
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.customize import (
     _detect_has_labels,
@@ -471,6 +477,16 @@ def _build_customization_meta(
         route_method=schema.route_method,
         response_transform=schema.response_transform,
     )
+    # Registration record (Phase 1: built beside the flat keys for a
+    # behaviour-preserving migration; the flat keys are retired in Phase 2).
+    # ``virtual_params`` stays None until injection runs at the exposure seam
+    # (``_ToolWrappingTransform._wrap``).
+    component_meta[REGISTRATION_KEY] = ToolRegistration.for_autogen(
+        customization=component_meta["_customization"],
+        output_schema_raw=component_meta.get("output_schema_raw"),
+        response_type=component_meta.get("response_type"),
+        view_hints=component_meta.get("view_hints"),
+    ).to_dict()
     component_meta[_WRAP_ME] = True
     component.meta = component_meta
 
@@ -732,11 +748,12 @@ class _ToolWrappingTransform(Transform):
             return None
         return await self._wrap(tool)
 
-    def _inject_params(self, tool: Tool) -> None:
+    def _inject_params(self, tool: Tool) -> set[str]:
         """Inject virtual params into the tool schema.
 
         Called once per tool at startup (via :meth:`_wrap`).  Mutates
-        ``tool.parameters`` in place.
+        ``tool.parameters`` in place and returns the set of params actually
+        injected, so :meth:`_wrap` can finalise the registration record.
 
         Autogen tools inject every visible param (``only=None``).  Synthetic
         tools stamp their per-tool allowlist in ``tool.meta["_virtual_params"]``
@@ -764,6 +781,7 @@ class _ToolWrappingTransform(Transform):
         )
         if meta.get("_virtual_params") is None:
             meta["_virtual_params"] = injected
+        return injected
 
     def _make_autogen_executor(
         self,
@@ -899,8 +917,13 @@ class _ToolWrappingTransform(Transform):
                 _WRAP_ME,
             )
 
-        # Phase 1: Schema augmentation (one-time, per-startup).
-        self._inject_params(tool)
+        # Phase 1: Schema augmentation (one-time, per-startup).  The injected
+        # set finalises the registration record at this exposure seam — the
+        # single point where a record becomes complete, before any list/call.
+        injected = self._inject_params(tool)
+        registration = get_tool_registration(tool)
+        if registration is not None and registration.virtual_params is None:
+            set_registration(tool, registration.with_injected(injected))
 
         # Phase 2: Build runtime behaviour (per-call).
         transform_fn = self._make_transform_fn(tool, customization)

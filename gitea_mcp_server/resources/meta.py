@@ -26,6 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from gitea_mcp_server.registration import REGISTRATION_KEY, ResourceRegistration
 from gitea_mcp_server.tools.schemas import schema_type_is_array
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,15 @@ class ResourceMeta:
             result["size_hint"] = self.size_hint
         if self.default_detail is not None:
             result["default_detail"] = self.default_detail
+        # Registration record (Phase 1: beside the flat keys; the flat keys are
+        # retired in Phase 2).  ``size_hint``/``default_detail`` are required by
+        # the record: every registration path derives or declares them.
+        result[REGISTRATION_KEY] = ResourceRegistration(
+            size_hint=self.size_hint or "",
+            default_detail=self.default_detail or "",
+            required_scopes=self.required_scopes,
+            optional_params=self.optional_params,
+        ).to_dict()
         return result
 
     @classmethod

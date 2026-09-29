@@ -35,6 +35,7 @@ LAYERS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
             "gitea_mcp_server.exceptions",
             "gitea_mcp_server.openapi_types",
             "gitea_mcp_server.models",
+            "gitea_mcp_server.registration",
             "gitea_mcp_server.schema_utils",
             "gitea_mcp_server.marker",
             "gitea_mcp_server.pagination",

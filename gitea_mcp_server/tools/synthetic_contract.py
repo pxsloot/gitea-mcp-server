@@ -176,9 +176,10 @@ def register_all_synthetic_tools(
 
     Wrapped specs (``wrap=True``) ride the server-level contract transform
     via :func:`register_synthetic_tool` — the executor is built from the
-    spec's impl, and the tool is stamped with the wrap marker + virtual-param
-    allowlist.  Unwrapped specs (``wrap=False``, e.g. ``call_tool``, a
-    passthrough proxy) register plainly via ``mcp.tool()`` with no marker.
+    spec's impl, and the tool carries a registration record with the
+    virtual-param allowlist.  Unwrapped specs (``wrap=False``, e.g.
+    ``call_tool``, a passthrough proxy) register via ``mcp.tool()`` with a
+    ``wrap=False`` proxy record.
 
     Args:
         mcp: The FastMCP server instance to register on.

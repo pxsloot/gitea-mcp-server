@@ -14,7 +14,10 @@ tests/
 ├── conftest.py                             # Infrastructure: SimpleConfig, event_loop, OTel
 ├── helpers/
 │   ├── __init__.py
+│   ├── import_graph.py                     # Filesystem module discovery + import graph (layer contract)
+│   ├── mcp_results.py                      # dual-channel MCP result helpers
 │   ├── mock_tool.py                        # make_mock_tool, make_mock_route
+│   ├── registration.py                     # registration-record builders for tests
 │   ├── tool_names.py                       # extract_tool_names
 │   └── spec_fixtures.py                    # base_spec, minimal_spec, make_openapi_spec
 ├── schemas/

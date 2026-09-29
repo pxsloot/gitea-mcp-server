@@ -54,6 +54,7 @@ truth. Other mentions point here.
 | Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (design decisions) |
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
 | Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #4) |
+| Registration record (tool/resource metadata contract) | `gitea_mcp_server/registration.py` (source, canonical) + `ARCHITECTURE.md` (design decision #20) |
 | Module map | `ARCHITECTURE.md` |
 | Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (design decision #19) |
 | Transform execution order | `ARCHITECTURE.md` |

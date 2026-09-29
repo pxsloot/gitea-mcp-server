@@ -242,11 +242,14 @@ async def mcp_client(
     gitea_url: str,
     server_args: list[str],
     token: str,
+    env_overrides: dict[str, str] | None = None,
 ) -> AsyncIterator[ClientSession]:
     """Async context manager: start an MCP server, yield a connected session.
 
     For new tests, prefer the ``world`` fixture — pooled servers stay
-    alive for the entire session.
+    alive for the entire session.  ``env_overrides`` lets a test start a
+    server with a non-default config (e.g. ``ENABLE_LAZY_LOADING=false`` to
+    expose the full tool surface over the wire).
     """
     with _suppress_anyio_cleanup():
         async with stdio_client(
@@ -258,6 +261,7 @@ async def mcp_client(
                     "GITEA_URL": gitea_url,
                     "GITEA_TOKEN": token,
                     "TRANSPORT_TYPE": "stdio",
+                    **(env_overrides or {}),
                 },
             )
         ) as (read, write):

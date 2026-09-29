@@ -163,7 +163,9 @@ wraps ``required_scopes`` (a list, or ``None``) alongside ``size_hint``,
 ``default_detail``, and ``optional_params``, serialised via ``.to_dict()``:
 
 ```python
-_meta = ResourceMeta(required_scopes=["read:repository"], size_hint="medium").to_dict()
+_meta = ResourceMeta(
+    required_scopes=["read:repository"], size_hint="medium", default_detail="full"
+).to_dict()
 ```
 
 The re-export chain (`scope.py` → `resources/scope.py` → `resources/__init__.py`)

@@ -155,11 +155,11 @@ class TestDefaultDetailFor:
 class TestResourceMeta:
     """Tests for the ResourceMeta dataclass."""
 
-    def test_to_dict_omits_none_values(self) -> None:
-        """to_dict should omit all None fields."""
+    def test_to_dict_omits_none_flat_values(self) -> None:
+        """to_dict omits unset flat fields but always carries the registration record."""
         meta = ResourceMeta()
         result = meta.to_dict()
-        assert result == {}
+        assert result == {"registration": {"size_hint": "", "default_detail": ""}}
 
     def test_to_dict_includes_set_fields(self) -> None:
         """to_dict should include non-None fields."""
@@ -178,10 +178,12 @@ class TestResourceMeta:
         assert result["cache_ttl"] == 60.0
 
     def test_to_dict_partial_fields(self) -> None:
-        """to_dict should include only the explicitly set non-None fields."""
+        """to_dict includes explicit flat fields beside the registration record."""
         meta = ResourceMeta(required_scopes=["read:issue"])
         result = meta.to_dict()
-        assert result == {"required_scopes": ["read:issue"]}
+        assert result["required_scopes"] == ["read:issue"]
+        assert result["registration"]["required_scopes"] == ["read:issue"]
+        assert set(result["registration"]) == {"size_hint", "default_detail", "required_scopes"}
 
     def test_for_schema_derives_size_hint(self) -> None:
         """for_schema should auto-derive size_hint when not explicitly set."""

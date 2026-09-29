@@ -53,6 +53,7 @@ from pydantic import Field
 
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
+from gitea_mcp_server.registration import REGISTRATION_KEY, ToolRegistration
 from gitea_mcp_server.validation import validate_pagination
 
 
@@ -183,6 +184,11 @@ def register_all_synthetic_tools(
     for spec in specs:
         options = spec.tool_options()
         if not spec.wrap:
+            # Unwrapped passthrough (e.g. ``call_tool``): no contract wrapping,
+            # but it still carries a record so no exposed tool is unregistered.
+            proxy_meta = dict(options.get("meta") or {})
+            proxy_meta[REGISTRATION_KEY] = ToolRegistration.for_proxy().to_dict()
+            options["meta"] = proxy_meta
             mcp.tool(**options)(spec.impl)
             continue
 
@@ -399,6 +405,13 @@ def register_synthetic_tool(
             "_synthetic": True,
             "_executor_id": tool_name,
             "_virtual_params": set(effective_virtual),
+            # Registration record (Phase 1: beside the flat keys; the flat keys
+            # are retired in Phase 2).  ``virtual_params`` is resolved by
+            # injection at the exposure seam (``_ToolWrappingTransform._wrap``).
+            REGISTRATION_KEY: ToolRegistration.for_synthetic(
+                executor_id=tool_name,
+                allowlist=effective_virtual,
+            ).to_dict(),
         }
         tool_options["meta"] = meta
         return cast("Callable[..., Any]", mcp.tool(**tool_options)(function))

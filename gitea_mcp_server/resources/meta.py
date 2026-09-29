@@ -26,6 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from gitea_mcp_server.registration import REGISTRATION_KEY, ResourceRegistration
 from gitea_mcp_server.tools.schemas import schema_type_is_array
 
 logger = logging.getLogger(__name__)
@@ -62,17 +63,22 @@ _DEEP_NESTING_THRESHOLD = 3
 class ResourceMeta:
     """Typed metadata for a resource, stored in FastMCP's ``meta`` dict.
 
-    All fields are optional with ``None`` default, so missing fields are
-    omitted from the serialised dict (backward compatible with agents that
-    read ``ResourceEntry`` from ``list_resources`` output).
+    ``to_dict()`` always emits a ``registration`` record (a
+    :class:`~gitea_mcp_server.registration.ResourceRegistration`).  A record is
+    only *valid* when ``size_hint`` and ``default_detail`` are set, so build
+    via ``for_schema()`` (which derives both) or pass them explicitly.
 
-    Build via the constructor for explicit values::
-
-        ResourceMeta(required_scopes=["read:repository"], size_hint="medium")
-
-    Or via ``for_schema()`` for auto-derived ``size_hint``::
+    Build via ``for_schema()`` for auto-derived ``size_hint``/``default_detail``::
 
         ResourceMeta.for_schema(schema, required_scopes=["read:repository"])
+
+    Or via the constructor with both values explicit::
+
+        ResourceMeta(
+            required_scopes=["read:repository"],
+            size_hint="medium",
+            default_detail="full",
+        )
 
     ``for_schema`` derives ``size_hint`` from the response schema's structure
     when not provided explicitly, and derives ``default_detail`` from the
@@ -114,6 +120,15 @@ class ResourceMeta:
             result["size_hint"] = self.size_hint
         if self.default_detail is not None:
             result["default_detail"] = self.default_detail
+        # Registration record (Phase 1: beside the flat keys; the flat keys are
+        # retired in Phase 2).  ``size_hint``/``default_detail`` are required by
+        # the record: every registration path derives or declares them.
+        result[REGISTRATION_KEY] = ResourceRegistration(
+            size_hint=self.size_hint or "",
+            default_detail=self.default_detail or "",
+            required_scopes=self.required_scopes,
+            optional_params=self.optional_params,
+        ).to_dict()
         return result
 
     @classmethod

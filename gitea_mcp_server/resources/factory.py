@@ -87,6 +87,7 @@ from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.models import ViewHints
 from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.registration import build_content_meta
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.surface import register_resource_surface
 from gitea_mcp_server.scope import has_sufficient_scope
@@ -393,31 +394,20 @@ def _build_handler_meta(
     Registration-level metadata (``optional_params``, ``cache_ttl``) is set
     directly in ``make_api_resource()``, not here.
 
-    ``response_type`` is the converter's pre-wrap ``x-response-type`` stamp
-    (the display layer's type-binding key), and ``view_hints`` is its curated
-    display-view deficiencies resolved at registration (#775).  Like
-    ``response_schema`` and ``format_hint`` they are *known* pipeline
-    metadata — ``_mcp_read_resource_impl`` strips them out of the formatter
-    ``extra`` and surfaces them separately.
-
-    Extra keyword arguments are merged on top of the standard keys.  The
-    display pipeline (``_mcp_read_resource_impl``) strips ``response_schema``,
-    ``format_hint``, ``response_type``, and ``view_hints`` and surfaces
-    everything else as the ``extra`` dict passed to domain formatters —
-    useful for forwarding handler context like path params (``owner``,
-    ``repo``) or query params (``type``).
+    Delegates to :func:`~gitea_mcp_server.registration.build_content_meta` —
+    the single writer of the known content keys, matched by
+    :func:`~gitea_mcp_server.registration.parse_content_meta` on the read
+    side — so the key set lives in one place.  Extra keyword arguments are
+    merged on top of the known keys and forwarded to formatters as the
+    ``extra`` context (``owner``, ``repo``, ``type``, ...).
     """
-    meta: dict[str, Any] = {}
-    if response_schema is not None:
-        meta["response_schema"] = response_schema
-    if format_hint is not None:
-        meta["format_hint"] = format_hint
-    if response_type is not None:
-        meta["response_type"] = response_type
-    if view_hints is not None:
-        meta["view_hints"] = view_hints
-    meta.update(extra)
-    return meta if meta else None
+    return build_content_meta(
+        response_schema=response_schema,
+        format_hint=format_hint,
+        response_type=response_type,
+        view_hints=view_hints,
+        extra=extra or None,
+    )
 
 
 async def _request_and_wrap(  # noqa: PLR0913 -- all params are independent inputs to error handling + content construction

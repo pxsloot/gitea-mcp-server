@@ -274,7 +274,7 @@ Agent reads a resource:
 | `client.py` | httpx client with retry, rate-limit handling, SSL |
 | `openapi_converter/` | Swagger 2.0 → OpenAPI 3.1 conversion orchestration (``core.py``); schema walker/normalizer (``schema.py``); param collision resolution (``param_collision.py``); spec normalization (``normalize.py`` — snake_case params, boolean checks, wildcard path params, scope-tag reconciliation); type-reference analysis (``type_references.py`` — stamps ``x-resource-types`` / ``x-modifies-type`` pre-wrap for cache invalidation); display-view hints (``display_hints.py`` — curated ``omit`` / ``compact`` / ``flag`` tables for the generic markdown view, validated against the component schemas and resolved per entity at registration via ``view_hints_for``) |
 | `openapi_types.py` | TypedDict types for the OpenAPI spec navigation spine |
-| `registration.py` | Typed registration records (`ToolRegistration`, `ResourceRegistration`), the sanctioned accessors, and the resource content-meta helpers — the single contract for registration metadata |
+| `registration.py` | Typed registration records (`ToolRegistration`, `ResourceRegistration`), the sanctioned accessors, and the resource content-meta helpers — the registration contract (#801; migration in progress) |
 | `server.py` | Assembly, main(), create_mcp_server(), lifespan, middleware wiring, server-level contract transform registration |
 | `constants.py` | Centralized magic numbers, cache TTLs, scopes |
 | `logging_config.py` | JSON/text formatter, sensitive-key redaction, log setup |

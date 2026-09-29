@@ -236,7 +236,7 @@ class TestContentMetaHelpers:
         assert meta is not None
         known, extra = parse_content_meta(meta)
         assert known is not None
-        assert set(known) == CONTENT_META_KEYS - {"view_hints"} | {"view_hints"}
+        assert set(known) == CONTENT_META_KEYS
         assert known["format_hint"] == "labels"
         assert extra == {"owner": "acme", "repo": "widgets"}
 

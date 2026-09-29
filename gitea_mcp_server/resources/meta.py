@@ -63,17 +63,22 @@ _DEEP_NESTING_THRESHOLD = 3
 class ResourceMeta:
     """Typed metadata for a resource, stored in FastMCP's ``meta`` dict.
 
-    All fields are optional with ``None`` default, so missing fields are
-    omitted from the serialised dict (backward compatible with agents that
-    read ``ResourceEntry`` from ``list_resources`` output).
+    ``to_dict()`` always emits a ``registration`` record (a
+    :class:`~gitea_mcp_server.registration.ResourceRegistration`).  A record is
+    only *valid* when ``size_hint`` and ``default_detail`` are set, so build
+    via ``for_schema()`` (which derives both) or pass them explicitly.
 
-    Build via the constructor for explicit values::
-
-        ResourceMeta(required_scopes=["read:repository"], size_hint="medium")
-
-    Or via ``for_schema()`` for auto-derived ``size_hint``::
+    Build via ``for_schema()`` for auto-derived ``size_hint``/``default_detail``::
 
         ResourceMeta.for_schema(schema, required_scopes=["read:repository"])
+
+    Or via the constructor with both values explicit::
+
+        ResourceMeta(
+            required_scopes=["read:repository"],
+            size_hint="medium",
+            default_detail="full",
+        )
 
     ``for_schema`` derives ``size_hint`` from the response schema's structure
     when not provided explicitly, and derives ``default_detail`` from the

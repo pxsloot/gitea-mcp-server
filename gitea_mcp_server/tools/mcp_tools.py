@@ -35,6 +35,7 @@ from gitea_mcp_server.format import decode_base64_content, get_formatter
 from gitea_mcp_server.models import ResourceEntry, ResourceListing, ViewHints
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
+from gitea_mcp_server.registration import parse_content_meta
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import serialize_tool_schema
@@ -143,25 +144,16 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
 # ============================================================================
 
 
-# Known meta keys that carry display pipeline metadata rather than
-# extra context for formatters.  Everything else in meta is forwarded
-# as extra to the display pipeline.
-_KNOWN_META_KEYS: frozenset[str] = frozenset(
-    {"response_schema", "format_hint", "response_type", "view_hints"}
-)
-
-
 def _extract_extra_meta(meta: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract non-known keys from a resource meta dict.
+    """Extract formatter context from a resource content meta dict.
 
-    Strips keys that belong to the display pipeline
-    (``response_schema``, ``format_hint``, ``response_type``,
-    ``view_hints``) and returns everything else as extra context for
-    formatters.  Returns ``None`` when no extra keys exist, matching the
-    ``or None`` idiom used throughout the codebase.
+    Delegates the known-key split to
+    :func:`~gitea_mcp_server.registration.parse_content_meta` — the single
+    reader of the content key set — and returns the remaining keys as the
+    ``extra`` context for formatters, or ``None`` when none exist.
     """
-    extra = {k: v for k, v in meta.items() if k not in _KNOWN_META_KEYS}
-    return extra or None
+    _, extra = parse_content_meta(meta)
+    return extra
 
 
 async def _mcp_read_resource_impl(

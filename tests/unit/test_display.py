@@ -422,7 +422,7 @@ class TestGenericCollectionView:
     def test_curated_hints_resolve_by_type(self) -> None:
         """``view_hints_for`` resolves the curated deficiency list by type.
 
-        The registration layer hands this to ``tool.meta["view_hints"]`` /
+        The registration layer hands this to the tool's registration record /
         resource content meta; the render path never reads it off the spec.
         """
         from gitea_mcp_server.openapi_converter.display_hints import view_hints_for

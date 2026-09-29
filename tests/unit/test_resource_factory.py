@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,6 +14,7 @@ from fastmcp.resources import ResourceResult
 from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.registration import get_resource_registration
 from gitea_mcp_server.resources.factory import (
     ResourceParamConfig,
     _auto_derive_schema,
@@ -307,26 +309,6 @@ class TestMakeApiResourceRegistration:
             if call_args[0][0] == "gitea://repos/{owner}/{repo}":
                 tags = call_args[1].get("tags", set())
                 assert "wrapper" not in tags
-                break
-
-    def test_adds_cache_ttl_to_meta(self) -> None:
-        mcp = _make_mock_mcp()
-        client = _make_mock_client()
-        spec = _make_mock_openapi_spec()
-
-        make_api_resource(
-            mcp,
-            client,
-            spec,
-            uri="gitea://repos/{owner}/{repo}",
-            api_path="/repos/{owner}/{repo}",
-            cache_ttl=300,
-        )
-
-        for call_args in mcp.resource.call_args_list:
-            if call_args[0][0] == "gitea://repos/{owner}/{repo}":
-                meta = call_args[1].get("meta", {})
-                assert meta.get("cache_ttl") == 300
                 break
 
 
@@ -1775,7 +1757,7 @@ class TestMakeApiResourceOptionalParams:
     """Tests for optional_params in make_api_resource."""
 
     def test_optional_params_added_to_meta(self) -> None:
-        """optional_params appears in the meta dict passed to mcp.resource()."""
+        """optional_params appears in the registration record passed to mcp.resource()."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -1794,14 +1776,15 @@ class TestMakeApiResourceOptionalParams:
         for args in mcp.resource.call_args_list:
             if args[0][0] == "gitea://repos/{owner}/{repo}/issues":
                 meta = args[1].get("meta", {})
-                assert "optional_params" in meta
-                assert meta["optional_params"] == [
+                record = get_resource_registration(SimpleNamespace(meta=meta))
+                assert record is not None
+                assert record.optional_params == [
                     {"name": "state", "type": "string", "values": ["open", "closed"]},
                 ]
                 break
 
     def test_optional_params_not_set_when_none(self) -> None:
-        """When optional_params is None, meta should not contain the key."""
+        """When optional_params is None, the record omits the key."""
         mcp = _make_mock_mcp()
         client = _make_mock_client()
         spec = _make_mock_openapi_spec()
@@ -1817,7 +1800,9 @@ class TestMakeApiResourceOptionalParams:
         for args in mcp.resource.call_args_list:
             if args[0][0] == "gitea://repos/{owner}/{repo}":
                 meta = args[1].get("meta", {})
-                assert "optional_params" not in meta
+                record = get_resource_registration(SimpleNamespace(meta=meta))
+                assert record is not None
+                assert record.optional_params is None
                 break
 
 

@@ -11,6 +11,7 @@ from mcp.types import ToolAnnotations
 
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.server_setup.mcp_builder import (
     _customize_metadata,
     _ToolWrappingTransform,
@@ -25,6 +26,7 @@ from gitea_mcp_server.tools.schemas import (
     schema_type_is_array,
 )
 from tests.helpers.mcp_results import get_structured
+from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
@@ -441,7 +443,10 @@ class TestDeriveOutputSchema:
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["properties"]["result"]["type"] == "null"
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
-        assert tool.meta["_customization"].is_empty_response is True
+        record = get_tool_registration(tool)
+        assert record is not None
+        assert record.customization is not None
+        assert record.customization.is_empty_response is True
 
     @pytest.mark.asyncio
     async def test_transform_pipeline_passes_results_through(self) -> None:
@@ -1870,15 +1875,14 @@ class TestContentTypeVirtualParam:
             description="Create a file",
             parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     route_path="/test",
                     route_method="POST",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="Create File"),
         )
 
@@ -1902,15 +1906,14 @@ class TestContentTypeVirtualParam:
             description="Update a file",
             parameters={"properties": {"content": {"type": "string"}}},
             output_schema=None,
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     route_path="/test",
                     route_method="PUT",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="Update File"),
         )
 
@@ -1970,9 +1973,8 @@ class TestContentTypeVirtualParam:
                 "type": "object",
                 "properties": {"result": {"type": "object"}},
             },
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     is_empty_response=False,
@@ -1980,8 +1982,8 @@ class TestContentTypeVirtualParam:
                     response_transform=None,
                     route_path="/repos/{owner}/{repo}/contents/{filepath}",
                     route_method="POST",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="Create File"),
         )
 
@@ -2035,9 +2037,8 @@ class TestContentTypeVirtualParam:
                 "type": "object",
                 "properties": {"result": {"type": "object"}},
             },
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     is_empty_response=False,
@@ -2045,8 +2046,8 @@ class TestContentTypeVirtualParam:
                     response_transform=None,
                     route_path="/repos/{owner}/{repo}/contents/{filepath}",
                     route_method="POST",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="Create File"),
         )
 

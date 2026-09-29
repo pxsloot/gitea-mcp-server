@@ -12,6 +12,7 @@ Covers:
 import base64
 import json
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,6 +21,7 @@ from fastmcp.exceptions import ResourceError
 from mcp.server.fastmcp import FastMCP
 
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.registration import get_resource_registration
 from gitea_mcp_server.resources.custom import register_custom_resources
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -204,12 +206,16 @@ class TestRegisterCustomResources:
         pulls_meta = registered_meta.get("gitea://repos/{owner}/{repo}/pulls{?state}")
 
         assert issues_meta is not None, "issues resource should have registered meta"
-        assert issues_meta.get("required_scopes") == ["read:issue"], (
-            f"issues scope should be read:issue, got {issues_meta.get('required_scopes')}"
-        )
         assert pulls_meta is not None, "pulls resource should have registered meta"
-        assert pulls_meta.get("required_scopes") == ["read:repository"], (
-            f"pulls scope should be read:repository, got {pulls_meta.get('required_scopes')}"
+        issues_record = get_resource_registration(SimpleNamespace(meta=issues_meta))
+        pulls_record = get_resource_registration(SimpleNamespace(meta=pulls_meta))
+        assert issues_record is not None
+        assert pulls_record is not None
+        assert issues_record.required_scopes == ["read:issue"], (
+            f"issues scope should be read:issue, got {issues_record.required_scopes}"
+        )
+        assert pulls_record.required_scopes == ["read:repository"], (
+            f"pulls scope should be read:repository, got {pulls_record.required_scopes}"
         )
 
     async def test_registers_all_custom_resources_with_server_info_md(

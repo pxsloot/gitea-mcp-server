@@ -24,6 +24,7 @@ from gitea_mcp_server.tools.virtual_params import (
     inject_into,
     validate_extracted,
 )
+from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 # A minimal VirtualParam entry used by lifecycle tests that patch _VIRTUAL_PARAMS.
@@ -692,20 +693,19 @@ class TestWrapIntegration:
     """Tests that _ToolWrappingTransform._wrap() integrates with the VirtualParam lifecycle."""
 
     def _make_tool(self) -> Tool:
-        """Minimal Tool stamped with the contract wrap marker."""
+        """Minimal Tool carrying a wrapping registration record."""
         return Tool(
             name="issue_list_issues",
             description="List issues in a repository.",
             parameters={"properties": {"owner": {"type": "string"}}},
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     route_path="/repos/{owner}/{repo}/issues",
                     route_method="GET",
-                ),
-            },
+                )
+            ),
         )
 
     @pytest.mark.asyncio

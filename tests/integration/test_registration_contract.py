@@ -22,6 +22,8 @@ import respx
 
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.registration import (
+    RETIRED_RESOURCE_META_KEYS,
+    RETIRED_TOOL_META_KEYS,
     get_resource_registration,
     get_tool_registration,
 )
@@ -134,6 +136,33 @@ async def test_pinned_synthetic_surface_has_records() -> None:
 
     failures = {tool.name: problems for tool in tools if (problems := _record_problems(tool))}
     assert not failures, f"incomplete synthetic records: {failures}"
+
+
+@pytest.mark.asyncio
+async def test_no_retired_registration_keys_on_exposed_components() -> None:
+    """No ad-hoc flat registration key remains on any exposed component.
+
+    Phase 2 invariant: registration metadata lives only under the sanctioned
+    record key.  This is a denylist (FastMCP owns/futures other ``meta`` keys),
+    not a positive whitelist of ``meta``.
+    """
+    mcp, _prefix = await _make_server(lazy=False)
+    tools = list(await mcp.list_tools())
+    resources = [*await mcp.list_resources(), *await mcp.list_resource_templates()]
+
+    offenders: dict[str, list[str]] = {}
+    for tool in tools:
+        leaked = sorted(RETIRED_TOOL_META_KEYS.intersection(tool.meta or {}))
+        if leaked:
+            offenders[tool.name] = leaked
+    for resource in resources:
+        leaked = sorted(RETIRED_RESOURCE_META_KEYS.intersection(resource.meta or {}))
+        if leaked:
+            uri = str(
+                getattr(resource, "uri", None) or getattr(resource, "uri_template", None) or "?"
+            )
+            offenders[uri] = leaked
+    assert not offenders, f"retired registration keys present: {offenders}"
 
 
 @pytest.mark.asyncio

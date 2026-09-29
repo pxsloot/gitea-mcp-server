@@ -262,8 +262,8 @@ def _type_bound_formatter(response_type: str | None) -> MarkdownFormatter | None
     - the converter stamps the operation-level ``x-response-type`` *before*
       response-schema wrapping inlines the root ``$ref`` (which would erase
       it) — see ``openapi_converter/type_references.py``;
-    - the tool/resource registration layers propagate it into
-      ``tool.meta["response_type"]`` / resource content meta;
+    - the tool/resource registration layers propagate it into the tool's
+      registration record / resource content meta;
     - the contract spine and the ``read_resource`` executor put it on
       ``ExecutionResult.response_type``.
 

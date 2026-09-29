@@ -11,13 +11,12 @@ The spine produced by :func:`build_transform_fn` is the single code path
 for both tool families:
 
     1. ``extract_from(kwargs, only=...)`` — pop virtual params (format,
-       detail, fetch_all, sudo, content_type, ...).  Both tool families
-       carry a per-tool allowlist in ``tool.meta["_virtual_params"]``
-       (synthetic tools stamp it at registration; autogen tools have it
-       stamped with the actually-injected set), so only injected params are
-       popped — an off-profile registry-name key (e.g. ``fetch_all`` on an
-       autogen tool) stays in kwargs and is rejected as unknown rather than
-       silently dropped.
+       detail, fetch_all, sudo, content_type, ...).  Both tool families carry
+       the resolved set in their :class:`ToolRegistration`
+       (``virtual_params``), finalised at the exposure seam, so only injected
+       params are popped — an off-profile registry-name key (e.g.
+       ``fetch_all`` on an autogen tool) stays in kwargs and is rejected as
+       unknown rather than silently dropped.
     2. ``validate_extracted(...)`` — validate each popped value against its
        registry schema (enum) **before** the executor, so an invalid
        ``format``/``detail``/``content_type`` never reaches the API (and a
@@ -36,11 +35,12 @@ for both tool families:
        (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
        shape → paginate → format → ``ToolResult``.
     6. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
-       from ``tool.meta``) so the pipeline can render schema-aware output
-       (``detail=concise``), dispatch a type-bound domain markdown formatter,
-       and refine the generic schema-anchored view with the curated
-       display-view deficiencies, and derive the formatter context (``extra``)
-       from the call's path/query args so the formatter sees repo/type context.
+       from the :class:`ToolRegistration`) so the pipeline can render
+       schema-aware output (``detail=concise``), dispatch a type-bound domain
+       markdown formatter, and refine the generic schema-anchored view with the
+       curated display-view deficiencies, and derive the formatter context
+       (``extra``) from the call's path/query args so the formatter sees
+       repo/type context.
     7. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
@@ -70,6 +70,7 @@ from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE
 from gitea_mcp_server.context_utils import resolve_current_context
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
 
     from gitea_mcp_server.openapi_types import OpenAPISpec
+    from gitea_mcp_server.registration import ToolRegistration
 
 Executor = Callable[
     [dict[str, Any], dict[str, Any] | None, Any | None],
@@ -128,6 +130,7 @@ def build_transform_fn(
     tool: Tool,
     executor: Executor,
     *,
+    registration: ToolRegistration | None = None,
     openapi_spec: OpenAPISpec | None = None,
     default_format: str,
 ) -> Callable[..., Any]:
@@ -143,7 +146,7 @@ def build_transform_fn(
     ``openapi_spec`` is captured by the closure and forwarded to
     :func:`render` — it enables root-list item summaries under
     ``detail="concise"`` (#759).  It is display metadata, deliberately *not*
-    stored in ``tool.meta`` (meta is serialized with the tool; the full spec
+    stored in the record (which is serialized with the tool; the full spec
     would bloat every ``list_tools`` response).
 
     ``default_format`` is the live server default (``Config.response_format``),
@@ -155,16 +158,20 @@ def build_transform_fn(
     :data:`~gitea_mcp_server.constants.DEFAULT_DETAIL`.
 
     Args:
-        tool: The ``Tool`` being wrapped.  ``tool.meta["output_schema_raw"]``
-            is attached to the extracted dict as ``_raw_schema`` so the
-            pipeline can render schema-aware output.
-            ``tool.meta["_virtual_params"]`` is the per-tool extraction
-            allowlist for both families — only those registry virtual
-            params are popped from kwargs; off-allowlist registry-name keys
-            remain in kwargs for validation to reject as unknown.
+        tool: The ``Tool`` being wrapped.  Used only to resolve the
+            registration record when *registration* is not passed.
         executor: Backend-specific execution callable (see :data:`Executor`).
             Autogen tools pass the HTTP pipeline; synthetic tools pass their
             local implementation.
+        registration: The tool's finalised :class:`ToolRegistration`.  The
+            exposure seam (``_ToolWrappingTransform._wrap``) reads it once and
+            threads it here, so the per-call path holds no meta lookups.
+            ``virtual_params`` is the extraction allowlist — only those
+            registry params are popped; off-profile registry-name keys remain
+            in kwargs for validation to reject as unknown.
+            ``output_schema_raw`` / ``response_type`` / ``view_hints`` are the
+            display metadata attached to the render call.  When omitted, the
+            record is resolved from *tool* via the sanctioned accessor.
         openapi_spec: Post-conversion OpenAPI 3.1 spec (or ``None``), captured
             by the closure and forwarded to :func:`render` so
             ``detail="concise"`` can summarize root-list items (#759).
@@ -179,17 +186,21 @@ def build_transform_fn(
     """
 
     async def transform_fn(**kwargs: Any) -> ToolResult:
+        reg = registration if registration is not None else get_tool_registration(tool)
+        if reg is None:
+            msg = f"build_transform_fn: tool {tool.name!r} has no registration record"
+            raise ValueError(msg)
+        if not reg.is_finalised():
+            msg = f"build_transform_fn: tool {tool.name!r} registration is not finalised"
+            raise ValueError(msg)
+
         # Pop virtual params (format, detail, sudo, fetch_all, content_type,
-        # etc.).  Both tool families carry a per-tool allowlist
-        # (tool.meta["_virtual_params"]): only allowlisted params are popped,
-        # so an off-profile registry-name key (e.g. ``fetch_all`` on an
-        # autogen tool, or on a format-only synthetic tool) stays in kwargs
-        # and is rejected as unknown by validation instead of being silently
+        # etc.) using the record's resolved allowlist: only those registry
+        # params are popped, so an off-profile registry-name key (e.g.
+        # ``fetch_all`` on an autogen tool, or on a format-only synthetic tool)
+        # stays in kwargs and is rejected as unknown instead of being silently
         # dropped.
-        virtual_values = extract_from(
-            kwargs,
-            only=(tool.meta or {}).get("_virtual_params"),
-        )
+        virtual_values = extract_from(kwargs, only=reg.virtual_params)
 
         # Validate the popped values against their registry schemas (enum)
         # *before* the executor: an invalid format/detail/content_type must be
@@ -227,18 +238,17 @@ def build_transform_fn(
         # schema-aware output (detail=concise).  Not a VirtualParam —
         # pipeline metadata carried through the same channel as detail,
         # format, etc.
-        virtual_values["_raw_schema"] = (tool.meta or {}).get("output_schema_raw")
+        virtual_values["_raw_schema"] = reg.output_schema_raw
 
-        # Display type-binding key: the pre-wrap response type the
-        # registration layer stored in tool.meta (same channel as
-        # ``output_schema_raw``).  The pipeline maps it to a domain markdown
-        # formatter; absent means the generic renderer.
-        response_type = (tool.meta or {}).get("response_type")
+        # Display type-binding key: the pre-wrap response type.  The pipeline
+        # maps it to a domain markdown formatter; absent means the generic
+        # renderer.
+        response_type = reg.response_type
 
         # Curated display-view deficiencies for the response type, resolved at
-        # registration and carried in tool.meta — the render path consumes them
-        # as data and never scans or mutates the spec (#775).
-        view_hints = (tool.meta or {}).get("view_hints")
+        # registration — the render path consumes them as data and never scans
+        # or mutates the spec (#775).
+        view_hints = reg.view_hints
 
         # Executors return raw data; the single result pipeline renders it.
         # Run post-hooks on the rendered ToolResult and return.

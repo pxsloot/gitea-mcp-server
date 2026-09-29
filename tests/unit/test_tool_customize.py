@@ -28,6 +28,7 @@ from gitea_mcp_server.tools.customize import (
     generate_tool_title as _generate_tool_title,
 )
 from tests.helpers.mcp_results import assert_dual_channel, extract_text_content, get_structured
+from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
@@ -541,15 +542,14 @@ class TestPaginationMetadata:
             description="",
             parameters={"properties": props},
             output_schema=output_schema or self.ARRAY_OUTPUT_SCHEMA,
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     route_path="/repos/{owner}/{repo}/issues",
                     route_method="GET",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="List issues"),
         )
 
@@ -818,15 +818,14 @@ class TestCustomizeComponentTextResponse:
             description="",
             parameters={"properties": {}},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=True,
                     route_path="/repos/{owner}/{repo}/issues",
                     route_method="GET",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="List issues"),
         )
 
@@ -868,17 +867,16 @@ class TestCustomizeComponentTextResponse:
             description="",
             parameters={"properties": {}},
             output_schema=None,
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=False,
                     is_text_response=False,
                     is_empty_response=False,
                     is_binary_response=False,
                     route_path="",
                     route_method="",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title="Some tool"),
         )
 

@@ -21,7 +21,7 @@ The tables serve two consumers:
   no-op — this is the systemic form of the drift guard the old hand-written
   whitelists lacked.
 * :func:`view_hints_for` — the runtime lookup.  The registration layers
-  resolve a response type's hints once into ``tool.meta["view_hints"]`` /
+  resolve a response type's hints once into the tool's registration record /
   resource content meta (a :class:`~gitea_mcp_server.models.ViewHints`
   dict), so the render path never scans or mutates the spec.
 

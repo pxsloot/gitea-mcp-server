@@ -6,6 +6,7 @@ import pytest
 from fastmcp import FastMCP
 
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.synthetic_contract import (
     PAGINATION_SCHEMA_PROPERTIES,
@@ -56,17 +57,21 @@ class TestRegisterAllSyntheticTools:
         by_name = {t.name: t for t in tools}
         assert set(by_name) == {"wrapped_tool", "proxy_tool"}
 
-        # Wrapped spec stamps the marker + registers an executor; unwrapped does not.
-        wrapped_meta = by_name["wrapped_tool"].meta or {}
-        assert wrapped_meta.get("_contract_wrap") is True
-        executor_id = wrapped_meta.get("_executor_id")
+        # Wrapped spec carries a wrapping record + registers an executor;
+        # unwrapped does not.
+        wrapped_record = get_tool_registration(by_name["wrapped_tool"])
+        assert wrapped_record is not None
+        assert wrapped_record.wrap is True
+        executor_id = wrapped_record.executor_id
         # The executor id is the unprefixed registration name; executors live
         # in this server's registry (released when the server is GC'd).
         assert executor_id == "wrapped_tool"
         registry = get_executor_registry(mcp)
         assert registry.get(executor_id) is not None
         assert registry.get("proxy_tool") is None  # unwrapped specs register no executor
-        assert (by_name["proxy_tool"].meta or {}).get("_contract_wrap") is None
+        proxy_record = get_tool_registration(by_name["proxy_tool"])
+        assert proxy_record is not None
+        assert proxy_record.wrap is False
 
         # Paginated envelope declared for the wrapped spec.
         schema = by_name["wrapped_tool"].output_schema

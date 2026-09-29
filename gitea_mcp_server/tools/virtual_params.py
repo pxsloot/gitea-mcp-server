@@ -22,10 +22,10 @@ Lifecycle for every tool call::
     1. inject_into(tool.parameters, tool=tool,
                    default_overrides={"format": config_default})  ← adds to
        schema at startup; returns the injected set, which the caller stamps
-       into ``tool.meta["_virtual_params"]`` so extraction matches injection.
-       ``default_overrides`` supplies the defaults of params the registry
-       leaves open (``format``).
-    2. extract_from(kwargs, only=tool.meta["_virtual_params"])  ← pops before
+       into the tool's registration record (``virtual_params``) so extraction
+       matches injection.  ``default_overrides`` supplies the defaults of
+       params the registry leaves open (``format``).
+    2. extract_from(kwargs, only=<registration>.virtual_params)  ← pops before
        HTTP call; params not injected (e.g. ``fetch_all`` on autogen tools)
        stay in kwargs and are rejected as unknown by validation
     3. validate_extracted(extracted)            ← validates each popped value
@@ -58,6 +58,7 @@ from gitea_mcp_server.constants import (
     DETAIL_VALUES,
     RESPONSE_FORMATS,
 )
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.request_context import sudo_context
 from gitea_mcp_server.validation import validate_enum
 
@@ -191,7 +192,7 @@ _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
         "When true, return all matching results without page slicing "
         "(in-memory; no HTTP loop).  Default false — single page only."
     ),
-    tool_predicate=lambda t: bool((t.meta or {}).get("_synthetic")),
+    tool_predicate=lambda t: bool((reg := get_tool_registration(t)) and reg.synthetic),
 )
 
 
@@ -327,7 +328,7 @@ def inject_into(
     parameters: dict[str, Any],
     tool: Any | None = None,
     default_overrides: dict[str, Any] | None = None,
-    only: set[str] | None = None,
+    only: set[str] | frozenset[str] | None = None,
 ) -> set[str]:
     """Add virtual parameters to *parameters* (a tool's parameter schema).
 
@@ -345,18 +346,17 @@ def inject_into(
     Per-tool allowlist via *only*: when set, only the named params are
     considered.  Autogen tools pass ``None`` (inject every visible param,
     skipping names that already exist — never shadowing a real API
-    parameter).  Synthetic tools stamp their allowlist in
-    ``tool.meta["_virtual_params"]``; allowlisted names are **overwritten**
-    with the registry's schema so the agent-facing description/enum/default
-    come from the single registry source rather than hand-written signature
-    annotations (e.g. ``read_doc`` opts into ``format`` only, and ``sudo``
-    is opt-in).
+    parameter).  Synthetic tools pass their allowlist; allowlisted names are
+    **overwritten** with the registry's schema so the agent-facing
+    description/enum/default come from the single registry source rather than
+    hand-written signature annotations (e.g. ``read_doc`` opts into ``format``
+    only, and ``sudo`` is opt-in).
 
     Returns:
         The set of param names actually written to *parameters* — the
         params that passed every gate (scope visibility, ``tool_predicate``,
-        no shadowing).  Callers stamp this into ``tool.meta["_virtual_params"]``
-        so extraction (:func:`extract_from`) matches injection exactly:
+        no shadowing).  Callers stamp this into the tool's registration record
+        (``virtual_params``) so extraction (:func:`extract_from`) matches injection exactly:
         a registry param that was *not* injected (e.g. ``fetch_all`` on an
         autogen tool) stays in kwargs and is rejected as unknown rather than
         silently dropped.
@@ -403,18 +403,18 @@ def inject_into(
 
 def extract_from(
     kwargs: dict[str, Any],
-    only: set[str] | None = None,
+    only: set[str] | frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Pop virtual parameters from *kwargs*.
 
-    With *only* (a per-tool allowlist from ``tool.meta["_virtual_params"]``),
-    only the named parameters are popped; other registry-name keys stay in
-    *kwargs* so the validation layer rejects them as unknown (they are
-    neither allowlisted nor declared in the tool's schema — the value would
-    otherwise be silently dropped).  Both tool families carry this allowlist:
-    synthetic tools stamp it at registration, autogen tools have it stamped
-    by :func:`inject_into`'s caller with the actually-injected set — so
-    extraction matches injection exactly (a predicate-gated param such as
+    With *only* (a per-tool allowlist from the tool's registration record,
+    ``virtual_params``), only the named parameters are popped; other
+    registry-name keys stay in *kwargs* so the validation layer rejects them as
+    unknown (they are neither allowlisted nor declared in the tool's schema —
+    the value would otherwise be silently dropped).  Both tool families carry
+    the resolved set in their record: the exposure seam stamps it from
+    :func:`inject_into`'s return — so extraction matches injection exactly (a
+    predicate-gated param such as
     ``fetch_all`` on an autogen tool is not popped and is rejected as
     unknown).  Without *only* (no allowlist stamped — the fallback), every
     virtual parameter is popped.

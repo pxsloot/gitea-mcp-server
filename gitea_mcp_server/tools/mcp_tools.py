@@ -35,7 +35,10 @@ from gitea_mcp_server.format import decode_base64_content, get_formatter
 from gitea_mcp_server.models import ResourceEntry, ResourceListing, ViewHints
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.pagination import MESSAGE_SCHEMA_PROPERTY
-from gitea_mcp_server.registration import parse_content_meta
+from gitea_mcp_server.registration import (
+    get_resource_registration,
+    parse_content_meta,
+)
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.customize import synthetic_annotations
 from gitea_mcp_server.tools.examples import serialize_tool_schema
@@ -78,26 +81,24 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
 
         def _build_resource_entry(
             base: ResourceEntry,
-            meta: dict[str, Any] | None,
+            resource: Any,
         ) -> ResourceEntry:
-            """Add metadata fields to a resource entry from the resource's meta dict.
+            """Add metadata fields from the resource's registration record.
 
             Extracts discoverable fields that agents can inspect before calling
             ``read_resource``: ``required_scopes``, ``optional_params``,
-            ``size_hint``, and ``default_detail``.  All are optional — missing
-            fields are simply absent from the entry.
+            ``size_hint``, and ``default_detail``.  Read from the record via
+            the sanctioned accessor — never from ad-hoc meta keys.
             """
-            base["required_scopes"] = meta.get("required_scopes") if meta else None
-            if meta:
-                optional_params = meta.get("optional_params")
-                if optional_params:
-                    base["optional_params"] = optional_params
-                size_hint = meta.get("size_hint")
-                if size_hint:
-                    base["size_hint"] = size_hint
-                default_detail = meta.get("default_detail")
-                if default_detail:
-                    base["default_detail"] = default_detail
+            record = get_resource_registration(resource)
+            base["required_scopes"] = record.required_scopes if record else None
+            if record:
+                if record.optional_params:
+                    base["optional_params"] = record.optional_params
+                if record.size_hint:
+                    base["size_hint"] = record.size_hint
+                if record.default_detail:
+                    base["default_detail"] = record.default_detail
             return base
 
         # Process concrete resources
@@ -114,7 +115,7 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
                     type="resource",
                     tags=list(resource.tags) if hasattr(resource, "tags") and resource.tags else [],
                 ),
-                getattr(resource, "meta", None),
+                resource,
             )
             resources_list.append(entry)
 
@@ -129,7 +130,7 @@ async def mcp_list_resources_impl(ctx: Context) -> ResourceListing:
                     type="template",
                     tags=list(template.tags) if hasattr(template, "tags") and template.tags else [],
                 ),
-                getattr(template, "meta", None),
+                template,
             )
             resources_list.append(entry)
     except (AttributeError, TypeError):

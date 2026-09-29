@@ -162,26 +162,28 @@ class TestResourceMeta:
         assert result == {"registration": {"size_hint": "", "default_detail": ""}}
 
     def test_to_dict_includes_set_fields(self) -> None:
-        """to_dict should include non-None fields."""
+        """to_dict carries non-None fields inside the registration record."""
         meta = ResourceMeta(
             required_scopes=["read:repository"],
             size_hint="large",
             default_detail="concise",
             optional_params=[{"name": "state", "type": "string"}],
-            cache_ttl=60.0,
         )
         result = meta.to_dict()
-        assert result["required_scopes"] == ["read:repository"]
-        assert result["size_hint"] == "large"
-        assert result["default_detail"] == "concise"
-        assert result["optional_params"] == [{"name": "state", "type": "string"}]
-        assert result["cache_ttl"] == 60.0
+        assert result == {
+            "registration": {
+                "size_hint": "large",
+                "default_detail": "concise",
+                "required_scopes": ["read:repository"],
+                "optional_params": [{"name": "state", "type": "string"}],
+            }
+        }
 
     def test_to_dict_partial_fields(self) -> None:
-        """to_dict includes explicit flat fields beside the registration record."""
+        """to_dict emits only the registration record, omitting unset optionals."""
         meta = ResourceMeta(required_scopes=["read:issue"])
         result = meta.to_dict()
-        assert result["required_scopes"] == ["read:issue"]
+        assert set(result) == {"registration"}
         assert result["registration"]["required_scopes"] == ["read:issue"]
         assert set(result["registration"]) == {"size_hint", "default_detail", "required_scopes"}
 
@@ -225,11 +227,6 @@ class TestResourceMeta:
         params = [{"name": "state", "type": "string", "values": ["open", "closed"]}]
         meta = ResourceMeta.for_schema(None, optional_params=params)
         assert meta.optional_params == params
-
-    def test_for_schema_passes_cache_ttl(self) -> None:
-        """for_schema should pass cache_ttl through."""
-        meta = ResourceMeta.for_schema(None, cache_ttl=30.0)
-        assert meta.cache_ttl == 30.0
 
     def test_for_schema_no_schema_derives_tiny(self) -> None:
         """for_schema with None schema should derive size_hint=tiny."""

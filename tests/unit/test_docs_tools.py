@@ -3,12 +3,14 @@
 import json as json_module
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.registration import get_resource_registration
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
@@ -346,8 +348,10 @@ class TestRegisterDocTools:
         assert kwargs["name"] == "workflow_guide"
         meta = kwargs.get("meta")
         assert meta is not None, "guide resource should carry ResourceMeta"
-        assert meta.get("size_hint") == "small"
-        assert meta.get("default_detail") == "full"
+        record = get_resource_registration(SimpleNamespace(meta=meta))
+        assert record is not None
+        assert record.size_hint == "small"
+        assert record.default_detail == "full"
 
     def test_resource_description_includes_guide_topics(self) -> None:
         mcp = MagicMock()

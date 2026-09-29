@@ -201,13 +201,15 @@ async def _mcp_read_resource_impl(
         response_type: str | None = None
         view_hints: ViewHints | None = None
         if contents and hasattr(contents[0], "meta") and contents[0].meta:
-            meta = contents[0].meta
-            schema = meta.get("response_schema")
-            format_hint = meta.get("format_hint")
-            response_type = meta.get("response_type")
-            view_hints = meta.get("view_hints")
-            # Everything except the known pipeline keys is extra context.
-            extra = _extract_extra_meta(meta)
+            # The known-key set lives in one place (registration.CONTENT_META_KEYS),
+            # read via parse_content_meta — a key added there is extracted here
+            # too, never silently classified as known but dropped.
+            known, extra = parse_content_meta(contents[0].meta)
+            if known:
+                schema = known.get("response_schema")
+                format_hint = known.get("format_hint")
+                response_type = known.get("response_type")
+                view_hints = known.get("view_hints")
     except Exception as e:
         logger.exception("Failed to read resource %s", uri)
         msg = f"Error reading resource '{uri}': {type(e).__name__}: {e}"

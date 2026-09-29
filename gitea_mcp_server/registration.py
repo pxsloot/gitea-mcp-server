@@ -175,7 +175,9 @@ class ToolRegistration:
             if self.synthetic:
                 if not self.executor_id:
                     problems.append("synthetic record missing executor_id")
-                if not self.virtual_param_allowlist:
+                if self.virtual_param_allowlist is None:
+                    # ``None`` means the allowlist was never declared; an empty
+                    # set is a valid explicit opt-out of all virtual params.
                     problems.append("synthetic record missing virtual_param_allowlist")
             else:
                 if self.executor_id is not None:

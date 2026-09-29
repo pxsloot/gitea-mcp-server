@@ -137,6 +137,21 @@ async def test_pinned_synthetic_surface_has_records() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_tool_path_finalises_record() -> None:
+    """The get_tool access path (post-search) also finalises the record.
+
+    ``list_tools`` is only one of the two exposure seams; an agent that finds a
+    tool via ``search_tools`` fetches it with ``get_tool`` before calling.
+    """
+    mcp, prefix = await _make_server(lazy=True)
+    tool = await mcp.get_tool(f"{prefix}tool_info")
+    assert tool is not None
+    record = get_tool_registration(tool)
+    assert record is not None
+    assert record.validate() == []
+
+
+@pytest.mark.asyncio
 async def test_lazy_off_synthetic_subset_present() -> None:
     """The non-search synthetic tools are present with records regardless of lazy mode."""
     mcp, prefix = await _make_server(lazy=False)

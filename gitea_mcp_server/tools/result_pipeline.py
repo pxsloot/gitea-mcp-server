@@ -236,15 +236,14 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
             call's args .  When the ``ExecutionResult`` carries its
             own ``extra`` (resource content meta), that takes precedence.
         response_type: Optional response type name for type-bound formatter
-            resolution — read by the contract spine from
-            ``tool.meta["response_type"]``.  When the ``ExecutionResult``
-            carries its own ``response_type`` (per-URI ``read_resource``),
-            that takes precedence.
-        view_hints: Optional curated display-view deficiencies for
-            ``response_type`` — read by the contract spine from
-            ``tool.meta["view_hints"]``.  When the ``ExecutionResult`` carries
-            its own ``view_hints`` (per-URI ``read_resource``), that takes
+            resolution — read by the contract spine from the tool's
+            registration record.  When the ``ExecutionResult`` carries its own
+            ``response_type`` (per-URI ``read_resource``), that takes
             precedence.
+        view_hints: Optional curated display-view deficiencies for
+            ``response_type`` — read by the contract spine from the tool's
+            registration record.  When the ``ExecutionResult`` carries its own
+            ``view_hints`` (per-URI ``read_resource``), that takes precedence.
         openapi_spec: Post-conversion OpenAPI 3.1 spec enabling root-list
             item summaries under ``detail="concise"`` (#759) — the collapse
             resolves a root list's item ``$ref`` one level so items keep

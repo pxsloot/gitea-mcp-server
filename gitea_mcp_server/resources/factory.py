@@ -391,8 +391,8 @@ def _build_handler_meta(
 
     This is content-level metadata (``ResourceContent.meta``), distinct
     from registration-level metadata passed to ``mcp.resource(meta=...)``.
-    Registration-level metadata (``optional_params``, ``cache_ttl``) is set
-    directly in ``make_api_resource()``, not here.
+    Registration-level metadata is built by ``ResourceMeta`` as a
+    ``ResourceRegistration`` record, not here.
 
     Delegates to :func:`~gitea_mcp_server.registration.build_content_meta` —
     the single writer of the known content keys, matched by
@@ -873,7 +873,6 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     meta = ResourceMeta.for_schema(
         response_schema,
         required_scopes=scopes,
-        cache_ttl=cache_ttl,
         optional_params=optional_params or None,
         size_hint=size_hint,
         default_detail=default_detail,

@@ -18,13 +18,13 @@ from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.exceptions import ValidationError
+from gitea_mcp_server.registration import get_tool_registration
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from gitea_mcp_server.client import GiteaClient
     from gitea_mcp_server.label_service import LabelService
-    from gitea_mcp_server.models import ToolCustomization
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class LabelTransform(Transform):
     """Transform that validates and converts label arguments before execution.
 
-    Intercepts tools whose ``_customization.has_labels`` metadata is set,
+    Intercepts tools whose registration record has ``has_labels`` set,
     wrapping their ``run()`` with a call to
     ``LabelService.validate_and_convert()``.
 
@@ -98,16 +98,16 @@ class LabelTransform(Transform):
             tool: The tool to check.
 
         Returns:
-            ``True`` if the tool's ``_customization.has_labels`` is set.
+            ``True`` if the tool's registration record has ``has_labels`` set.
         """
-        c: ToolCustomization | None = (tool.meta or {}).get("_customization")
-        return c.has_labels if c is not None else False
+        record = get_tool_registration(tool)
+        return bool(record and record.customization and record.customization.has_labels)
 
     async def _wrap_tool(self, tool: Tool) -> Tool:
         """Wrap a tool's ``run()`` with label conversion logic.
 
         Args:
-            tool: The tool to wrap (must have ``_customization.has_labels``).
+            tool: The tool to wrap (its record must have ``has_labels``).
 
         Returns:
             A new tool whose ``run()`` converts labels before delegating

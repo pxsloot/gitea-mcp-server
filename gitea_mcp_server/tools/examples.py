@@ -8,6 +8,7 @@ from gitea_mcp_server.marker import ref_marker
 from gitea_mcp_server.models import ToolSchemaResult
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.ref_resolver import resolve_ref_chain
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.schema_utils import extract_type_name, get_schema_type
 from gitea_mcp_server.tools.schemas import unwrap_result_schema
 
@@ -267,12 +268,13 @@ def serialize_tool_schema(
         "parameters": tool.parameters,
     }
     if tool.output_schema is not None:
-        # Prefer the raw (unresolved) schema from meta for compact examples.
-        # output_schema_raw stores the inner (unwrapped) schema
-        # (see mcp_builder._customize_metadata where unwrap_result_schema
-        # is applied), so it matches the shape of the tool output data
-        # directly — no unwrapping needed.
-        raw = (tool.meta or {}).get("output_schema_raw")
+        # Prefer the raw (unresolved) schema from the registration record for
+        # compact examples.  ``output_schema_raw`` stores the inner (unwrapped)
+        # schema (see mcp_builder._customize_metadata where
+        # unwrap_result_schema is applied), so it matches the shape of the tool
+        # output data directly — no unwrapping needed.
+        record = get_tool_registration(tool)
+        raw = record.output_schema_raw if record is not None else None
         if raw is not None:
             example = schema_to_compact_example(raw, openapi_spec=openapi_spec)
         else:

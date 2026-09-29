@@ -82,25 +82,25 @@ class ResourceMeta:
 
     ``for_schema`` derives ``size_hint`` from the response schema's structure
     when not provided explicitly, and derives ``default_detail`` from the
-    resulting ``size_hint``.  Other fields (``required_scopes``, ``cache_ttl``,
+    resulting ``size_hint``.  Other fields (``required_scopes``,
     ``optional_params``) pass through untouched — they are configuration, not
     schema-derived.
     """
 
     required_scopes: list[str] | None = None
-    cache_ttl: float | None = None
     optional_params: list[dict[str, Any]] | None = None
     size_hint: str | None = None
     default_detail: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict, omitting ``None`` values.
+        """Serialize to the registration record, ready for ``mcp.resource(meta=...)``.
 
-        This produces a compact dict that FastMCP stores as the resource's
-        ``meta``.  Agents receive it through ``list_resources`` output.
-        ``None`` values are omitted so that resources that don't set a field
-        remain backward compatible — missing fields are simply absent from
-        the dict rather than present with a ``null`` value.
+        The single sanctioned ``registration`` key carries a
+        :class:`~gitea_mcp_server.registration.ResourceRegistration`; the
+        sanctioned accessor (:func:`~gitea_mcp_server.registration.get_resource_registration`)
+        reconstructs it.  There are no ad-hoc registration keys, and
+        ``cache_ttl`` is deliberately absent — the response cache reads TTLs
+        from the resource surface (``resources/surface.py``).
 
         Note:
             ``response_schema`` and ``format_hint`` are **content-level**
@@ -109,35 +109,21 @@ class ResourceMeta:
             registration-level metadata (this class) is what agents discover
             via ``list_resources`` before reading.
         """
-        result: dict[str, Any] = {}
-        if self.required_scopes is not None:
-            result["required_scopes"] = self.required_scopes
-        if self.cache_ttl is not None:
-            result["cache_ttl"] = self.cache_ttl
-        if self.optional_params is not None:
-            result["optional_params"] = self.optional_params
-        if self.size_hint is not None:
-            result["size_hint"] = self.size_hint
-        if self.default_detail is not None:
-            result["default_detail"] = self.default_detail
-        # Registration record (Phase 1: beside the flat keys; the flat keys are
-        # retired in Phase 2).  ``size_hint``/``default_detail`` are required by
-        # the record: every registration path derives or declares them.
-        result[REGISTRATION_KEY] = ResourceRegistration(
-            size_hint=self.size_hint or "",
-            default_detail=self.default_detail or "",
-            required_scopes=self.required_scopes,
-            optional_params=self.optional_params,
-        ).to_dict()
-        return result
+        return {
+            REGISTRATION_KEY: ResourceRegistration(
+                size_hint=self.size_hint or "",
+                default_detail=self.default_detail or "",
+                required_scopes=self.required_scopes,
+                optional_params=self.optional_params,
+            ).to_dict()
+        }
 
     @classmethod
-    def for_schema(  # noqa: PLR0913 — 6 params: cls, schema, +4 optional overrides — all independent
+    def for_schema(  # noqa: PLR0913 — 5 params: cls, schema, +3 optional overrides — all independent
         cls,
         schema: dict[str, Any] | None,
         *,
         required_scopes: list[str] | None = None,
-        cache_ttl: float | None = None,
         optional_params: list[dict[str, Any]] | None = None,
         size_hint: str | None = None,
         default_detail: str | None = None,
@@ -149,10 +135,9 @@ class ResourceMeta:
         array-ness, and nesting depth via :func:`derive_size_hint_from_schema`.
         ``default_detail`` is then derived from ``size_hint``.
 
-        The remaining fields (``required_scopes``, ``cache_ttl``,
-        ``optional_params``) pass through as-is — they are configuration,
-        not schema-derived.  This avoids callers having to construct two
-        separate metadata dicts.
+        The remaining fields (``required_scopes``, ``optional_params``) pass
+        through as-is — they are configuration, not schema-derived.  This
+        avoids callers having to construct two separate metadata dicts.
 
         Use explicit overrides when the auto-derived values don't fit
         (e.g. a resource with few object properties that can still produce
@@ -162,7 +147,6 @@ class ResourceMeta:
         resolved_detail = default_detail or default_detail_for(resolved_size)
         return cls(
             required_scopes=required_scopes,
-            cache_ttl=cache_ttl,
             optional_params=optional_params,
             size_hint=resolved_size,
             default_detail=resolved_detail,

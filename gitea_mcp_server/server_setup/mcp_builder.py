@@ -440,9 +440,7 @@ def _build_customization_meta(
     """
     component_meta = dict(component.meta) if component.meta else {}
 
-    raw_schema = (
-        unwrap_result_schema(schema.raw_schema) if schema.raw_schema is not None else None
-    )
+    raw_schema = unwrap_result_schema(schema.raw_schema) if schema.raw_schema is not None else None
     # Display type-binding key + curated display-view deficiencies, resolved
     # once at registration (#775) so the render path carries them as data — it
     # neither scans nor mutates the spec.  Carried in the record because the
@@ -874,9 +872,7 @@ class _ToolWrappingTransform(Transform):
             return tool
 
         if not registration.is_finalised():
-            registration = registration.with_injected(
-                self._inject_params(tool, registration)
-            )
+            registration = registration.with_injected(self._inject_params(tool, registration))
             set_registration(tool, registration)
 
         transform_fn = self._make_transform_fn(tool, registration)

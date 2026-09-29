@@ -2,6 +2,7 @@
 
 import json as json_module
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +10,7 @@ import pytest
 from fastmcp.server.context import Context
 from fastmcp.tools.base import ToolResult
 
+from gitea_mcp_server.registration import get_resource_registration
 from gitea_mcp_server.tools.mcp_tools import (
     _maybe_decode_base64,
     _mcp_read_resource_impl,
@@ -25,6 +27,7 @@ from tests.helpers.mcp_results import (
     get_structured,
     parse_json_content,
 )
+from tests.helpers.registration import resource_meta
 
 
 def _render(
@@ -215,7 +218,7 @@ class TestMcpListResourcesImpl:
         template_mock.description = "Repository metadata"
         template_mock.mime_type = "text/markdown"
         template_mock.tags = set()
-        template_mock.meta = {"required_scopes": ["read:repository"]}
+        template_mock.meta = resource_meta(required_scopes=["read:repository"])
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[])
@@ -236,7 +239,7 @@ class TestMcpListResourcesImpl:
         resource_mock.description = "Server version"
         resource_mock.mime_type = "text/plain"
         resource_mock.tags = set()
-        resource_mock.meta = {"required_scopes": None}
+        resource_mock.meta = resource_meta()
 
         ctx.fastmcp = MagicMock()
         ctx.fastmcp.list_resources = AsyncMock(return_value=[resource_mock])
@@ -550,8 +553,10 @@ class TestRegisterMcpResourceTools:
         assert kwargs.get("tags") == {"synthetic", "tool-schema", "schema"}
         meta = kwargs.get("meta")
         assert meta is not None, "tool schema resource should carry ResourceMeta"
-        assert meta.get("size_hint") == "large"
-        assert meta.get("default_detail") == "concise"
+        record = get_resource_registration(SimpleNamespace(meta=meta))
+        assert record is not None
+        assert record.size_hint == "large"
+        assert record.default_detail == "concise"
 
 
 class TestMcpReadResourceTool:

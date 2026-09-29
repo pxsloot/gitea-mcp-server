@@ -25,6 +25,7 @@ from gitea_mcp_server.constants import HTTP_METHODS_ALL
 from gitea_mcp_server.format import _generic_collection_view
 from gitea_mcp_server.openapi_converter.core import convert_swagger_to_openapi_v3
 from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
+from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.server_setup.mcp_builder import _customize_metadata
 from gitea_mcp_server.tools.schemas import get_success_schema
 
@@ -418,7 +419,9 @@ class TestRegisteredEntityRendering:
 
         _customize_metadata(route, component, openapi_spec=real_spec)
 
-        hints = component.meta["view_hints"]
+        record = get_tool_registration(component)
+        assert record is not None
+        hints = record.view_hints
         assert hints == view_hints_for("Repository")
         rendered = _generic_collection_view(
             [_REPO],

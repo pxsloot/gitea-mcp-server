@@ -119,7 +119,7 @@ class ResourceMeta:
         }
 
     @classmethod
-    def for_schema(  # noqa: PLR0913 — 5 params: cls, schema, +3 optional overrides — all independent
+    def for_schema(
         cls,
         schema: dict[str, Any] | None,
         *,

@@ -17,6 +17,7 @@ from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
+from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 if TYPE_CHECKING:
@@ -28,20 +29,23 @@ def _make_tool(
     raw_schema: dict[str, Any] | None = None,
     response_type: str | None = None,
     view_hints: ViewHints | None = None,
+    injected: set[str] | frozenset[str] | None = frozenset({"format", "detail"}),
 ) -> Tool:
-    """Minimal Tool whose meta optionally carries display pipeline metadata."""
-    meta: dict[str, Any] = {}
-    if raw_schema is not None:
-        meta["output_schema_raw"] = raw_schema
-    if response_type is not None:
-        meta["response_type"] = response_type
-    if view_hints is not None:
-        meta["view_hints"] = view_hints
+    """Minimal Tool whose record optionally carries display pipeline metadata.
+
+    ``injected`` defaults to a finalised record (what the exposure seam stamps
+    for a minimal autogen tool); pass ``None`` to leave the record pending.
+    """
     return Tool(
         name="test_tool",
         description="A test tool.",
         parameters={"properties": {}},
-        meta=meta,
+        meta=autogen_meta(
+            output_schema_raw=raw_schema,
+            response_type=response_type,
+            view_hints=view_hints,
+            injected=injected,
+        ),
     )
 
 
@@ -101,7 +105,8 @@ class TestBuildTransformFn:
             captured["content"] = kwargs.get("content")
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        tool = _make_tool(injected=frozenset({"format", "detail", "content_type"}))
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         await transform_fn(content="hello", content_type="text")
 
         assert captured["content"] == base64.b64encode(b"hello").decode()
@@ -166,7 +171,8 @@ class TestBuildTransformFn:
 
         monkeypatch.setattr("gitea_mcp_server.tools.contract.apply_pre_hooks", _spy_pre_hooks)
 
-        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        tool = _make_tool(injected=frozenset({"format", "detail", "content_type"}))
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         with pytest.raises(ValueError, match="content_type must be one of"):
             await transform_fn(content="hello", content_type="bogus")
 
@@ -193,7 +199,7 @@ class TestBuildTransformFn:
 
     @pytest.mark.asyncio
     async def test_raw_schema_attached_for_post_hooks(self, monkeypatch: Any) -> None:
-        """tool.meta['output_schema_raw'] reaches the post-hook as _raw_schema."""
+        """The record's ``output_schema_raw`` reaches the post-hook as _raw_schema."""
         raw_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         seen: dict[str, Any] = {}
 
@@ -244,7 +250,7 @@ class TestBuildTransformFn:
 
     @pytest.mark.asyncio
     async def test_allowlist_restricts_extraction(self) -> None:
-        """tool.meta['_virtual_params'] limits which registry params are popped.
+        """The record's ``virtual_params`` limits which registry params are popped.
 
         Off-allowlist registry-name keys (e.g. ``fetch_all`` on a format-only
         synthetic tool) stay in kwargs so validation rejects them as unknown
@@ -261,8 +267,7 @@ class TestBuildTransformFn:
             received["extracted"] = dict(extracted or {})
             return ExecutionResult(data="ok", shape="scalar")
 
-        tool = _make_tool()
-        tool.meta = {"_virtual_params": {"format"}}
+        tool = _make_tool(injected=frozenset({"format"}))
         transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         await transform_fn(query="q", format="json", fetch_all=True)
 
@@ -271,35 +276,53 @@ class TestBuildTransformFn:
         assert received["kwargs"] == {"query": "q", "fetch_all": True}
 
     @pytest.mark.asyncio
-    async def test_no_allowlist_pops_all_virtual_params(self) -> None:
-        """Fallback: a tool without a stamped _virtual_params pops every registry param.
+    async def test_unfinalised_record_is_rejected(self) -> None:
+        """The spine refuses a pending (un-finalised) registration record.
 
-        Autogen tools normally get their allowlist stamped by ``_inject_params``
-        (extraction matches injection); this exercises the unstamped fallback
-        where ``extract_from(only=None)`` pops every registry param.
+        The retired "no allowlist stamped → pop every registry param" fallback
+        is gone: every exposed tool is finalised at the exposure seam, so a
+        record without a resolved ``virtual_params`` is a programming error —
+        never a silent pop-all.
         """
-        received: dict[str, Any] = {}
 
         async def executor(
             kwargs: dict[str, Any],
             extracted: dict[str, Any] | None,
             ctx: Any,
         ) -> ExecutionResult:
-            received["kwargs"] = dict(kwargs)
-            received["extracted"] = dict(extracted or {})
             return ExecutionResult(data="ok", shape="scalar")
 
-        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
-        await transform_fn(query="q", format="json", fetch_all=True)
+        tool = _make_tool(injected=None)
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+        with pytest.raises(ValueError, match="not finalised"):
+            await transform_fn(query="q", format="json", fetch_all=True)
 
-        assert received["extracted"] == {"format": "json", "fetch_all": True}
-        assert received["kwargs"] == {"query": "q"}
+    @pytest.mark.asyncio
+    async def test_missing_record_is_rejected(self) -> None:
+        """The spine refuses a tool that carries no registration record."""
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = Tool(
+            name="unregistered",
+            description="An unregistered tool.",
+            parameters={"properties": {}},
+            meta={},
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+        with pytest.raises(ValueError, match="has no registration record"):
+            await transform_fn(query="q")
 
     @pytest.mark.asyncio
     async def test_autogen_allowlist_leaves_fetch_all_in_kwargs(self) -> None:
-        """Autogen tools' stamped allowlist excludes fetch_all → rejected as unknown.
+        """Autogen tools' resolved allowlist excludes fetch_all → rejected as unknown.
 
-        ``_inject_params`` stamps ``tool.meta["_virtual_params"]`` with the
+        ``_inject_params`` finalises the record's ``virtual_params`` with the
         actually-injected set (fetch_all is predicate-gated to synthetic
         tools), so extraction leaves it in kwargs for validation to reject
         instead of silently dropping it.
@@ -315,10 +338,9 @@ class TestBuildTransformFn:
             received["extracted"] = dict(extracted or {})
             return ExecutionResult(data="ok", shape="scalar")
 
-        tool = _make_tool()
         # What _inject_params stamps for an autogen tool: visible params that
         # passed injection (format/detail), fetch_all excluded by predicate.
-        tool.meta = {"_virtual_params": {"format", "detail"}}
+        tool = _make_tool(injected=frozenset({"format", "detail"}))
         transform_fn = build_transform_fn(tool, executor, default_format="markdown")
         await transform_fn(query="q", format="json", fetch_all=True)
 
@@ -479,13 +501,13 @@ class TestDisplayExtraDerivation:
 
     @pytest.mark.asyncio
     async def test_response_type_forwarded_from_tool_meta(self) -> None:
-        """The spine reads ``tool.meta["response_type"]`` into ``render``."""
+        """The spine reads the record's ``response_type`` into ``render``."""
         seen = await self._run_transform(tool=_make_tool(response_type="Repository"), format="json")
         assert seen["response_type"] == "Repository"
 
     @pytest.mark.asyncio
     async def test_view_hints_forwarded_from_tool_meta(self) -> None:
-        """The spine reads ``tool.meta["view_hints"]`` into ``render`` (#775)."""
+        """The spine reads the record's ``view_hints`` into ``render`` (#775)."""
         hints: ViewHints = {"omit": ["url"]}
         seen = await self._run_transform(
             tool=_make_tool(response_type="Repository", view_hints=hints), format="json"
@@ -494,13 +516,13 @@ class TestDisplayExtraDerivation:
 
     @pytest.mark.asyncio
     async def test_absent_view_hints_is_none(self) -> None:
-        """A tool without the meta key passes ``None`` — plain schema view."""
+        """A tool without view hints in its record passes ``None`` — plain schema view."""
         seen = await self._run_transform(format="json")
         assert seen["view_hints"] is None
 
     @pytest.mark.asyncio
     async def test_absent_response_type_is_none(self) -> None:
-        """A tool without the meta key passes ``None`` — generic renderer."""
+        """A tool without a response type in its record passes ``None`` — generic renderer."""
         seen = await self._run_transform(format="json")
         assert seen["response_type"] is None
 

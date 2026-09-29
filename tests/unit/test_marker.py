@@ -24,6 +24,7 @@ from gitea_mcp_server.marker import (
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from tests.helpers.mcp_results import parse_json_content
+from tests.helpers.registration import autogen_meta
 
 
 class TestRefMarker:
@@ -203,7 +204,7 @@ class TestRefMarkerContract:
             description="A test tool.",
             parameters={"properties": {}},
             output_schema={"type": "object", "properties": {"result": self._SCHEMA}},
-            meta={"output_schema_raw": self._SCHEMA},
+            meta=autogen_meta(output_schema_raw=self._SCHEMA),
         )
         info_markdown = format_tool_info_markdown(serialize_tool_schema(tool))
         assert '"$ref": "User"' in info_markdown

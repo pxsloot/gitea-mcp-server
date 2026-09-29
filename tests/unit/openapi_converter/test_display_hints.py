@@ -3,8 +3,8 @@
 Covers the curated deficiency tables and their two consumers: the pre-wrap
 ``validate_display_hints`` pass (validates every hint against the schema and
 fails loudly on drift) and ``view_hints_for`` (the registration-time resolver
-whose result travels in ``tool.meta["view_hints"]`` / resource content meta,
-#775).  The hints are not stamped on operations.
+whose result travels in the tool's registration record / resource content
+meta, #775).  The hints are not stamped on operations.
 """
 
 from __future__ import annotations
@@ -204,8 +204,8 @@ class TestViewHintsFor:
     """``view_hints_for`` resolves the curated tables by type name.
 
     The resolver is the registration-time lookup (#775); its result travels
-    in ``tool.meta["view_hints"]`` / resource content meta, so the render path
-    never reads hints off the spec.
+    in the tool's registration record / resource content meta, so the render
+    path never reads hints off the spec.
     """
 
     def test_issue_resolves_full_hint_set(self) -> None:

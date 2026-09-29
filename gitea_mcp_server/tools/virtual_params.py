@@ -328,7 +328,7 @@ def inject_into(
     parameters: dict[str, Any],
     tool: Any | None = None,
     default_overrides: dict[str, Any] | None = None,
-    only: set[str] | None = None,
+    only: set[str] | frozenset[str] | None = None,
 ) -> set[str]:
     """Add virtual parameters to *parameters* (a tool's parameter schema).
 
@@ -403,7 +403,7 @@ def inject_into(
 
 def extract_from(
     kwargs: dict[str, Any],
-    only: set[str] | None = None,
+    only: set[str] | frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Pop virtual parameters from *kwargs*.
 

@@ -18,6 +18,7 @@ from gitea_mcp_server.tools.label_transform import (
     _convert_labels_inline,
 )
 from tests.helpers.mock_tool import make_async_mock
+from tests.helpers.registration import autogen_meta
 
 if TYPE_CHECKING:
     from fastmcp.utilities.versions import VersionSpec
@@ -78,14 +79,13 @@ class TestLabelTransform:
             name=name,
             parameters={"properties": {}, "required": []},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=has_labels,
                     route_path="/test",
                     route_method="POST",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title=name),
         )
 
@@ -352,14 +352,13 @@ class TestLabelTransformTelemetry:
             name=name,
             parameters={"properties": {}, "required": []},
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
-            meta={
-                "_contract_wrap": True,
-                "_customization": ToolCustomization(
+            meta=autogen_meta(
+                ToolCustomization(
                     has_labels=has_labels,
                     route_path="/test",
                     route_method="POST",
-                ),
-            },
+                )
+            ),
             annotations=ToolAnnotations(title=name),
         )
 

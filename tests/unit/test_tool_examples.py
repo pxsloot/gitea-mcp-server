@@ -10,6 +10,7 @@ from gitea_mcp_server.tools.examples import (
     _example_string,
     serialize_tool_schema,
 )
+from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
@@ -389,8 +390,8 @@ class TestSchemaToCompactExample:
                     },
                 },
             },
-            meta={
-                "output_schema_raw": {
+            meta=autogen_meta(
+                output_schema_raw={
                     "type": "object",
                     "properties": {
                         "id": {"type": "integer"},
@@ -402,11 +403,11 @@ class TestSchemaToCompactExample:
                         },
                     },
                 }
-            },
+            ),
         )
         result = serialize_tool_schema(tool)
         assert "output_example" in result
-        # With raw meta, user should be {"$ref": "User"}
+        # The record's raw schema drives the compact example: user is {"$ref": "User"}
         assert result["output_example"]["user"] == {"$ref": "User"}
         assert result["output_example"]["id"] == 0
 
@@ -559,14 +560,14 @@ class TestSchemaToCompactExample:
                     },
                 },
             },
-            meta={
-                "output_schema_raw": {
+            meta=autogen_meta(
+                output_schema_raw={
                     "type": "array",
                     "items": {
                         "$ref": "#/components/schemas/NotificationThread",
                     },
-                },
-            },
+                }
+            ),
         )
         result = serialize_tool_schema(tool, openapi_spec=spec)
         assert "output_example" in result

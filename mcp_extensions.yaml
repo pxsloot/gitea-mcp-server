@@ -164,11 +164,13 @@ tool_names:
   # Edit issue: modify existing issue
   issue_edit_issue:
     description: |
-      Edit an existing issue's title, body, state, labels, assignees, milestone,
+      Edit an existing issue's title, body, state, assignees, milestone,
       or deadline.
 
       If using `due_date`, only the date part is used (time is ignored).
       Set `unset_due_date` to true to remove an existing deadline.
+
+      Use `issue_replace_labels` to change the issue's labels
 
   # Current user identity lookup
   user_get_current:

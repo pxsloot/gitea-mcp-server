@@ -3,7 +3,7 @@
 import json as json_module
 from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -623,8 +623,13 @@ class TestMcpReadResourceTool:
         assert exec_result.shape == "object"
 
     @pytest.mark.asyncio
-    async def test_json_list_uses_unpaginated_object_shape(self) -> None:
-        """JSON list content: object (unpaginated) shape — resources never paginate."""
+    async def test_json_list_uses_paginated_list_shape(self) -> None:
+        """JSON list content: list shape, paginated — the pipeline slices it.
+
+        An array resource is a list; the shape field describes pagination
+        strategy, not data type.  The single result pipeline owns the slicing
+        and the envelope (see #693).
+        """
         from fastmcp.resources import ResourceContent, ResourceResult
 
         fn = self._capture_read_resource()
@@ -637,7 +642,9 @@ class TestMcpReadResourceTool:
 
         assert isinstance(exec_result, ExecutionResult)
         assert exec_result.data == [{"id": 1}, {"id": 2}]
-        assert exec_result.shape == "object"
+        assert exec_result.shape == "list"
+        assert exec_result.paginated is True
+        assert exec_result.total_count == 2
 
     @pytest.mark.asyncio
     async def test_attaches_schema_and_formatter_from_meta(self) -> None:
@@ -731,6 +738,152 @@ class TestMcpReadResourceTool:
 
         parsed = parse_json_content(tool_result)
         assert parsed == {"result": "plain text"}
+
+
+class TestReadResourceArrayPagination:
+    """Array resources paginate through the shared result pipeline (#693).
+
+    An array resource is a list: the executor classifies it ``shape="list"``
+    and the single result pipeline slices it by ``page``/``limit`` (or
+    ``fetch_all``) and emits the envelope — the same path every other list
+    producer uses.  Non-array resources are unchanged.
+    """
+
+    def _capture_read_resource(self) -> Callable[..., Any]:
+        """Register resource tools and return the read_resource function."""
+        mcp = MagicMock()
+        mcp.resource = MagicMock(return_value=lambda f: f)
+        captured: dict[str, Callable[..., Any]] = {}
+
+        def tool_decorator(**kwargs: Any) -> Callable:
+            def deco(fn: Callable) -> Callable:
+                captured[kwargs.get("name", fn.__name__)] = fn
+                return fn
+
+            return deco
+
+        mcp.tool = tool_decorator
+        register_mcp_resource_tools(mcp)
+        return captured["read_resource"]
+
+    async def _executor_result(self, payload: str) -> ExecutionResult:
+        from fastmcp.resources import ResourceContent, ResourceResult
+
+        fn = self._capture_read_resource()
+        ctx = MagicMock(spec=Context)
+        result = ResourceResult(contents=[ResourceContent(payload)])
+        ctx.read_resource = AsyncMock(return_value=result)
+        return cast("ExecutionResult", await fn(uri="gitea://test", ctx=ctx))
+
+    @pytest.mark.asyncio
+    async def test_array_classified_as_paginated_list(self) -> None:
+        """An array resource is shape=list, paginated, total_count=len."""
+        exec_result = await self._executor_result('[{"id": 1}, {"id": 2}, {"id": 3}]')
+
+        assert exec_result.shape == "list"
+        assert exec_result.paginated is True
+        assert exec_result.total_count == 3
+
+    @pytest.mark.asyncio
+    async def test_array_page_slices_and_envelopes(self) -> None:
+        """page/limit bound the items; the envelope is in the text channel."""
+        payload = json_module.dumps([{"id": i} for i in range(30)])
+        exec_result = await self._executor_result(payload)
+
+        tool_result = _render(exec_result, fmt="json", page=2, limit=10)
+
+        parsed = parse_json_content(tool_result)
+        assert [item["id"] for item in parsed["result"]] == list(range(10, 20))
+        assert parsed["has_more"] is True
+        assert parsed["next_offset"] == 3
+        assert parsed["total_count"] == 30
+        # The text channel carries the envelope (content is the contract).
+        assert '"has_more": true' in extract_text_content(tool_result.content)
+
+    @pytest.mark.asyncio
+    async def test_array_last_page_has_no_more(self) -> None:
+        """The final page reports has_more=False, next_offset=None."""
+        payload = json_module.dumps([{"id": i} for i in range(15)])
+        exec_result = await self._executor_result(payload)
+
+        tool_result = _render(exec_result, fmt="json", page=2, limit=10)
+
+        parsed = parse_json_content(tool_result)
+        assert len(parsed["result"]) == 5
+        assert parsed["has_more"] is False
+        assert parsed["next_offset"] is None
+        assert parsed["total_count"] == 15
+
+    @pytest.mark.asyncio
+    async def test_array_out_of_range_page_emits_message(self) -> None:
+        """An out-of-range page emits the empty envelope with a message."""
+        payload = json_module.dumps([{"id": i} for i in range(5)])
+        exec_result = await self._executor_result(payload)
+
+        tool_result = _render(exec_result, fmt="json", page=3, limit=10)
+
+        parsed = parse_json_content(tool_result)
+        assert parsed["result"] == []
+        assert parsed["has_more"] is False
+        assert parsed["total_count"] == 5
+        assert "out of range" in parsed["message"]
+
+    @pytest.mark.asyncio
+    async def test_array_fetch_all_returns_everything(self) -> None:
+        """fetch_all=true returns the full array without slicing."""
+        payload = json_module.dumps([{"id": i} for i in range(30)])
+        exec_result = await self._executor_result(payload)
+
+        tool_result = _render(exec_result, fmt="json", fetch_all=True)
+
+        parsed = parse_json_content(tool_result)
+        assert len(parsed["result"]) == 30
+        assert parsed["has_more"] is False
+        assert parsed["total_count"] == 30
+
+    @pytest.mark.asyncio
+    async def test_empty_array_is_empty_shape(self) -> None:
+        """An empty array resource emits the empty envelope, not a bare []."""
+        exec_result = await self._executor_result("[]")
+
+        assert exec_result.shape == "list"
+        assert exec_result.total_count == 0
+
+        tool_result = _render(exec_result, fmt="json")
+        parsed = parse_json_content(tool_result)
+        assert parsed["result"] == []
+        assert parsed["has_more"] is False
+        assert parsed["total_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_object_resource_is_not_paginated(self) -> None:
+        """A dict resource keeps shape=object, unpaginated, no envelope."""
+        exec_result = await self._executor_result('{"id": 1, "name": "repo"}')
+
+        assert exec_result.shape == "object"
+        assert exec_result.paginated is False
+        assert exec_result.total_count is None
+
+        tool_result = _render(exec_result, fmt="json")
+        parsed = parse_json_content(tool_result)
+        assert parsed == {"result": {"id": 1, "name": "repo"}}
+        assert "has_more" not in parsed
+
+    @pytest.mark.asyncio
+    async def test_scalar_resource_is_not_paginated(self) -> None:
+        """A scalar resource keeps shape=scalar, unpaginated."""
+        exec_result = await self._executor_result("42")
+
+        assert exec_result.shape == "scalar"
+        assert exec_result.paginated is False
+
+    @pytest.mark.asyncio
+    async def test_text_resource_is_not_paginated(self) -> None:
+        """Non-JSON text keeps shape=text, unpaginated."""
+        exec_result = await self._executor_result("plain text")
+
+        assert exec_result.shape == "text"
+        assert exec_result.paginated is False
 
 
 class TestReadResourceRawUnification:

@@ -19,7 +19,9 @@ pagination validation and output schema match generated API tools.
 resource (raw content + metadata from ``tools/resource_display.py``), decodes
 base64, classifies the shape, and returns an ``ExecutionResult`` that the
 single result pipeline (``tools/result_pipeline.py``) renders — the same
-display path as every tool.
+display path as every tool.  An array resource is classified ``shape="list"``
+and paginated: the pipeline slices it by ``page``/``limit`` (or ``fetch_all``)
+and emits the envelope, exactly like every other list producer (#693).
 """
 
 import json
@@ -31,6 +33,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
+from gitea_mcp_server.constants import DEFAULT_PAGE_SIZE
 from gitea_mcp_server.format import decode_base64_content, get_formatter
 from gitea_mcp_server.models import ResourceEntry, ResourceListing, ViewHints
 from gitea_mcp_server.openapi_types import OpenAPISpec
@@ -307,9 +310,11 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
         "result": {
             "type": ["string", "object", "array", "number", "boolean", "null"],
             "description": "Resource content: parsed data for JSON resources, "
-            "raw text for text/markdown resources",
+            "raw text for text/markdown resources.  Array resources are "
+            "paginated — the page's items, with the envelope beside them.",
             "example": {"id": 1, "name": "example-repo", "description": "A sample repository"},
         },
+        "message": MESSAGE_SCHEMA_PROPERTY,
     },
 }
 
@@ -487,6 +492,9 @@ async def _maybe_decode_base64(raw: str) -> str:
 
 async def _read_resource_tool(
     uri: str,
+    page: int = 1,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+    limit: int = DEFAULT_PAGE_SIZE,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
+    fetch_all: bool = False,  # noqa: ARG001 - schema-declared; the pipeline owns pagination
     ctx: Context = CurrentContext(),
 ) -> ExecutionResult:
     """Read the content of an MCP resource by URI.
@@ -513,6 +521,13 @@ async def _read_resource_tool(
     JSON resources return the shared ``{"result": ...}`` output envelope;
     text and Markdown resources return their decoded text.  ``format`` and
     ``detail`` choose how it is rendered (see this tool's schema).
+
+    Array-shaped resources (e.g. ``gitea://repos/{owner}/{repo}/pulls``) are
+    paginated: ``page``/``limit`` bound the returned items and the envelope
+    (``has_more``/``next_offset``/``total_count``) is carried in the text for
+    ``format=json``/``raw`` and mirrored in ``structured_content``.
+    ``fetch_all=true`` returns the full array without slicing.  Object,
+    scalar, and text resources are returned whole — no slicing, no envelope.
 
     ## Usage Examples
 
@@ -575,9 +590,16 @@ async def _read_resource_tool(
        JSON resources are returned as ``{"result": ...}`` structured content.
        Gitea ContentsResponse (base64-encoded file content) is auto-decoded to
        plain text at the executor layer for every format.
+    7. **Array resources are paginated**: use ``page``/``limit`` to bound the
+       items, or ``fetch_all=true`` for the whole array.  The envelope
+       (``has_more``/``next_offset``/``total_count``) is in the text for
+       ``format=json``/``raw``.
 
     Args:
         uri: The resource URI to read (e.g., "gitea://repos/mcp-server/gitea-mcp-server/readme")
+        page: Page number (1-based, default 1).  Applies to array resources.
+        limit: Items per page (default 100).  Applies to array resources.
+        fetch_all: When true, return the full array without slicing.
 
     Returns:
         Raw executor output (``ExecutionResult``): the resource data with its
@@ -586,7 +608,9 @@ async def _read_resource_tool(
         context (``owner``/``repo``/``type``) forwarded as display input, and
         the content-meta ``response_type`` (tier 2 — type-bound domain
         formatters) and ``view_hints`` (the curated display deficiencies
-        refining the generic view, #775).  The single result pipeline renders
+        refining the generic view, #775).  An array resource is classified
+        ``shape="list"`` with ``total_count=len(data)`` and ``paginated=True``
+        — the pipeline slices it.  The single result pipeline renders
         it — ``content`` authoritative and always present,
         ``structured_content`` mirroring it.  Resources without a
         ``format_hint`` still get the domain view when their response type is
@@ -607,14 +631,28 @@ async def _read_resource_tool(
     except (json.JSONDecodeError, ValueError):
         data = raw
         shape = "text"
+        total_count = None
     else:
-        # Resources are single fetches — never paginated.  Lists reuse the
-        # "object" (unpaginated) shape: the shape field describes pagination
-        # strategy, not data type.
-        shape = "object" if isinstance(data, (dict, list)) else "scalar"
+        # The shape field describes pagination strategy, not data type.  An
+        # array resource is a list: the single result pipeline slices it by
+        # page/limit (or fetch_all) and emits the pagination envelope — the
+        # same path every other list producer uses.  A resource read is one
+        # HTTP fetch, but the payload is still a list.  Objects/scalars are
+        # unpaginated.
+        if isinstance(data, list):
+            shape = "list"
+            total_count = len(data)
+        elif isinstance(data, dict):
+            shape = "object"
+            total_count = None
+        else:
+            shape = "scalar"
+            total_count = None
     return ExecutionResult(
         data=data,
+        total_count=total_count,
         shape=shape,
+        paginated=shape == "list",
         schema=schema,
         markdown_formatter=get_formatter(format_hint) if format_hint else None,
         extra=extra,
@@ -718,6 +756,7 @@ def register_mcp_resource_tools(
                 tags={"synthetic"},
                 annotations=synthetic_annotations(read_only=True, open_world=True),
                 output_schema=_READ_RESOURCE_OUTPUT_SCHEMA,
+                paginated=True,
             ),
         ],
     )

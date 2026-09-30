@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from gitea_mcp_server.openapi_converter.normalize import (
     _SCOPE_TAG_OVERRIDES,
+    _WILDCARD_PATH_PARAMS,
     _annotate_boolean_checks,
     _annotate_wildcard_path_params,
     _get_body_schema,
@@ -22,6 +23,7 @@ from gitea_mcp_server.openapi_converter.normalize import (
     _merge_rename_map,
     _normalize_operation_body,
     _normalize_operation_parameters,
+    _path_placeholders,
     _reconcile_scope_tags,
     normalize_spec,
 )
@@ -714,6 +716,124 @@ class TestAnnotateWildcardPathParams:
             annotated = _annotate_wildcard_path_params(spec)
         assert annotated == 0
         assert "has no operations" in caplog.text
+
+    def test_redundant_entry_warns(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An operation already carrying the same annotation warns (obsolete).
+
+        Rule C analogue of Rule D's ``test_obsolete_entry_warns``: the fetched
+        operation already expresses the wildcard, so the table entry is
+        redundant and should be reviewed.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 0
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
+        )
+        assert op["x-wildcard-path-param"] == "filepath"
+        assert "is redundant" in caplog.text
+
+    def test_conflicting_annotation_defers_and_warns(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A different pre-existing annotation wins over the table, with a warning."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "upstream_name",
+                    },
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 0
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
+        )
+        assert op["x-wildcard-path-param"] == "upstream_name"
+        assert "may be obsolete" in caplog.text
+
+    def test_preexisting_annotation_on_one_method_does_not_block_others(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A pre-annotated method is left alone; the remaining methods are stamped."""
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "filepath",
+                    },
+                    "put": {"operationId": "repoUpdateFile"},
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 1
+        ops = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"],
+        )
+        assert ops["get"]["x-wildcard-path-param"] == "filepath"
+        assert ops["put"]["x-wildcard-path-param"] == "filepath"
+        assert "is redundant" in caplog.text
+
+
+class TestWildcardPathParamsTable:
+    """Lock the Rule C table to its own path templates.
+
+    The fetched spec is not committed, so a rename in the live spec is caught
+    only by the runtime guard; this asserts the table is internally
+    consistent — every value names a placeholder its key declares.
+    """
+
+    def test_path_placeholders_extracts_names(self) -> None:
+        """``_path_placeholders`` returns bare ``{...}`` (and ``{...*}``) names."""
+        assert _path_placeholders("/repos/{owner}/{repo}/contents/{filepath}") == {
+            "owner",
+            "repo",
+            "filepath",
+        }
+        assert _path_placeholders("/x/{p*}") == {"p"}
+        assert _path_placeholders("/x") == set()
+
+    def test_values_are_placeholders_of_their_key(self) -> None:
+        """Every table value names a placeholder present in its key path."""
+        offenders = {
+            path: param
+            for path, param in _WILDCARD_PATH_PARAMS.items()
+            if param not in _path_placeholders(path)
+        }
+        assert not offenders, (
+            f"Wildcard table values must name a placeholder of their key path: {offenders}"
+        )
 
 
 class TestReconcileScopeTags:

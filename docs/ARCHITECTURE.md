@@ -238,8 +238,11 @@ Agent reads a resource:
     │
     ├─▶ read_resource executor (mcp_tools.py:_read_resource_tool)
     │     ├─ decode base64 (always, like autogen text responses)
-    │     ├─ parse JSON; classify shape (object/scalar/text)
-    │     └─ return ExecutionResult(data, shape, schema, markdown_formatter, extra)
+    │     ├─ parse JSON; classify shape (list/object/scalar/text)
+    │     │   (an array resource is shape="list", paginated=True,
+    │     │    total_count=len — the pipeline slices it, #693)
+    │     └─ return ExecutionResult(data, total_count, shape, paginated,
+    │            schema, markdown_formatter, extra)
     │            (markdown_formatter = get_formatter(format_hint); extra from
     │            content meta — display input, not display logic)
     │

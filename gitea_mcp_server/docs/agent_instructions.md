@@ -118,6 +118,8 @@ List with `list_resources(tag=..., type=...)`; search with
 - `optional_params` -- query filters the resource accepts (e.g. `state` on
   issues/pulls) and their valid values. URIs in `list_resources` are clean (no
   `{?state}` syntax); check this field to discover filters.
+- Array-valued resources (e.g. `pulls`, `issues`, `releases`) page: pass
+  `page`/`limit`, or `fetch_all=true` for the whole array.
 
 ## A common workflow
 

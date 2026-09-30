@@ -182,6 +182,143 @@ class TestSyntheticValidationSurface:
         assert "output_schema" in result["result"]
 
 
+class TestReadResourceArrayPagination:
+    """read_resource paginates array resources through the shared pipeline (#693).
+
+    An array resource is a list: the executor classifies it ``shape="list"``
+    and the single result pipeline slices it by ``page``/``limit`` (or
+    ``fetch_all``) and emits the envelope — the same path every other list
+    producer uses.  Exercised through the registered tool on a real server.
+    """
+
+    @pytest.mark.asyncio
+    async def test_array_resource_pages_and_envelopes(self) -> None:
+        """page/limit bound the items; the envelope is in the text channel."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+        try:
+            with respx.mock() as mock_http:
+                mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                    200, json=_make_spec()
+                )
+                mock_http.get("https://git.example.com/api/v1/repos/owner/repo/pulls").respond(
+                    200, json=[{"number": i, "title": f"PR {i}"} for i in range(30)]
+                )
+                mcp = await create_mcp_server(gitea_client)
+
+                result = await mcp.call_tool(
+                    f"{config.tool_prefix}read_resource",
+                    {
+                        "uri": "gitea://repos/owner/repo/pulls",
+                        "format": "json",
+                        "page": 2,
+                        "limit": 10,
+                    },
+                )
+        finally:
+            await gitea_client.close()
+
+        sc = get_structured(result)
+        assert [item["number"] for item in sc["result"]] == list(range(10, 20))
+        assert sc["has_more"] is True
+        assert sc["next_offset"] == 3
+        assert sc["total_count"] == 30
+        # The envelope is in the text channel (content is the contract).
+        text = "".join(c.text for c in result.content if c.type == "text")
+        assert '"has_more": true' in text
+
+    @pytest.mark.asyncio
+    async def test_array_resource_fetch_all(self) -> None:
+        """fetch_all=true returns the full array without slicing."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+        try:
+            with respx.mock() as mock_http:
+                mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                    200, json=_make_spec()
+                )
+                mock_http.get("https://git.example.com/api/v1/repos/owner/repo/pulls").respond(
+                    200, json=[{"number": i} for i in range(30)]
+                )
+                mcp = await create_mcp_server(gitea_client)
+
+                result = await mcp.call_tool(
+                    f"{config.tool_prefix}read_resource",
+                    {
+                        "uri": "gitea://repos/owner/repo/pulls",
+                        "format": "json",
+                        "fetch_all": True,
+                    },
+                )
+        finally:
+            await gitea_client.close()
+
+        sc = get_structured(result)
+        assert len(sc["result"]) == 30
+        assert sc["has_more"] is False
+        assert sc["total_count"] == 30
+
+    @pytest.mark.asyncio
+    async def test_array_resource_invalid_page_rejected(self) -> None:
+        """page=0 is rejected with the friendly shared validation error."""
+        mcp, prefix = await _make_server()
+
+        with pytest.raises(ToolError) as exc:
+            await mcp.call_tool(
+                f"{prefix}read_resource",
+                {"uri": "gitea://repos/owner/repo/pulls", "page": 0},
+            )
+        assert "page must be >= 1" in str(exc.value)
+        assert "pydantic" not in str(exc.value).lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("limit", "message"),
+        [(0, "limit must be >= 1"), (101, "limit must be <= 100")],
+    )
+    async def test_array_resource_invalid_limit_rejected(self, limit: int, message: str) -> None:
+        """limit below the minimum or above the declared maximum is rejected.
+
+        The bound is validated before the resource is read (this server has no
+        mocked endpoint, so a read would fail with a different error).
+        """
+        mcp, prefix = await _make_server()
+
+        with pytest.raises(ToolError) as exc:
+            await mcp.call_tool(
+                f"{prefix}read_resource",
+                {"uri": "gitea://repos/owner/repo/pulls", "limit": limit},
+            )
+        assert message in str(exc.value)
+        assert "pydantic" not in str(exc.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_read_resource_declares_pagination_surface(self) -> None:
+        """tool_info surface: page/limit/fetch_all + the envelope are declared."""
+        mcp, prefix = await _make_server()
+        tool = await mcp.get_tool(f"{prefix}read_resource")
+
+        props = tool.parameters["properties"]
+        assert {"page", "limit", "fetch_all"} <= set(props)
+        assert props["limit"]["maximum"] == 100
+        assert props["limit"]["minimum"] == 1
+
+        out_props = tool.output_schema["properties"]
+        assert {"has_more", "next_offset", "total_count", "message"} <= set(out_props)
+
+
 class TestReadDocContract:
     """read_doc rides the transform with its format-only profile + limit_max."""
 
@@ -272,6 +409,7 @@ class TestMessageSchemaDeclaration:
         "list_hidden_tools",
         "tool_info",
         "read_doc",
+        "read_resource",
     )
 
     @pytest.mark.asyncio

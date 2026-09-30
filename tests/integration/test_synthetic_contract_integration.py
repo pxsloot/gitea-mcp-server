@@ -284,6 +284,27 @@ class TestReadResourceArrayPagination:
         assert "pydantic" not in str(exc.value).lower()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("limit", "message"),
+        [(0, "limit must be >= 1"), (101, "limit must be <= 100")],
+    )
+    async def test_array_resource_invalid_limit_rejected(self, limit: int, message: str) -> None:
+        """limit below the minimum or above the declared maximum is rejected.
+
+        The bound is validated before the resource is read (this server has no
+        mocked endpoint, so a read would fail with a different error).
+        """
+        mcp, prefix = await _make_server()
+
+        with pytest.raises(ToolError) as exc:
+            await mcp.call_tool(
+                f"{prefix}read_resource",
+                {"uri": "gitea://repos/owner/repo/pulls", "limit": limit},
+            )
+        assert message in str(exc.value)
+        assert "pydantic" not in str(exc.value).lower()
+
+    @pytest.mark.asyncio
     async def test_read_resource_declares_pagination_surface(self) -> None:
         """tool_info surface: page/limit/fetch_all + the envelope are declared."""
         mcp, prefix = await _make_server()

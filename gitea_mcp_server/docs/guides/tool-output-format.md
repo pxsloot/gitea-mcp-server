@@ -50,12 +50,15 @@ Use `detail="concise"` when you are scanning many items and only need the gist.
 
 ## Paging through lists
 
-List and search tools take `page` (starting at 1) and `limit`. Read a page,
-then ask for the next until a page comes back empty -- a short page is not
-automatically the last one.
+List and search tools -- and array-valued resources read through
+`read_resource` (`pulls`, `issues`, `releases`, ...) -- take `page` (starting
+at 1) and `limit`. Read a page, then ask for the next until a page comes back
+empty -- a short page is not automatically the last one. Object, scalar, and
+text resources are returned whole, with no paging.
 
-On the search and discovery tools, `fetch_all=true` returns every match in one
-go. That is convenient for small result sets; for large ones, page instead.
+`fetch_all=true` returns every match in one go, on the search and discovery
+tools and on array-valued resources. That is convenient for small result sets;
+for large ones, page instead.
 
 In `json` and `raw`, paginated results tell you where you are: `has_more`,
 `next_offset`, and `total_count`. Reading a page past the end is not an error

@@ -312,7 +312,7 @@ _READ_RESOURCE_OUTPUT_SCHEMA: dict[str, Any] = {
             "description": "Resource content: parsed data for JSON resources, "
             "raw text for text/markdown resources.  Array resources are "
             "paginated — the page's items, with the envelope beside them.",
-            "example": {"id": 1, "name": "example-repo", "description": "A sample repository"},
+            "example": [{"id": 1, "name": "example-repo", "description": "A sample repository"}],
         },
         "message": MESSAGE_SCHEMA_PROPERTY,
     },

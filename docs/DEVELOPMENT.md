@@ -138,14 +138,14 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 
 | Module | Concern |
 |--------|---------|
-| `tools/contract.py` | Generic agent-facing contract spine — `build_transform_fn(tool, executor, default_format=...)`, shared by autogen and synthetic tools |
+| `tools/contract.py` | Generic agent-facing contract spine — `build_transform_fn(tool, executor, registration=..., default_format=...)`, shared by autogen and synthetic tools |
 | `tools/customize.py` | Helpers: title/category generation, hint inference |
 | `tools/schemas.py` | Output schema derivation, `$ref` resolution |
 | `tools/errors.py` | Error translation, argument validation runner |
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
-| `tools/synthetic_contract.py` | Synthetic registration contract — wrap-me marker + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
+| `tools/synthetic_contract.py` | Synthetic registration contract — registration record + executor registry, virtual-param allowlists, pagination envelope, page/limit bounds |
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource — ``$ref`` marker name resolution and cross-references |
 | `tools/virtual_params.py` | Virtual parameter registry + lifecycle — generic mechanism for agent-facing params stripped before HTTP call. Registered entries: ``sudo``, ``content_type`` (pre-request hooks) and ``format``, ``detail``, ``fetch_all`` (hook-less pipeline options read by the result pipeline). See the `virtual params how-to`_ below for adding new entries. |
 | `tools/result_pipeline.py` | Single result pipeline — ``ExecutionResult`` (raw executor output) + ``render()`` (shape → paginate → format → ToolResult); the single writer of both channels |
@@ -389,11 +389,12 @@ The lifecycle functions are called automatically in the transform pipeline:
     Virtual-param **extraction respects each tool's allowlist**: only
     allowlisted registry params are popped from kwargs before validation.
     Both tool families carry the resolved set in their registration record —
-    ``_wrap`` stamps synthetic tools with the actually-injected set and autogen
-    tools with the actually-injected set (visible + predicate-passing).
-    An off-profile registry-name key (e.g. ``detail`` or ``fetch_all`` on a
-    format-only tool like ``read_doc``, or ``fetch_all`` on an autogen tool)
-    stays in kwargs and is rejected with the shared "Unknown parameter(s)"
+    ``_wrap`` stamps both families with the actually-injected set (visible +
+    predicate-passing); synthetic tools additionally carry their declared
+    allowlist.  An off-profile registry-name key (e.g. ``detail`` or
+    ``fetch_all`` on a format-only tool like ``read_doc``, or ``fetch_all``
+    on an autogen tool) stays in kwargs and is rejected with the shared
+    "Unknown parameter(s)"
     error rather than being silently dropped.
 
 **Scope-gating**: Virtual parameters can be gated behind token scopes.
@@ -525,7 +526,7 @@ OpenAPI spec during conversion rather than adding pipeline detection logic:
    record's ``customization`` (``ToolCustomization.response_transform``).
 
 4. In ``_pipeline_with_context``, add a branch that checks
-   ``_customization.response_transform`` and applies the transform.
+   ``customization.response_transform`` and applies the transform.
 
 This way both tools and resources (which are auto-generated from the same
 spec) pick up the behaviour automatically — no special-case code in

@@ -269,10 +269,14 @@ def _is_meta_object(node: ast.expr) -> bool:
 def _ad_hoc_meta_keys(source: str) -> list[tuple[int, str]]:
     """Return ``(line, key)`` for direct ``meta[key]`` / ``meta.get(key)`` access.
 
-    Scoped to direct subscript/``.get`` access, as the contract requires.  The
-    resource *content* metadata channel reads through ``parse_content_meta``
-    (``registration.py``), so legitimate content keys are never a direct
-    subscript and cannot false-positive here.
+    Scoped to direct subscript/``.get`` access with a literal string key, as
+    the contract requires.  ``meta.pop(...)``, ``meta.update({...})``,
+    ``"key" in meta``, and ``del meta[...]`` are not caught — defensible for a
+    reintroduction deny-list, since the runtime deny-list guard catches the
+    actual keys on exposed components.  The resource *content* metadata
+    channel reads through ``parse_content_meta`` (``registration.py``), so
+    legitimate content keys are never a direct subscript and cannot
+    false-positive here.
     """
     findings: list[tuple[int, str]] = []
     for node in ast.walk(ast.parse(source)):

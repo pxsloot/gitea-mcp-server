@@ -74,3 +74,63 @@ def test_named_packages_exist() -> None:
 def test_project_package_is_the_expected_name() -> None:
     """Guard against a silent rename of the package the map is written against."""
     assert (project_root() / PROJECT_PACKAGE).is_dir()
+
+
+# ── Superseded-mention sweep ─────────────────────────────────────────────────
+
+# Retired flat-key identifiers that must not appear in docs/ outside the
+# design decision that documents the contract (decision #20).  Match only
+# when they appear as string literals (dict keys) or in meta-access patterns.
+_RETIRED_KEY_PATTERNS = [
+    re.compile(r'["_](?:WRAP_ME|contract_wrap|customization|virtual_params|executor_id)["\']'),
+    re.compile(
+        r'meta\[["\']_(?:WRAP_ME|contract_wrap|customization|virtual_params|executor_id)["\']\]'
+    ),
+    re.compile(
+        r'meta\.get\(["\']_(?:WRAP_ME|contract_wrap|customization|virtual_params|executor_id)["\']\)'
+    ),
+]
+
+
+def _decision_20_section() -> str:
+    """Return the text of decision #20 (the registration contract)."""
+    text = _DOC.read_text()
+    try:
+        start = text.index("20. **Typed registration metadata")
+        # Find the next decision or section boundary.
+        end = text.index("\n---\n", start)
+        return text[start:end]
+    except ValueError:
+        return ""
+
+
+def test_no_retired_mechanism_identifiers_in_docs() -> None:
+    """Retired flat-key identifiers do not appear in docs/ outside decision #20.
+
+    The registration contract (decision #20) documents the record; the old
+    flat keys are gone.  This test makes DoD #4 ("superseded mentions are
+    gone") executable, so a stale reference fails the build instead of
+    surfacing later as a wiring surprise.
+    """
+    docs_dir = project_root() / "docs"
+    decision_20 = _decision_20_section()
+    offenders: dict[str, list[str]] = {}
+
+    for doc_path in sorted(docs_dir.rglob("*.md")):
+        text = doc_path.read_text()
+        # Exempt decision #20 in ARCHITECTURE.md (it documents the contract).
+        if doc_path.name == "ARCHITECTURE.md" and decision_20:
+            text = text.replace(decision_20, "")
+        found = []
+        for pattern in _RETIRED_KEY_PATTERNS:
+            matches = pattern.findall(text)
+            if matches:
+                found.extend(matches)
+        if found:
+            offenders[str(doc_path.relative_to(project_root()))] = list(set(found))
+
+    assert not offenders, (
+        f"Retired mechanism identifiers found in docs: {offenders}. "
+        "The registration contract (decision #20) is the canonical home; "
+        "update the reference to the record."
+    )

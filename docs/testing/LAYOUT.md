@@ -60,6 +60,7 @@ tests/
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
 │   ├── test_ref_resolver.py
+│   ├── test_registration.py
 │   ├── test_regression_316_dotfile_paths.py
 │   ├── test_resource_auto.py
 │   ├── test_resource_custom.py
@@ -113,6 +114,7 @@ tests/
 │   ├── test_pr_workflow.py      # Pull request and diff stories
 │   ├── test_cross_format.py     # Format equivalence concern tests
 │   ├── test_discovery.py        # Synthetic discovery concern tests
+│   ├── test_registration_contract.py  # Registration record completeness (Tier-2 live)
 │   ├── test_resources.py        # Resource concern tests
 │   ├── test_scope.py            # Token scope concern tests
 │   └── test_errors.py           # Transport error-contract concern tests

@@ -2,10 +2,10 @@
 
 The hermetic completeness check
 (``tests/integration/test_registration_contract.py``) runs over the committed
-``tests/swagger.v1.json`` fixture.  This live test runs the same contract over
-the *real* server's fetched spec, over the raw MCP SDK transport: every exposed
-tool and registered resource must carry the typed registration record on its
-MCP ``_meta``.
+``tests/swagger.v1.json`` fixture and asserts the pinned synthetic surface.
+This live test runs the same contract over the *real* server's fetched spec,
+over the raw MCP SDK transport: every exposed tool and registered resource must
+carry the typed registration record on its MCP ``_meta``.
 
 A dedicated server is started with ``ENABLE_LAZY_LOADING=false`` so
 ``list_tools`` returns the full autogen + synthetic surface (the default lazy
@@ -72,6 +72,7 @@ class TestLiveRegistrationContract:
             templates = (await session.list_resource_templates()).resourceTemplates
 
         assert tools, "expected a non-empty live tool surface"
+        assert resources or templates, "expected a non-empty live resource surface"
 
         tool_failures = {tool.name: p for tool in tools if (p := _tool_problems(tool.meta))}
         assert not tool_failures, f"live tool records incomplete: {tool_failures}"

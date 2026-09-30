@@ -722,7 +722,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         resource_type: Machine-readable resource type for error responses.
             Defaults to ``format_hint``, falling back to ``"api"``.
         scopes: Required token scopes (e.g. ``["read:repository"]``).
-        cache_ttl: Cache TTL in seconds (passed via resource meta).
+        cache_ttl: Cache TTL in seconds (recorded on the resource surface,
+            consumed by the response cache — not part of the registration
+            record).
         tags: Caller-owned set of resource tags (e.g. ``{"wrapper", "repository"}``).
             ``"wrapper"`` is NOT auto-added — include it explicitly when the
             resource has a ``format_hint`` (i.e., a markdown formatter).

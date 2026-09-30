@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -9,6 +11,8 @@ from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.registration import (
     CONTENT_META_KEYS,
     REGISTRATION_KEY,
+    RETIRED_RESOURCE_META_KEYS,
+    RETIRED_TOOL_META_KEYS,
     ResourceRegistration,
     ToolRegistration,
     build_content_meta,
@@ -245,3 +249,77 @@ class TestContentMetaHelpers:
 
     def test_parse_handles_none(self) -> None:
         assert parse_content_meta(None) == (None, None)
+
+
+# ── Static guard: no reintroduced ad-hoc registration keys ─────────────────
+
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent.parent / "gitea_mcp_server"
+_RETIRED_META_KEYS = RETIRED_TOOL_META_KEYS | RETIRED_RESOURCE_META_KEYS
+
+
+def _is_meta_object(node: ast.expr) -> bool:
+    """Return ``True`` for a ``...meta`` attribute or a bare ``meta`` name."""
+    if isinstance(node, ast.Name):
+        return node.id == "meta"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "meta"
+    return False
+
+
+def _ad_hoc_meta_keys(source: str) -> list[tuple[int, str]]:
+    """Return ``(line, key)`` for direct ``meta[key]`` / ``meta.get(key)`` access.
+
+    Scoped to direct subscript/``.get`` access with a literal string key, as
+    the contract requires.  ``meta.pop(...)``, ``meta.update({...})``,
+    ``"key" in meta``, and ``del meta[...]`` are not caught — defensible for a
+    reintroduction deny-list, since the runtime deny-list guard catches the
+    actual keys on exposed components.  The resource *content* metadata
+    channel reads through ``parse_content_meta`` (``registration.py``), so
+    legitimate content keys are never a direct subscript and cannot
+    false-positive here.
+    """
+    findings: list[tuple[int, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Subscript) and _is_meta_object(node.value):
+            key = node.slice
+            if isinstance(key, ast.Constant) and key.value in _RETIRED_META_KEYS:
+                findings.append((node.lineno, str(key.value)))
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _is_meta_object(node.func.value)
+            and node.args
+        ):
+            key = node.args[0]
+            if isinstance(key, ast.Constant) and key.value in _RETIRED_META_KEYS:
+                findings.append((node.lineno, str(key.value)))
+    return findings
+
+
+class TestNoAdHocRegistrationKeys:
+    """Every registration key is touched only through ``registration.py``."""
+
+    def test_guard_detects_a_reintroduced_key(self) -> None:
+        """The detector is not vacuous."""
+        source = 'tool.meta["_customization"] = None\ntool.meta.get("view_hints")\n'
+        assert _ad_hoc_meta_keys(source) == [(1, "_customization"), (2, "view_hints")]
+
+    def test_production_code_has_no_ad_hoc_registration_keys(self) -> None:
+        """No production module subscripts a retired registration key directly.
+
+        Reintroducing an ad-hoc key (the pre-#801 pattern) fails here, not at
+        call time.  ``registration.py`` owns the key names and is exempt.
+        """
+        offenders: dict[str, list[tuple[int, str]]] = {}
+        for path in sorted(_PACKAGE_DIR.rglob("*.py")):
+            if path.name == "registration.py":
+                continue
+            findings = _ad_hoc_meta_keys(path.read_text())
+            if findings:
+                offenders[str(path.relative_to(_PACKAGE_DIR.parent))] = findings
+        assert not offenders, (
+            "Direct meta access to registration keys outside registration.py: "
+            f"{offenders}. Read registration metadata through the sanctioned "
+            "accessors; content metadata through parse_content_meta."
+        )

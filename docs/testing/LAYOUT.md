@@ -14,7 +14,10 @@ tests/
 ├── conftest.py                             # Infrastructure: SimpleConfig, event_loop, OTel
 ├── helpers/
 │   ├── __init__.py
+│   ├── import_graph.py                     # Filesystem module discovery + import graph (layer contract)
+│   ├── mcp_results.py                      # dual-channel MCP result helpers
 │   ├── mock_tool.py                        # make_mock_tool, make_mock_route
+│   ├── registration.py                     # registration-record builders for tests
 │   ├── tool_names.py                       # extract_tool_names
 │   └── spec_fixtures.py                    # base_spec, minimal_spec, make_openapi_spec
 ├── schemas/
@@ -57,6 +60,7 @@ tests/
 │   ├── test_mcp_tools_wrapping.py
 │   ├── test_pagination.py
 │   ├── test_ref_resolver.py
+│   ├── test_registration.py
 │   ├── test_regression_316_dotfile_paths.py
 │   ├── test_resource_auto.py
 │   ├── test_resource_custom.py
@@ -110,6 +114,7 @@ tests/
 │   ├── test_pr_workflow.py      # Pull request and diff stories
 │   ├── test_cross_format.py     # Format equivalence concern tests
 │   ├── test_discovery.py        # Synthetic discovery concern tests
+│   ├── test_registration_contract.py  # Registration record completeness (Tier-2 live)
 │   ├── test_resources.py        # Resource concern tests
 │   ├── test_scope.py            # Token scope concern tests
 │   └── test_errors.py           # Transport error-contract concern tests

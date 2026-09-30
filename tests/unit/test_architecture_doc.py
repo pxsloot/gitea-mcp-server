@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import re
 
+from gitea_mcp_server.registration import (
+    RETIRED_RESOURCE_META_KEYS,
+    RETIRED_TOOL_META_KEYS,
+)
 from tests.helpers.import_graph import PROJECT_PACKAGE, production_modules, project_root, source_dir
 
 _DOC = project_root() / "docs" / "ARCHITECTURE.md"
@@ -74,3 +78,103 @@ def test_named_packages_exist() -> None:
 def test_project_package_is_the_expected_name() -> None:
     """Guard against a silent rename of the package the map is written against."""
     assert (project_root() / PROJECT_PACKAGE).is_dir()
+
+
+# ── Superseded-mention sweep ─────────────────────────────────────────────────
+
+# The retired flat registration keys are the canonical deny-list
+# (``registration.py``).  A stale reference reads one off a ``meta`` mapping;
+# the sanctioned record's own serialized field names (``"virtual_params"``,
+# ``"customization"``, ...) are legitimate content, so the non-prefixed keys
+# are only matched in meta-access position.  The underscore-prefixed keys are
+# never record field names, so a bare bounded token (``_customization``,
+# ``_WRAP_ME``) is unambiguously stale.  ``\b`` avoids ``_build_customization_meta``.
+_RETIRED_META_KEYS = frozenset(RETIRED_TOOL_META_KEYS | RETIRED_RESOURCE_META_KEYS)
+_RETIRED_ALTERNATION = "|".join(re.escape(key) for key in sorted(_RETIRED_META_KEYS))
+_UNDERSCORE_IDENTIFIERS = sorted(
+    {key for key in _RETIRED_META_KEYS if key.startswith("_")} | {"_WRAP_ME"}
+)
+_UNDERSCORE_ALTERNATION = "|".join(re.escape(key) for key in _UNDERSCORE_IDENTIFIERS)
+
+_RETIRED_MECHANISM_PATTERNS = (
+    # A bare underscore-prefixed identifier (retired key or the wrap marker).
+    re.compile(rf"\b(?:{_UNDERSCORE_ALTERNATION})\b"),
+    # Any retired key read off a ``meta`` mapping.
+    re.compile(rf"""meta\[\s*["'](?:{_RETIRED_ALTERNATION})["']\s*\]"""),
+    re.compile(rf"""meta\.get\(\s*["'](?:{_RETIRED_ALTERNATION})["']"""),
+)
+
+# The design decision that documents the contract is its canonical home and is
+# exempt from the sweep.
+_DECISION_HEADING_RE = re.compile(r"(?m)^\s*\d+\.\s+\*\*Typed registration metadata")
+_NEXT_DECISION_RE = re.compile(r"(?m)^\s*\d+\.\s+\*\*")
+
+
+def _contract_decision_section() -> str:
+    """Return the registration-contract design decision's text (decision #20).
+
+    Keyed on the decision's title (stable across renumbering) and bounded by the
+    next decision or the section separator, so a renumber or an inserted
+    ``---`` neither drops nor over-extends the exemption.
+    """
+    text = _DOC.read_text()
+    match = _DECISION_HEADING_RE.search(text)
+    if match is None:
+        return ""
+    boundaries = []
+    next_decision = _NEXT_DECISION_RE.search(text, match.end())
+    if next_decision:
+        boundaries.append(next_decision.start())
+    separator = text.find("\n---\n", match.end())
+    if separator != -1:
+        boundaries.append(separator)
+    end = min(boundaries) if boundaries else len(text)
+    return text[match.start() : end]
+
+
+def _retired_mechanism_references(text: str) -> list[str]:
+    """Return the retired-mechanism references found in *text*."""
+    found: list[str] = []
+    for pattern in _RETIRED_MECHANISM_PATTERNS:
+        found.extend(pattern.findall(text))
+    return found
+
+
+def test_sweep_detects_retired_references() -> None:
+    """The sweep is not vacuous: stale access is caught, the record is not.
+
+    Guards against a pattern edit that silently matches nothing.
+    """
+    stale = 'tool.meta["_virtual_params"]\nresource.meta.get("required_scopes")\n`_WRAP_ME`\n'
+    assert _retired_mechanism_references(stale)
+
+    clean = 'tool.meta["registration"]\n"virtual_params": None\n"size_hint": "tiny"\n'
+    assert _retired_mechanism_references(clean) == []
+
+
+def test_no_retired_mechanism_identifiers_in_docs() -> None:
+    """Retired flat-key references do not appear in docs/ outside the contract.
+
+    The registration contract (decision #20) documents the record; the old flat
+    keys are gone.  This test makes DoD #4 ("superseded mentions are gone")
+    executable, so a stale reference fails the build instead of surfacing later
+    as a wiring surprise.
+    """
+    docs_dir = project_root() / "docs"
+    contract_section = _contract_decision_section()
+    offenders: dict[str, list[str]] = {}
+
+    for doc_path in sorted(docs_dir.rglob("*.md")):
+        text = doc_path.read_text()
+        # Exempt decision #20 in ARCHITECTURE.md (it documents the contract).
+        if doc_path.name == "ARCHITECTURE.md" and contract_section:
+            text = text.replace(contract_section, "")
+        found = _retired_mechanism_references(text)
+        if found:
+            offenders[str(doc_path.relative_to(project_root()))] = sorted(set(found))
+
+    assert not offenders, (
+        f"Retired mechanism identifiers found in docs: {offenders}. "
+        "The registration contract (decision #20) is the canonical home; "
+        "update the reference to the record."
+    )

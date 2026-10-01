@@ -51,13 +51,20 @@ multi-segment values route correctly.
 
 Rule C is a **documented exception** to the module's shape-driven ideal: it
 is source-driven, not shape-driven, because the wildcard information is
-erased during spec generation and no spec shape can recover it.  The drift
-guard is therefore asymmetric: ``_annotate_wildcard_path_params`` warns
-loudly when a table entry disappears from the fetched spec, but a new
-router wildcard is invisible there (the erasure above) and indistinguishable
-from an ordinary path.  The table must be re-verified against the router
-when upgrading Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries
-the upgrade note and the known forward-drift example.
+erased during spec generation and no spec shape can recover it.  Its drift
+guard is two-directional — it warns when a table entry disappears from the
+fetched spec (path absent, or no operations) and when an operation already
+carries ``x-wildcard-path-param`` before annotation — but the redundancy
+direction is **opportunistic**: it fires only when the fetched spec already
+carries the extension, which upstream normally does not.  When it does, a
+same-value annotation is kept and the entry flagged for review, while a
+differing value is overridden with the curated one (the renderer only
+rewrites an exact ``{param}`` segment, so a differing annotation would
+misroute).  Forward drift — a *new* router wildcard, or a route that stopped
+being a wildcard — is erased from the spec and remains an upgrade-audit item.
+The table must be re-verified against the router when upgrading
+Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries the upgrade
+note and the known forward-drift example.
 
 **Rule D — scope-tag reconciliation (source-driven exception).**  Gitea/Forgejo
 derive token-scope requirements from the router's ``tokenRequiresScopes(...)``
@@ -413,12 +420,22 @@ def _annotate_boolean_checks(openapi_spec: OpenAPISpec) -> int:
 #
 # Curated from the router source (``routers/api/v1/api.go``, routes
 # registered with ``/*``); the module docstring carries the design
-# rationale, including why the runtime drift guard is asymmetric.
+# rationale, including why the runtime drift guard is bounded.
 #
-# Upgrade audit: when upgrading Gitea/Forgejo, re-verify this table
-# against the router.  The guard warns when an entry here vanishes from
-# the fetched spec, but never about a NEW wildcard — only this audit
-# catches forward drift.
+# Guard: warns when an entry's path vanishes from the fetched spec (path
+# absent, or no operations), and when an operation already carries
+# ``x-wildcard-path-param`` before annotation.  The redundancy direction is
+# opportunistic (it fires only if the spec already carries the extension):
+# an identical annotation is kept and the entry flagged for review; a
+# differing one is overridden with this table's curated value (a differing
+# annotation would misroute).  A NEW router wildcard and a route that stopped
+# being a wildcard are erased from the spec and stay upgrade-audit items.
+# Re-verify this table against the router on every Gitea/Forgejo upgrade.
+#
+# Table integrity: every value must be a ``{...}`` placeholder of its key
+# path; ``_path_placeholders`` is the shared guard primitive (used by the
+# runtime conflict check, the table-integrity test, and the unified guard in
+# #813).
 #
 # Known forward drift: Gitea main registers
 # ``/repos/{owner}/{repo}/contents-ext`` with ``m.Get("/*", ...)``
@@ -436,6 +453,27 @@ _WILDCARD_PATH_PARAMS: dict[str, str] = {
     "/repos/{owner}/{repo}/tags/{tag}": "tag",
 }
 
+# A ``{param}`` (or ``{param*}``) placeholder in an OpenAPI path template.
+_PATH_PLACEHOLDER_RE = re.compile(r"\{([^}/]+?)\*?\}")
+
+
+def _path_placeholders(path: str) -> set[str]:
+    """Return the placeholder names in an OpenAPI path template.
+
+    ``/repos/{owner}/{repo}/contents/{filepath}`` →
+    ``{"owner", "repo", "filepath"}``.  Used to keep
+    ``_WILDCARD_PATH_PARAMS`` internally consistent: a table value naming a
+    placeholder the key path does not declare is a table bug (the stamp would
+    name a parameter no operation exposes).
+
+    Args:
+        path: An OpenAPI path template.
+
+    Returns:
+        The set of placeholder names in ``path``.
+    """
+    return set(_PATH_PLACEHOLDER_RE.findall(path))
+
 
 def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
     """Annotate wildcard path params with ``x-wildcard-path-param``.
@@ -447,6 +485,23 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
     path no longer exists in the fetched spec — or exists with no operations
     at all — is logged loudly: the router/spec changed and the table must be
     re-verified against ``routers/api/v1``.
+
+    An operation that already carries ``x-wildcard-path-param`` before this
+    pass is handled here:
+
+    * same value — the annotation is redundant (the spec already expresses
+      the wildcard, or a prior normalization pass ran); it is kept and the
+      entry flagged for review — but only when nothing else needed stamping,
+      since a partially pre-annotated path is still needed for its other
+      methods;
+    * different value — the curated table value is authoritative and
+      overrides it: the renderer only rewrites an exact ``{param}`` segment,
+      so a differing annotation would silently misroute.
+
+    The redundancy direction is **opportunistic** — it fires only when the
+    spec already carries the extension, which upstream normally does not.
+    Forward drift (a new or removed router wildcard) is erased during spec
+    generation and still needs the upgrade audit (see the module docstring).
 
     Mutates ``openapi_spec`` in-place.  Returns the number of operations
     annotated.
@@ -465,26 +520,80 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
                 path,
             )
             continue
-        stamped = False
+        placeholders = _path_placeholders(path)
+        had_operation = False
+        stamped: list[str] = []
+        redundant: list[str] = []
+        overridden: list[tuple[str, str]] = []
         for method in HTTP_METHODS_ALL:
             operation = path_item.get(method)
             if not isinstance(operation, dict):
                 continue
+            had_operation = True
+            existing = operation.get("x-wildcard-path-param")
+            if isinstance(existing, str) and existing:
+                if existing == param_name:
+                    redundant.append(method)
+                else:
+                    # A differing annotation would misroute (the renderer
+                    # only rewrites an exact ``{param}`` segment), so the
+                    # curated table value is authoritative: warn and override.
+                    operation["x-wildcard-path-param"] = param_name
+                    annotated += 1
+                    overridden.append((method, existing))
+                continue
             operation["x-wildcard-path-param"] = param_name
             annotated += 1
-            stamped = True
+            stamped.append(method)
             logger.debug(
                 "Annotated wildcard path param %s on %s %s",
                 param_name,
                 method.upper(),
                 path,
             )
-        if not stamped:
+        if not had_operation:
             logger.warning(
                 "Wildcard path table entry %s has no operations in fetched "
                 "spec — verify against routers/api/v1 (route may have changed)",
                 path,
             )
+            continue
+        for method, existing in overridden:
+            shape = (
+                "differs from the curated value"
+                if existing in placeholders
+                else "is not a placeholder of the path"
+            )
+            logger.warning(
+                "Wildcard path %s %s already carries x-wildcard-path-param=%r, "
+                "which %s - overriding with %r; review _WILDCARD_PATH_PARAMS",
+                method.upper(),
+                path,
+                existing,
+                shape,
+                param_name,
+            )
+        if redundant:
+            methods = ", ".join(method.upper() for method in redundant)
+            if stamped or overridden:
+                logger.warning(
+                    "Wildcard path table entry %s already carries "
+                    "x-wildcard-path-param=%r on %s — kept that annotation; "
+                    "the entry is still needed for the other operations",
+                    path,
+                    param_name,
+                    methods,
+                )
+            else:
+                logger.warning(
+                    "Wildcard path table entry %s is redundant: every "
+                    "operation (%s) already carries x-wildcard-path-param=%r "
+                    "before annotation (upstream annotation, or a prior "
+                    "pass) — review _WILDCARD_PATH_PARAMS",
+                    path,
+                    methods,
+                    param_name,
+                )
     return annotated
 
 

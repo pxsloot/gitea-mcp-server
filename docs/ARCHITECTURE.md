@@ -1000,11 +1000,16 @@ from the parameter schema.
      the resource layer renders ``{param*}`` in URI templates so multi-segment
      values (``contents/src/main.py``) route correctly.  This is a documented
      exception to the shape-driven ideal: the wildcard information is erased
-     during spec generation and no spec shape can recover it.  The drift
-     guard is asymmetric — it warns when a table entry vanishes from the
-     fetched spec, but a new router wildcard is invisible there — so the
-     table must be re-verified against the router when upgrading
-     Gitea/Forgejo (upgrade note and known forward drift: the
+     during spec generation and no spec shape can recover it.  Its drift
+     guard is two-directional — it warns when a table entry's path vanishes
+     and when an operation already carries ``x-wildcard-path-param`` before
+     annotation — but the redundancy direction is opportunistic (it fires
+     only if the spec already carries the extension): an identical
+     annotation is kept and flagged for review, a differing one is overridden
+     with the curated value.  Forward drift — a *new* router wildcard, or a
+     route that stopped being a wildcard — is erased from the spec and stays
+     an upgrade-audit item.  The table must be re-verified against the router
+     when upgrading Gitea/Forgejo (upgrade note and known forward drift: the
      ``_WILDCARD_PATH_PARAMS`` comment in ``normalize.py``).
 
      **Rule D — scope-tag reconciliation (source-driven exception).**

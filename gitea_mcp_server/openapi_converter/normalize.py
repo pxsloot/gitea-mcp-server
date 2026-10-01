@@ -566,8 +566,7 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
             )
             logger.warning(
                 "Wildcard path %s %s already carries x-wildcard-path-param=%r, "
-                "which %s — overriding with %r; the entry may be obsolete "
-                "(upstream expresses the wildcard)",
+                "which %s - overriding with %r; review _WILDCARD_PATH_PARAMS",
                 method.upper(),
                 path,
                 existing,

@@ -33,7 +33,7 @@ def _items(n: int) -> list[dict[str, int]]:
 
 
 class TestListShape:
-    """The list shape: pipeline slices by page/limit, envelopes, fetch_all."""
+    """The list shape: pipeline slices by page/limit, envelopes, neutralization."""
 
     def test_slices_page(self) -> None:
         result = render(
@@ -61,13 +61,19 @@ class TestListShape:
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
 
-    def test_fetch_all_returns_all_items(self) -> None:
+    def test_neutralized_page_size_returns_all_items(self) -> None:
+        """A neutralized page size disables slicing (fetch_all is the instance).
+
+        The pipeline derives this from the ``inert`` set — a mode that
+        neutralizes page/limit (``inert_params``) returns everything without
+        the pipeline hardcoding the mode's name.
+        """
         result = render(
             ExecutionResult(data=_items(50), total_count=50, shape="list", paginated=True),
             fmt="json",
             page=1,
             limit=10,
-            fetch_all=True,
+            inert=frozenset({"page", "limit"}),
         )
         sc = get_structured(result)
         assert len(sc["result"]) == 50

@@ -163,6 +163,32 @@ class TestSyntheticValidationSurface:
         assert "limit must be <= 100" in str(exc.value)
 
     @pytest.mark.asyncio
+    async def test_fetch_all_ignores_pagination_bounds(self) -> None:
+        """fetch_all=true accepts page/limit the call ignores (regression #697).
+
+        Pagination bounds are validated only when pagination is effective.  With
+        ``fetch_all`` the page/limit pair is inert (the impl and the pipeline
+        skip slicing), so out-of-bounds values must not be rejected.
+        """
+        mcp, prefix = await _make_server()
+
+        result = get_structured(
+            await mcp.call_tool(
+                f"{prefix}search_tools",
+                {
+                    "query": "issue",
+                    "format": "json",
+                    "fetch_all": True,
+                    "limit": 500,
+                    "page": 0,
+                },
+            )
+        )
+        assert result["has_more"] is False
+        assert result["total_count"] >= 1
+        assert len(result["result"]) == result["total_count"]
+
+    @pytest.mark.asyncio
     async def test_declared_off_allowlist_param_reaches_impl(self) -> None:
         """tool_info's detail (declared, not allowlisted) still flows through.
 
@@ -269,6 +295,44 @@ class TestReadResourceArrayPagination:
         assert len(sc["result"]) == 30
         assert sc["has_more"] is False
         assert sc["total_count"] == 30
+
+    @pytest.mark.asyncio
+    async def test_array_resource_fetch_all_ignores_limit_bound(self) -> None:
+        """fetch_all on an array resource accepts an out-of-bounds limit (#697)."""
+        config = SimpleConfig(
+            url="https://git.example.com",
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+            enable_lazy_loading=True,
+        )
+        gitea_client = GiteaClient(config)
+        try:
+            with respx.mock() as mock_http:
+                mock_http.get("https://git.example.com/swagger.v1.json").respond(
+                    200, json=_make_spec()
+                )
+                mock_http.get("https://git.example.com/api/v1/repos/owner/repo/pulls").respond(
+                    200, json=[{"number": i} for i in range(30)]
+                )
+                mcp = await create_mcp_server(gitea_client)
+
+                result = await mcp.call_tool(
+                    f"{config.tool_prefix}read_resource",
+                    {
+                        "uri": "gitea://repos/owner/repo/pulls",
+                        "format": "json",
+                        "fetch_all": True,
+                        "limit": 500,
+                        "page": 0,
+                    },
+                )
+        finally:
+            await gitea_client.close()
+
+        sc = get_structured(result)
+        assert len(sc["result"]) == 30
+        assert sc["has_more"] is False
 
     @pytest.mark.asyncio
     async def test_array_resource_invalid_page_rejected(self) -> None:

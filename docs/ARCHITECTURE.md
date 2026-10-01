@@ -442,14 +442,22 @@ iterates routes.  Both families run the same spine:
 pre-hooks, context resolution, executor, render.  The executor is the only
 difference: the autogen HTTP pipeline vs. the synthetic local
 implementation — both return raw ``ExecutionResult`` data.  The virtual-param
-registry retains only pre-request concerns (``sudo``, ``content_type``);
-``format``/``detail``/``fetch_all`` are hook-less pipeline options read by
-the result pipeline.  Synthetic executors are wrapped with ``run_validation``
-(missing/unknown/enum validation against the tool's schema, matching autogen)
-and pagination is one rule (``validation.validate_pagination``) — both
-families name the page-size parameter ``limit``, with a per-tool
-``limit_max`` for synthetic (e.g. ``read_doc`` allows 200) and the cap read
-from the parameter schema.
+registry is the single source of every virtual param's effect: ``sudo`` /
+``content_type`` carry pre-request hooks; ``format`` / ``detail`` /
+``fetch_all`` are hook-less pipeline options read by the result pipeline; and
+``fetch_all`` additionally declares ``neutralizes`` (page/limit).  The spine
+derives the call's inert set once via ``virtual_params.inert_params`` and
+stamps it on the extracted dict the executor receives, so validation and
+rendering consume the same value — no consumer hardcodes a mode's name.
+Synthetic executors are wrapped with ``run_validation`` (missing/unknown/enum
+validation against the tool's schema, matching autogen); ``run_validation`` is
+pagination-agnostic.  Pagination bounds are owned by the paging executor — the
+autogen HTTP pipeline (via
+``validation.validate_pagination_from_schema``) or the synthetic executor
+(``tools/synthetic_contract.make_impl_executor``) — and validated exactly once
+per call; params the call neutralizes are skipped.  Both families name the
+page-size parameter ``limit``, with a per-tool ``limit_max`` for synthetic
+(e.g. ``read_doc`` allows 200) and the cap read from the parameter schema.
 
 ### Resource System
 

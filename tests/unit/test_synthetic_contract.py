@@ -16,6 +16,7 @@ from gitea_mcp_server.tools.synthetic_contract import (
     register_all_synthetic_tools,
     register_synthetic_tool,
 )
+from gitea_mcp_server.tools.virtual_params import INERT_KEY
 
 
 class TestRegisterAllSyntheticTools:
@@ -201,6 +202,59 @@ class TestSyntheticToolRegistration:
             with pytest.raises(ValidationError) as exc_info:
                 await executor(kwargs, {}, None)
             assert exc_info.value.field == field
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_skips_pagination_bounds(self) -> None:
+        """A call mode that neutralizes page/limit skips their validation.
+
+        Regression for #697: an agent passing a large ``limit`` (or ``page=0``)
+        alongside ``fetch_all`` must not be rejected for a parameter the call
+        ignores.  The contract spine derives the inert set once and stamps it
+        on the extracted dict (``INERT_KEY``); the executor reads it.
+        """
+        mcp = FastMCP("test")
+        _, executor = self._register_example(mcp)
+
+        # Out-of-bounds values are accepted when the call neutralizes them ...
+        await executor(
+            {"page": 0, "limit": 500},
+            {"fetch_all": True, INERT_KEY: frozenset({"page", "limit"})},
+            None,
+        )
+        # ... and still rejected when they are not neutralized.  A stamp of
+        # only ``page`` leaves ``limit`` enforced.
+        not_neutralized: tuple[dict[str, Any], ...] = (
+            {"fetch_all": False},
+            {},
+            {INERT_KEY: frozenset()},
+            {INERT_KEY: frozenset({"page"})},
+        )
+        for extracted in not_neutralized:
+            with pytest.raises(ValidationError):
+                await executor({"page": 0, "limit": 500}, extracted, None)
+
+    @pytest.mark.asyncio
+    async def test_executor_reads_stamped_inert_not_fetch_all(self) -> None:
+        """The executor trusts the spine's stamped set; it does not re-derive.
+
+        The stamp is authoritative in both directions: it can skip validation
+        without any ``fetch_all`` key, and a truthy ``fetch_all`` with an empty
+        stamp does not skip (proving the name is not hardcoded in the executor).
+        """
+        mcp = FastMCP("test")
+        _, executor = self._register_example(mcp)
+
+        await executor(
+            {"page": 0, "limit": 500},
+            {INERT_KEY: frozenset({"page", "limit"})},
+            None,
+        )
+        with pytest.raises(ValidationError):
+            await executor(
+                {"page": 0, "limit": 500},
+                {"fetch_all": True, INERT_KEY: frozenset()},
+                None,
+            )
 
     @pytest.mark.asyncio
     async def test_schema_declares_pagination_metadata(self) -> None:

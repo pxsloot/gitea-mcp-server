@@ -57,8 +57,9 @@ empty -- a short page is not automatically the last one. Object, scalar, and
 text resources are returned whole, with no paging.
 
 `fetch_all=true` returns every match in one go, on the search and discovery
-tools and on array-valued resources. That is convenient for small result sets;
-for large ones, page instead.
+tools and on array-valued resources. `page`/`limit` are ignored while it is
+set -- you do not need to (and should not) lower `limit` to fetch everything.
+That is convenient for small result sets; for large ones, page instead.
 
 In `json` and `raw`, paginated results tell you where you are: `has_more`,
 `next_offset`, and `total_count`. Reading a page past the end is not an error

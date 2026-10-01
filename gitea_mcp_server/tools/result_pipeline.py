@@ -7,7 +7,7 @@ total_count, result shape).  One result pipeline then applies:
 
 - **shape**    — wrap in ``{"result": ...}``; classify the result shape
 - **paginate** — slice, envelope (``has_more``/``next_offset``/``total_count``),
-  ``fetch_all``
+  neutralized params skipped
 - **format**   — json/markdown/raw + detail + formatter + error recovery
 
 The pipeline is the **single writer of both channels**: ``content`` (the text
@@ -75,7 +75,8 @@ type leaves the list unchanged rather than emitting content-free markers.
 Result shapes (``ExecutionResult.shape``):
 
 - ``"list"`` — array data; the pipeline slices by ``page``/``limit`` (or
-  ``fetch_all`` skip-slice) and emits the pagination envelope.
+  skips slicing when they are neutralized, e.g. ``fetch_all``) and emits the
+  pagination envelope.
 - ``"object"`` — dict data; unpaginated, or pre-sliced by the executor (e.g.
   ``tool_info``'s schema-property pages).  When ``paginated`` the envelope is
   emitted with the executor-supplied ``total_count``.  An out-of-range page
@@ -208,7 +209,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     detail: str = DEFAULT_DETAIL,
     page: int = 1,
     limit: int = DEFAULT_PAGE_SIZE,
-    fetch_all: bool = False,
+    inert: frozenset[str] = frozenset(),
     schema: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
     response_type: str | None = None,
@@ -223,10 +224,13 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
         result: The raw executor output.
         fmt: Output format — ``"raw"``, ``"json"``, or ``"markdown"``.
         detail: Output detail — ``"full"`` (default) or ``"concise"``.
-        page: Page number (1-based).  Ignored when ``fetch_all`` is True.
-        limit: Items per page.  Ignored when ``fetch_all`` is True.
-        fetch_all: When True, return all items without page slicing
-            (in-memory skip-slice — no HTTP loop).
+        page: Page number (1-based).  Ignored when neutralized by *inert*.
+        limit: Items per page.  Ignored when neutralized by *inert*; a
+            neutralized page size disables slicing (all items are returned).
+        inert: Parameter names the call's active mode neutralizes (e.g.
+            ``fetch_all`` neutralizes ``page``/``limit``).  Threaded as data
+            by the contract spine; the display layer never hardcodes a mode's
+            name.
         schema: Optional JSON Schema describing *data* for ``$ref``-aware
             collapse when ``detail="concise"``.  When the ``ExecutionResult``
             carries its own ``schema`` (executor-supplied, e.g. per-URI for
@@ -282,7 +286,7 @@ def render(  # noqa: PLR0913 - the pipeline is the single display path; every di
     # wins over the tool-level one from tool.meta.
     effective_view_hints = result.view_hints if result.view_hints is not None else view_hints
 
-    envelope, effective_shape = _paginate(result, page=page, limit=limit, fetch_all=fetch_all)
+    envelope, effective_shape = _paginate(result, page=page, limit=limit, inert=inert)
     return _format(
         envelope,
         result,
@@ -302,7 +306,7 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
     *,
     page: int,
     limit: int,
-    fetch_all: bool,
+    inert: frozenset[str],
 ) -> tuple[dict[str, Any], str]:
     """Shape + paginate: build the envelope dict for *result*.
 
@@ -311,9 +315,21 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
     treat the result as.  ``effective_shape`` is ``"empty"`` whenever the
     envelope represents an empty or out-of-range result (so the formatter
     renders the message instead of the data) and ``result.shape`` otherwise.
+
+    *inert* names parameters the call's active mode neutralizes (e.g.
+    ``fetch_all`` neutralizes ``page``/``limit``).  They are replaced by their
+    defaults so every shape branch sees a coherent page/limit, and a
+    neutralized page size disables list slicing (all items are returned).
     """
     data = result.data
     shape = result.shape
+    # Neutralized params are not part of the effective call: normalize them
+    # before any shape logic, and skip slicing when no page size applies.
+    skip_slice = "limit" in inert
+    if "page" in inert:
+        page = 1
+    if skip_slice:
+        limit = DEFAULT_PAGE_SIZE
 
     if shape == "empty":
         if result.paginated:
@@ -344,8 +360,8 @@ def _paginate(  # noqa: PLR0911 - each shape has distinct pagination semantics (
                 },
                 "empty",
             )
-        if fetch_all:
-            # In-memory skip-slice: everything, no more pages.
+        if skip_slice:
+            # In-memory skip-slice (e.g. fetch_all): everything, no more pages.
             return (
                 {
                     "result": items,

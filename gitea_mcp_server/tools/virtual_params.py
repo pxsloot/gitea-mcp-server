@@ -37,7 +37,10 @@ Lifecycle for every tool call::
 
 Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
-``tool_predicate`` — then the injection call site must pass ``tool``).
+``tool_predicate`` — then the injection call site must pass ``tool``; or it
+makes other params inert via ``neutralizes``, which :func:`inert_params`
+derives once and the spine stamps under :data:`INERT_KEY` for validation and
+rendering to read).
 
 Output contract:
     The ``format`` / ``detail`` entries below carry the **agent-facing**
@@ -120,6 +123,16 @@ class VirtualParam:
     Receives the :class:`~fastmcp.tools.base.Tool` object being wrapped.
     ``None`` (default) means the param is injected into every tool.
     """
+    neutralizes: frozenset[str] = frozenset()
+    """Real parameters this virtual param makes inert when truthy.
+
+    A call mode (e.g. ``fetch_all``) can render other parameters meaningless.
+    Declaring that effect here keeps the knowledge on the registry entry — the
+    single source of truth — instead of hardcoding the mode's name at every
+    consumer.  :func:`inert_params` unions ``neutralizes`` over the call's
+    active virtual params so validation and rendering skip exactly the
+    parameters the effective call does not use.
+    """
     pre_hook: Callable[[Any, dict[str, Any]], None] | None = None
     post_hook: Callable[[ToolResult, Any, dict[str, Any]], ToolResult] | None = None
     """Optional ``(result, value, all_extracted) → ToolResult`` callback
@@ -190,9 +203,15 @@ _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     default=False,
     description=(
         "When true, return all matching results without page slicing "
-        "(in-memory; no HTTP loop).  Default false — single page only."
+        "(in-memory; no HTTP loop); ``page``/``limit`` are ignored and not "
+        "validated.  Default false — single page only."
     ),
     tool_predicate=lambda t: bool((reg := get_tool_registration(t)) and reg.synthetic),
+    # ``fetch_all`` mode renders page/limit inert: the impl and the result
+    # pipeline both skip slicing, so validation must skip them too.  Declared
+    # here — the single place the mode's effect is stated — and derived by
+    # ``inert_params`` at every consumer.
+    neutralizes=frozenset({"page", "limit"}),
 )
 
 
@@ -432,6 +451,46 @@ def extract_from(
     return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS}
 
 
+INERT_KEY = "_inert"
+"""Key under which the contract spine stamps a call's inert set.
+
+The spine derives the set **once** per call (:func:`inert_params`) and, when
+non-empty, stores it on the extracted dict it hands to the executor.  Executors
+and the result pipeline read the stamped set as data instead of each
+re-deriving it — the knowledge stays on the registry entry; the derivation
+happens once.  Absent when no active param neutralizes anything (the default
+the consumers read).
+"""
+
+
+def inert_params(extracted: dict[str, Any]) -> frozenset[str]:
+    """Return the real params neutralized by *extracted*' active virtual params.
+
+    Reads each active (truthy) virtual param's
+    :attr:`VirtualParam.neutralizes` declaration and unions the results.  This
+    is the single derivation of the "this mode makes that parameter inert"
+    knowledge.  The contract spine calls it once per call and stamps the
+    result on the extracted dict under :data:`INERT_KEY`, so consumers
+    (validation, the result pipeline) read the same value as data and never
+    re-derive it or hardcode a mode's name.
+
+    Args:
+        extracted: The ``{name: value}`` dict returned by :func:`extract_from`.
+            Keys with no registry entry (pipeline metadata such as
+            ``_raw_schema`` or :data:`INERT_KEY` itself) are ignored.
+
+    Returns:
+        The union of neutralized parameter names, empty when no active param
+        neutralizes anything.
+    """
+    inert: set[str] = set()
+    for name, value in extracted.items():
+        vp = _VIRTUAL_PARAMS.get(name)
+        if vp is not None and value and vp.neutralizes:
+            inert.update(vp.neutralizes)
+    return frozenset(inert)
+
+
 def validate_extracted(extracted: dict[str, Any]) -> None:
     """Validate extracted virtual-parameter values against their schemas.
 
@@ -498,11 +557,13 @@ def apply_to(
 
 
 __all__ = [
+    "INERT_KEY",
     "VirtualParam",
     "apply_pre_hooks",
     "apply_scope_filter",
     "apply_to",
     "extract_from",
+    "inert_params",
     "inject_into",
     "validate_extracted",
 ]

@@ -327,6 +327,22 @@ class TestPaginationMetadata:
         # With 1 item and limit=10, page is not full → has_more should be False
         assert result.structured_content["has_more"] is False
 
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [({"limit": 101}, "limit must be <= 100"), ({"page": 0}, "page must be >= 1")],
+    )
+    async def test_out_of_bounds_pagination_rejected(
+        self, mcp_server: FastMCP, args: dict[str, Any], message: str
+    ) -> None:
+        """Autogen tools still enforce the schema bounds (regression #697).
+
+        Pagination validation moved from ``run_validation`` to the autogen
+        executor (``validate_pagination_from_schema``); both halves of the
+        friendly bound check must survive the move.
+        """
+        with pytest.raises(ToolError, match=message):
+            await mcp_server.call_tool("gitea_list_items", args)
+
 
 # ---------------------------------------------------------------------------
 # Scenario 3 - Cache invalidation end-to-end

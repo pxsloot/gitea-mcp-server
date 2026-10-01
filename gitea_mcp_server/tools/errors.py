@@ -12,7 +12,6 @@ from typing import Any, NoReturn, cast
 import httpx
 from fastmcp.tools.base import ToolResult
 
-from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.tools.schemas import resolve_ref
 from gitea_mcp_server.validation import (
@@ -20,7 +19,6 @@ from gitea_mcp_server.validation import (
     ValidationError,
     _collect_enum_values,
     validate_enum,
-    validate_pagination,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,6 +159,13 @@ def run_validation(
     ``state`` parameter's valid values are resolved from the spec
     rather than hardcoded to issue-state values.
 
+    Pagination bounds are deliberately **not** validated here: they are a
+    separate concern owned by the executor that pages
+    (:func:`~gitea_mcp_server.validation.validate_pagination_from_schema` for
+    autogen, :func:`~gitea_mcp_server.tools.synthetic_contract.make_impl_executor`
+    for synthetic), so a mode such as ``fetch_all=true`` that makes
+    ``page``/``limit`` inert also skips their validation.
+
     Args:
         kwargs: The tool arguments from the agent.
         required_params: List of required parameter names, or ``None``.
@@ -206,23 +211,6 @@ def run_validation(
             except (TypeError, ValueError, KeyError) as e:
                 msg = f"Validation error for {name}: {e}"
                 _raise_validation_error(msg, name, e)
-    if "page" in kwargs or "limit" in kwargs:
-        # The cap comes from the parameter schema — both tool families
-        # declare it there (autogen via SCHEMA_CONSTRAINTS, synthetic via
-        # the per-tool limit_max bound), so the per-tool limit is respected
-        # without hardcoding a family-specific default here.
-        limit_schema = (param_properties or {}).get("limit")
-        limit_max = (
-            limit_schema.get("maximum", PAGE_SIZE_MAX)
-            if isinstance(limit_schema, dict)
-            else PAGE_SIZE_MAX
-        )
-        validate_pagination(
-            kwargs.get("page"),
-            kwargs.get("limit"),
-            page_size_name="limit",
-            page_size_max=limit_max,
-        )
 
 
 async def run_with_error_handling(

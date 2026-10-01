@@ -73,9 +73,11 @@ from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
 from gitea_mcp_server.tools.virtual_params import (
+    INERT_KEY,
     apply_pre_hooks,
     apply_to,
     extract_from,
+    inert_params,
     validate_extracted,
 )
 
@@ -93,7 +95,11 @@ Executor = Callable[
 
 - ``kwargs`` — the tool arguments with virtual params already popped.
 - ``extracted`` — the extracted virtual-param values (``format``,
-  ``detail``, ``fetch_all``, ...) from :func:`extract_from`.
+  ``detail``, ``fetch_all``, ...) from :func:`extract_from`.  The spine also
+  stamps the call's inert set under
+  :data:`~gitea_mcp_server.tools.virtual_params.INERT_KEY` when non-empty (the
+  derivation happens once, in the spine); executors read it instead of
+  re-deriving it.
 - ``ctx`` — the resolved MCP ``Context``, or ``None`` when no session is
   active (progress reporting and logging degrade gracefully).
 
@@ -232,6 +238,16 @@ def build_transform_fn(
         # the tools whose domain formatters use them.
         display_extra = _derive_display_extra(kwargs)
 
+        # Params the call's active virtual params neutralize (e.g. ``fetch_all``
+        # makes page/limit inert).  Derived **once** here from the registry —
+        # the single source of the knowledge — and stamped on the extracted
+        # dict the executor receives, so validation and rendering consume the
+        # same value instead of each re-deriving it.  Absent when nothing is
+        # neutralized; consumers read empty as the default.
+        inert = inert_params(virtual_values)
+        if inert:
+            virtual_values[INERT_KEY] = inert
+
         result = await executor(kwargs, virtual_values, ctx)
 
         # Attach raw_schema to the extracted dict so the pipeline can render
@@ -259,7 +275,7 @@ def build_transform_fn(
                 detail=virtual_values.get("detail", DEFAULT_DETAIL),
                 page=page,
                 limit=limit,
-                fetch_all=virtual_values.get("fetch_all", False),
+                inert=inert,
                 schema=virtual_values.get("_raw_schema"),
                 extra=display_extra,
                 response_type=response_type,

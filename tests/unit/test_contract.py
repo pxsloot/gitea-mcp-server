@@ -17,6 +17,7 @@ from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
+from gitea_mcp_server.tools.virtual_params import INERT_KEY
 from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -73,6 +74,32 @@ class TestBuildTransformFn:
         assert received["kwargs"] == {"query": "q", "page": 1}
         assert received["extracted"] == {"format": "json", "detail": "full"}
         assert result.structured_content == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_spine_stamps_inert_once_on_extracted(self) -> None:
+        """The spine derives the inert set once and stamps it for the executor.
+
+        The executor consumes the stamped set as data; it never re-derives it.
+        The key is absent when nothing is neutralized (the consumers' default).
+        """
+        captured: dict[str, Any] = {}
+
+        async def executor(
+            kwargs: dict[str, Any],
+            extracted: dict[str, Any] | None,
+            ctx: Any,
+        ) -> ExecutionResult:
+            captured["extracted"] = dict(extracted or {})
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool(injected=frozenset({"format", "detail", "fetch_all"}))
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+
+        await transform_fn(query="q", format="json", fetch_all=True)
+        assert captured["extracted"][INERT_KEY] == frozenset({"page", "limit"})
+
+        await transform_fn(query="q", format="json")
+        assert INERT_KEY not in captured["extracted"]
 
     @pytest.mark.asyncio
     async def test_context_is_none_outside_session(self) -> None:

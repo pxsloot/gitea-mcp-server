@@ -749,11 +749,15 @@ class TestAnnotateWildcardPathParams:
         assert op["x-wildcard-path-param"] == "filepath"
         assert "is redundant" in caplog.text
 
-    def test_conflicting_annotation_defers_and_warns(
+    def test_conflicting_annotation_is_overridden_and_warns(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A different pre-existing annotation wins over the table, with a warning."""
+        """A differing non-placeholder annotation is overridden with the table value.
+
+        A differing value would misroute (the renderer only rewrites an exact
+        ``{param}`` segment), so the curated table is authoritative.
+        """
         spec = make_openapi_spec(
             paths={
                 "/repos/{owner}/{repo}/contents/{filepath}": {
@@ -768,19 +772,56 @@ class TestAnnotateWildcardPathParams:
             logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
         ):
             annotated = _annotate_wildcard_path_params(spec)
-        assert annotated == 0
+        assert annotated == 1
         op = cast(
             "dict[str, Any]",
             spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
         )
-        assert op["x-wildcard-path-param"] == "upstream_name"
-        assert "may be obsolete" in caplog.text
+        assert op["x-wildcard-path-param"] == "filepath"
+        assert "is not a placeholder of the path" in caplog.text
+        assert "overriding with" in caplog.text
 
-    def test_preexisting_annotation_on_one_method_does_not_block_others(
+    def test_conflicting_placeholder_annotation_is_overridden(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A pre-annotated method is left alone; the remaining methods are stamped."""
+        """A differing placeholder-shaped annotation is still overridden.
+
+        Even a value naming *a* placeholder misroutes when it is not the
+        wildcard segment, so the curated value wins; the wording notes that it
+        differs from the curated value rather than being malformed.
+        """
+        spec = make_openapi_spec(
+            paths={
+                "/repos/{owner}/{repo}/contents/{filepath}": {
+                    "get": {
+                        "operationId": "repoGetContents",
+                        "x-wildcard-path-param": "owner",
+                    },
+                },
+            },
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="gitea_mcp_server.openapi_converter.normalize"
+        ):
+            annotated = _annotate_wildcard_path_params(spec)
+        assert annotated == 1
+        op = cast(
+            "dict[str, Any]",
+            spec["paths"]["/repos/{owner}/{repo}/contents/{filepath}"]["get"],
+        )
+        assert op["x-wildcard-path-param"] == "filepath"
+        assert "differs from the curated value" in caplog.text
+
+    def test_partially_preexisting_annotation_is_not_reported_as_redundant(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A pre-annotated method does not make the whole entry redundant.
+
+        GET already carries the annotation; PUT is stamped.  The entry is
+        still needed, so the warning must not advise removing it.
+        """
         spec = make_openapi_spec(
             paths={
                 "/repos/{owner}/{repo}/contents/{filepath}": {
@@ -803,7 +844,8 @@ class TestAnnotateWildcardPathParams:
         )
         assert ops["get"]["x-wildcard-path-param"] == "filepath"
         assert ops["put"]["x-wildcard-path-param"] == "filepath"
-        assert "is redundant" in caplog.text
+        assert "still needed" in caplog.text
+        assert "is redundant" not in caplog.text
 
 
 class TestWildcardPathParamsTable:

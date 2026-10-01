@@ -51,20 +51,20 @@ multi-segment values route correctly.
 
 Rule C is a **documented exception** to the module's shape-driven ideal: it
 is source-driven, not shape-driven, because the wildcard information is
-erased during spec generation and no spec shape can recover it.  That
-erasure also bounds the drift guard: it cannot reach Rule D's two-way parity,
-because the authoritative fact — that a route is a wildcard — is absent from
-the spec.  Neither a *new* router wildcard (forward drift) nor a route that
-stopped being a wildcard is detectable here; both remain upgrade-audit items.
-What the guard does cover: ``_annotate_wildcard_path_params`` warns loudly
-when a table entry disappears from the fetched spec (path absent, or no
-operations), and when an operation already carries
-``x-wildcard-path-param`` before annotation.  A same-value annotation is
-redundant (the spec already expresses the wildcard, or a prior pass ran); a
-different-value one is upstream-authoritative and is deferred to, with the
-entry flagged as obsolete.  The table must be re-verified against the router
-when upgrading Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries
-the upgrade note and the known forward-drift example.
+erased during spec generation and no spec shape can recover it.  Its drift
+guard is two-directional — it warns when a table entry disappears from the
+fetched spec (path absent, or no operations) and when an operation already
+carries ``x-wildcard-path-param`` before annotation — but the redundancy
+direction is **opportunistic**: it fires only when the fetched spec already
+carries the extension, which upstream normally does not.  When it does, a
+same-value annotation is kept and the entry flagged for review, while a
+differing value is overridden with the curated one (the renderer only
+rewrites an exact ``{param}`` segment, so a differing annotation would
+misroute).  Forward drift — a *new* router wildcard, or a route that stopped
+being a wildcard — is erased from the spec and remains an upgrade-audit item.
+The table must be re-verified against the router when upgrading
+Gitea/Forgejo — the ``_WILDCARD_PATH_PARAMS`` comment carries the upgrade
+note and the known forward-drift example.
 
 **Rule D — scope-tag reconciliation (source-driven exception).**  Gitea/Forgejo
 derive token-scope requirements from the router's ``tokenRequiresScopes(...)``
@@ -424,14 +424,18 @@ def _annotate_boolean_checks(openapi_spec: OpenAPISpec) -> int:
 #
 # Guard: warns when an entry's path vanishes from the fetched spec (path
 # absent, or no operations), and when an operation already carries
-# ``x-wildcard-path-param`` before annotation — redundant if identical,
-# conflicting (and upstream-authoritative) if different.  It cannot warn
-# about a NEW router wildcard (forward drift) or a route that stopped being
-# a wildcard: both are erased from the spec.  Re-verify this table against
-# the router on every Gitea/Forgejo upgrade — only that audit catches them.
+# ``x-wildcard-path-param`` before annotation.  The redundancy direction is
+# opportunistic (it fires only if the spec already carries the extension):
+# an identical annotation is kept and the entry flagged for review; a
+# differing one is overridden with this table's curated value (a differing
+# annotation would misroute).  A NEW router wildcard and a route that stopped
+# being a wildcard are erased from the spec and stay upgrade-audit items.
+# Re-verify this table against the router on every Gitea/Forgejo upgrade.
 #
 # Table integrity: every value must be a ``{...}`` placeholder of its key
-# path; a test enforces it (``_path_placeholders``).
+# path; ``_path_placeholders`` is the shared guard primitive (used by the
+# runtime conflict check, the table-integrity test, and the unified guard in
+# #813).
 #
 # Known forward drift: Gitea main registers
 # ``/repos/{owner}/{repo}/contents-ext`` with ``m.Get("/*", ...)``
@@ -483,18 +487,21 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
     re-verified against ``routers/api/v1``.
 
     An operation that already carries ``x-wildcard-path-param`` before this
-    pass is **not** re-stamped, and the entry is flagged for review:
+    pass is handled here:
 
     * same value — the annotation is redundant (the spec already expresses
-      the wildcard, or a prior normalization pass ran);
-    * different value — the annotation is authoritative and wins (our own
-      pass only ever writes the table's value, so a different value can only
-      come from another source, i.e. upstream).
+      the wildcard, or a prior normalization pass ran); it is kept and the
+      entry flagged for review — but only when nothing else needed stamping,
+      since a partially pre-annotated path is still needed for its other
+      methods;
+    * different value — the curated table value is authoritative and
+      overrides it: the renderer only rewrites an exact ``{param}`` segment,
+      so a differing annotation would silently misroute.
 
-    This is the detectable half of Rule D's two-way guard.  The undetectable
-    half is intrinsic: a *new* router wildcard, and a route that stopped
-    being a wildcard, are both erased during spec generation (see the module
-    docstring).
+    The redundancy direction is **opportunistic** — it fires only when the
+    spec already carries the extension, which upstream normally does not.
+    Forward drift (a new or removed router wildcard) is erased during spec
+    generation and still needs the upgrade audit (see the module docstring).
 
     Mutates ``openapi_spec`` in-place.  Returns the number of operations
     annotated.
@@ -513,9 +520,11 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
                 path,
             )
             continue
+        placeholders = _path_placeholders(path)
         had_operation = False
-        redundant = False
-        conflicts: set[str] = set()
+        stamped: list[str] = []
+        redundant: list[str] = []
+        overridden: list[tuple[str, str]] = []
         for method in HTTP_METHODS_ALL:
             operation = path_item.get(method)
             if not isinstance(operation, dict):
@@ -524,12 +533,18 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
             existing = operation.get("x-wildcard-path-param")
             if isinstance(existing, str) and existing:
                 if existing == param_name:
-                    redundant = True
+                    redundant.append(method)
                 else:
-                    conflicts.add(existing)
+                    # A differing annotation would misroute (the renderer
+                    # only rewrites an exact ``{param}`` segment), so the
+                    # curated table value is authoritative: warn and override.
+                    operation["x-wildcard-path-param"] = param_name
+                    annotated += 1
+                    overridden.append((method, existing))
                 continue
             operation["x-wildcard-path-param"] = param_name
             annotated += 1
+            stamped.append(method)
             logger.debug(
                 "Annotated wildcard path param %s on %s %s",
                 param_name,
@@ -542,25 +557,44 @@ def _annotate_wildcard_path_params(openapi_spec: OpenAPISpec) -> int:
                 "spec — verify against routers/api/v1 (route may have changed)",
                 path,
             )
-        elif conflicts:
+            continue
+        for method, existing in overridden:
+            shape = (
+                "differs from the curated value"
+                if existing in placeholders
+                else "is not a placeholder of the path"
+            )
             logger.warning(
-                "Wildcard path table entry %s declares %r but the operation "
-                "already carries x-wildcard-path-param=%s — deferring to the "
-                "pre-existing annotation; the entry may be obsolete "
+                "Wildcard path %s %s already carries x-wildcard-path-param=%r, "
+                "which %s — overriding with %r; the entry may be obsolete "
                 "(upstream expresses the wildcard)",
+                method.upper(),
                 path,
-                param_name,
-                sorted(conflicts),
-            )
-        elif redundant:
-            logger.warning(
-                "Wildcard path table entry %s is redundant: the operation "
-                "already carries x-wildcard-path-param=%r before annotation "
-                "(upstream annotation, or a prior pass) — review "
-                "_WILDCARD_PATH_PARAMS",
-                path,
+                existing,
+                shape,
                 param_name,
             )
+        if redundant:
+            methods = ", ".join(method.upper() for method in redundant)
+            if stamped or overridden:
+                logger.warning(
+                    "Wildcard path table entry %s already carries "
+                    "x-wildcard-path-param=%r on %s — kept that annotation; "
+                    "the entry is still needed for the other operations",
+                    path,
+                    param_name,
+                    methods,
+                )
+            else:
+                logger.warning(
+                    "Wildcard path table entry %s is redundant: every "
+                    "operation (%s) already carries x-wildcard-path-param=%r "
+                    "before annotation (upstream annotation, or a prior "
+                    "pass) — review _WILDCARD_PATH_PARAMS",
+                    path,
+                    methods,
+                    param_name,
+                )
     return annotated
 
 

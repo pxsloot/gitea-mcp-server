@@ -446,8 +446,9 @@ registry is the single source of every virtual param's effect: ``sudo`` /
 ``content_type`` carry pre-request hooks; ``format`` / ``detail`` /
 ``fetch_all`` are hook-less pipeline options read by the result pipeline; and
 ``fetch_all`` additionally declares ``neutralizes`` (page/limit).  The spine
-derives the call's inert set via ``virtual_params.inert_params`` and threads it
-as data to validation and rendering — no consumer hardcodes a mode's name.
+derives the call's inert set once via ``virtual_params.inert_params`` and
+stamps it on the extracted dict the executor receives, so validation and
+rendering consume the same value — no consumer hardcodes a mode's name.
 Synthetic executors are wrapped with ``run_validation`` (missing/unknown/enum
 validation against the tool's schema, matching autogen); ``run_validation`` is
 pagination-agnostic.  Pagination bounds are owned by the paging executor — the

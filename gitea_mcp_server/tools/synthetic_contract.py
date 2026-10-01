@@ -56,7 +56,7 @@ from pydantic import Field
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
 from gitea_mcp_server.registration import REGISTRATION_KEY, ToolRegistration
-from gitea_mcp_server.tools.virtual_params import inert_params
+from gitea_mcp_server.tools.virtual_params import INERT_KEY
 from gitea_mcp_server.validation import validate_pagination
 
 
@@ -294,9 +294,11 @@ def make_impl_executor(
        registry name (e.g. ``tool_info``'s ``detail``).
     2. **Validate pagination** (when *paginated*) — friendly ``page >= 1`` /
        ``limit <= limit_max`` errors, matching autogen.  Parameters the call
-       neutralizes are skipped: ``inert_params(extracted)`` yields them from
-       the registry (``fetch_all`` neutralizes ``page``/``limit``), so
-       validation applies only to the arguments the call uses.
+       neutralizes are skipped: the contract spine stamps them on the extracted
+       dict under :data:`~gitea_mcp_server.tools.virtual_params.INERT_KEY`
+       (``fetch_all`` neutralizes ``page``/``limit``), so validation applies
+       only to the arguments the call uses.  The executor reads that stamped
+       set — it does not re-derive it.
     3. **Call the impl** with ``ctx`` when declared.
 
     The impl returns raw data — an
@@ -325,15 +327,17 @@ def make_impl_executor(
                 call_kwargs[name] = value
         # Skip params the call's active mode neutralizes (e.g. ``fetch_all``
         # makes page/limit inert): validating bounds would reject an argument
-        # the call never uses.  Derived from the registry, not a hardcoded
-        # name.  Validated exactly once, here, in the layer that pages.
+        # the call never uses.  The set is derived once by the contract spine
+        # and stamped on the extracted dict (``INERT_KEY``); read it as data,
+        # do not re-derive.  Absent means nothing is neutralized.  Validated
+        # exactly once, here, in the layer that pages.
         if paginated:
             validate_pagination(
                 call_kwargs.get("page"),
                 call_kwargs.get("limit"),
                 page_size_name="limit",
                 page_size_max=effective_limit_max,
-                inert=inert_params(extracted or {}),
+                inert=(extracted or {}).get(INERT_KEY, frozenset()),
             )
         if "ctx" in fn_params:
             call_kwargs["ctx"] = ctx

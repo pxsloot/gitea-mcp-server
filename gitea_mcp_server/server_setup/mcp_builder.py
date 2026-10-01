@@ -80,7 +80,7 @@ from gitea_mcp_server.tools.schemas import (
     unwrap_result_schema,
 )
 from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
-from gitea_mcp_server.tools.virtual_params import inert_params, inject_into
+from gitea_mcp_server.tools.virtual_params import INERT_KEY, inject_into
 from gitea_mcp_server.uri_utils import expand_path_params
 from gitea_mcp_server.validation import (
     ValidationError,
@@ -773,10 +773,10 @@ class _ToolWrappingTransform(Transform):
                 tool,
                 customization,
                 ctx=ctx,
-                # Params the call's active virtual params neutralize (empty for
-                # autogen today — ``fetch_all`` is synthetic-only) — derived
-                # from the registry so the site is mode-agnostic.
-                inert=inert_params(extracted or {}),
+                # Params the call's active mode neutralizes, stamped once by
+                # the contract spine on the extracted dict (``INERT_KEY``);
+                # empty for autogen today — ``fetch_all`` is synthetic-only.
+                inert=(extracted or {}).get(INERT_KEY, frozenset()),
             )
 
         return executor

@@ -529,14 +529,16 @@ name:
     )
 
 :func:`~gitea_mcp_server.tools.virtual_params.inert_params` unions
-``neutralizes`` over a call's active virtual params.  The contract spine derives
-the set once and hands it as data to validation
+``neutralizes`` over a call's active virtual params.  The contract spine calls it
+once per call and stamps the result on the extracted dict under
+:data:`~gitea_mcp_server.tools.virtual_params.INERT_KEY`; validation
 (``validation.validate_pagination`` / ``validate_pagination_from_schema``) and
-to the result pipeline (``render``), so both skip exactly the parameters the
-effective call does not use.  The registry never imports the display layer and
-vice versa — the set crosses the boundary as data, keeping the knowledge on the
-single registry entry.  Adding a neutralizing mode is therefore a registry
-entry, no consumer changes.
+the result pipeline (``render``) read that stamped set as data, so both skip
+exactly the parameters the effective call does not use — and neither re-derives
+it.  The registry never imports the display layer and vice versa — the set
+crosses the boundary as data, keeping the knowledge on the single registry
+entry.  Adding a neutralizing mode is therefore a registry entry, no consumer
+changes.
 
 ### 7. Add a response content transform
 
@@ -1130,10 +1132,10 @@ OpenAPI spec). They live in the same codebase and register themselves via
    pagination-agnostic).  Pagination bounds are owned by the paging executor
    and validated exactly once per call — autogen via
    ``validation.validate_pagination_from_schema``, synthetic via
-    ``make_impl_executor`` — with the registry-derived inert set
-    (``inert_params``; e.g. ``fetch_all`` neutralizes page/limit) skipping the
-    check.  Both families name the page-size parameter ``limit``, with a
-    per-tool ``limit_max`` for synthetic.
+   ``make_impl_executor`` — with the inert set the spine derives once
+   (``inert_params``; e.g. ``fetch_all`` neutralizes page/limit) skipping the
+   check.  Both families name the page-size parameter ``limit``, with a
+   per-tool ``limit_max`` for synthetic.
 
    For factory-migrated resources, use ``make_api_resource()`` which auto-derives
    ``size_hint`` from the response schema via ``ResourceMeta.for_schema()``.

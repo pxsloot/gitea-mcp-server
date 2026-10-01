@@ -39,7 +39,8 @@ Adding a new virtual parameter is a single registry entry -
 no other file changes needed (unless the param is tool-gated via
 ``tool_predicate`` — then the injection call site must pass ``tool``; or it
 makes other params inert via ``neutralizes``, which :func:`inert_params`
-derives for validation and rendering).
+derives once and the spine stamps under :data:`INERT_KEY` for validation and
+rendering to read).
 
 Output contract:
     The ``format`` / ``detail`` entries below carry the **agent-facing**
@@ -450,19 +451,33 @@ def extract_from(
     return {n: kwargs.pop(n) for n in list(kwargs) if n in _VIRTUAL_PARAMS}
 
 
+INERT_KEY = "_inert"
+"""Key under which the contract spine stamps a call's inert set.
+
+The spine derives the set **once** per call (:func:`inert_params`) and, when
+non-empty, stores it on the extracted dict it hands to the executor.  Executors
+and the result pipeline read the stamped set as data instead of each
+re-deriving it — the knowledge stays on the registry entry; the derivation
+happens once.  Absent when no active param neutralizes anything (the default
+the consumers read).
+"""
+
+
 def inert_params(extracted: dict[str, Any]) -> frozenset[str]:
     """Return the real params neutralized by *extracted*' active virtual params.
 
     Reads each active (truthy) virtual param's
     :attr:`VirtualParam.neutralizes` declaration and unions the results.  This
     is the single derivation of the "this mode makes that parameter inert"
-    knowledge, so consumers (validation, the result pipeline) receive the set
-    as data and never hardcode a mode's name.
+    knowledge.  The contract spine calls it once per call and stamps the
+    result on the extracted dict under :data:`INERT_KEY`, so consumers
+    (validation, the result pipeline) read the same value as data and never
+    re-derive it or hardcode a mode's name.
 
     Args:
         extracted: The ``{name: value}`` dict returned by :func:`extract_from`.
             Keys with no registry entry (pipeline metadata such as
-            ``_raw_schema``) are ignored.
+            ``_raw_schema`` or :data:`INERT_KEY` itself) are ignored.
 
     Returns:
         The union of neutralized parameter names, empty when no active param
@@ -542,6 +557,7 @@ def apply_to(
 
 
 __all__ = [
+    "INERT_KEY",
     "VirtualParam",
     "apply_pre_hooks",
     "apply_scope_filter",

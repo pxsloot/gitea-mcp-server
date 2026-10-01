@@ -31,10 +31,14 @@ from tests.helpers.registration import resource_meta
 
 
 def _render(
-    exec_result: Any, fmt: str = "markdown", page: int = 1, limit: int = 10, fetch_all: bool = False
+    exec_result: Any,
+    fmt: str = "markdown",
+    page: int = 1,
+    limit: int = 10,
+    inert: frozenset[str] = frozenset(),
 ) -> ToolResult:
     """Render an ExecutionResult through the single result pipeline."""
-    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit, fetch_all=fetch_all)
+    return _pipeline_render(exec_result, fmt=fmt, page=page, limit=limit, inert=inert)
 
 
 class TestCleanResourceUri:
@@ -834,7 +838,7 @@ class TestReadResourceArrayPagination:
         payload = json_module.dumps([{"id": i} for i in range(30)])
         exec_result = await self._executor_result(payload)
 
-        tool_result = _render(exec_result, fmt="json", fetch_all=True)
+        tool_result = _render(exec_result, fmt="json", inert=frozenset({"page", "limit"}))
 
         parsed = parse_json_content(tool_result)
         assert len(parsed["result"]) == 30
@@ -1526,7 +1530,7 @@ class TestMcpListResourcesFetchAll:
             fmt="raw",
             page=3,
             limit=5,
-            fetch_all=True,
+            inert=frozenset({"page", "limit"}),
         )
         sc = result.structured_content
         assert sc is not None
@@ -1552,7 +1556,7 @@ class TestMcpListResourcesFetchAll:
             fmt="raw",
             page=1,
             limit=3,
-            fetch_all=True,
+            inert=frozenset({"page", "limit"}),
         )
         sc = get_structured(result)
         assert len(sc["result"]) == 7

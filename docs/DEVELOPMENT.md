@@ -463,9 +463,11 @@ other virtual params.
     The single result pipeline
     (``gitea_mcp_server/tools/result_pipeline.py``) reads them from the
     extracted dict and renders the executor's raw ``ExecutionResult`` — no
-    display logic lives in the registry.  ``sudo`` and ``content_type`` are
-    the active examples with ``pre_hook``/``post_hook``; see them in
-    ``virtual_params.py`` for the live patterns.
+    display logic lives in the registry.  ``fetch_all`` additionally declares
+    ``neutralizes`` (see Step 4) — a declarative effect, not a hook.
+    ``sudo`` and ``content_type`` are the active examples with
+    ``pre_hook``/``post_hook``; see them in ``virtual_params.py`` for the live
+    patterns.
 
     A worked ``post_hook`` example (showing the ``(result, value,
     all_extracted)`` signature on a hypothetical ``verbose`` param):
@@ -508,6 +510,33 @@ display path never falls back to a literal:
 No hook signature needed?  ``pre_hook=None``, ``post_hook=None`` — the param
 is still injected, extracted, and available in ``all_extracted`` for other
 hooks to read.
+
+### 6b. Make a mode neutralize other params
+
+A call mode can render other parameters meaningless — ``fetch_all=true`` makes
+``page``/``limit`` inert (the impl and the pipeline skip slicing).  Declare that
+on the registry entry with ``neutralizes`` so no consumer hardcodes the mode's
+name:
+
+.. code-block:: python
+
+    _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
+        schema={"type": "boolean"},
+        default=False,
+        description="…",
+        # In this mode page/limit are ignored (and not validated).
+        neutralizes=frozenset({"page", "limit"}),
+    )
+
+:func:`~gitea_mcp_server.tools.virtual_params.inert_params` unions
+``neutralizes`` over a call's active virtual params.  The contract spine derives
+the set once and hands it as data to validation
+(``validation.validate_pagination`` / ``validate_pagination_from_schema``) and
+to the result pipeline (``render``), so both skip exactly the parameters the
+effective call does not use.  The registry never imports the display layer and
+vice versa — the set crosses the boundary as data, keeping the knowledge on the
+single registry entry.  Adding a neutralizing mode is therefore a registry
+entry, no consumer changes.
 
 ### 7. Add a response content transform
 
@@ -1101,9 +1130,10 @@ OpenAPI spec). They live in the same codebase and register themselves via
    pagination-agnostic).  Pagination bounds are owned by the paging executor
    and validated exactly once per call — autogen via
    ``validation.validate_pagination_from_schema``, synthetic via
-   ``make_impl_executor`` — with ``fetch_all=true`` skipping the check.  Both
-   families name the page-size parameter ``limit``, with a per-tool
-   ``limit_max`` for synthetic.
+    ``make_impl_executor`` — with the registry-derived inert set
+    (``inert_params``; e.g. ``fetch_all`` neutralizes page/limit) skipping the
+    check.  Both families name the page-size parameter ``limit``, with a
+    per-tool ``limit_max`` for synthetic.
 
    For factory-migrated resources, use ``make_api_resource()`` which auto-derives
    ``size_hint`` from the response schema via ``ResourceMeta.for_schema()``.

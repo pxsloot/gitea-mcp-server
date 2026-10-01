@@ -178,6 +178,7 @@ def validate_pagination(
     *,
     page_size_name: str = "limit",
     page_size_max: int = PAGE_SIZE_MAX,
+    inert: frozenset[str] = frozenset(),
 ) -> None:
     """Validate pagination parameters — one rule set for both tool families.
 
@@ -187,6 +188,12 @@ def validate_pagination(
     messages and *page_size_max* the upper bound (synthetic tools may raise
     it via their per-tool ``limit_max``, e.g. ``read_doc`` allows 200).
 
+    *inert* names parameters the effective call does not use (a neutralized
+    mode such as ``fetch_all``); those are skipped — validation applies only
+    to the arguments the call actually uses.  The set is passed in as data
+    (:func:`~gitea_mcp_server.tools.virtual_params.inert_params`); this module
+    never imports ``virtual_params`` (that would be circular).
+
     Args:
         page: Page number (integer >= 1), or ``None`` when absent.
         page_size: Items per page (integer between 1 and *page_size_max*),
@@ -195,16 +202,17 @@ def validate_pagination(
             error messages (``"limit"`` for both tool families).
         page_size_max: Upper bound for the page-size parameter.  Defaults
             to ``PAGE_SIZE_MAX``.
+        inert: Parameter names made inert by the call's active mode; skipped.
 
     Raises:
         ValidationError: If any parameter is invalid.
     """
-    if page is not None:
+    if page is not None and "page" not in inert:
         if not isinstance(page, int):
             _raise_validation_error("page must be an integer", "page")
         if page < 1:
             _raise_validation_error("page must be >= 1", "page")
-    if page_size is not None:
+    if page_size is not None and page_size_name not in inert:
         if not isinstance(page_size, int):
             _raise_validation_error(f"{page_size_name} must be an integer", page_size_name)
         if page_size < 1:
@@ -217,29 +225,39 @@ def validate_pagination(
 def validate_pagination_from_schema(
     kwargs: dict[str, Any],
     param_properties: dict[str, Any] | None = None,
+    *,
+    inert: frozenset[str] = frozenset(),
 ) -> None:
     """Validate ``page``/``limit`` using the bound declared in *param_properties*.
 
-    The schema-aware companion to :func:`validate_pagination`: it reads the
-    ``limit`` parameter's ``maximum`` from the tool's parameter schema, so the
-    per-tool bound (autogen ``SCHEMA_CONSTRAINTS``, synthetic ``limit_max``) is
-    respected without hardcoding a family-specific default.  A no-op when
-    neither parameter is present.
+    The schema-aware companion to :func:`validate_pagination`, called by the
+    autogen executor (``mcp_builder._run_transform_pipeline``) so the bound
+    declared in the parameter schema (``SCHEMA_CONSTRAINTS``) is enforced.
+    Synthetic tools validate directly via :func:`validate_pagination` with
+    their per-tool ``limit_max``; this helper is not on that path.
+
+    *inert* names parameters the effective call does not use (a neutralized
+    mode such as ``fetch_all``); those are dropped before validation.  A no-op
+    when neither parameter is present or both are inert.
 
     This is a distinct concern from
     :func:`~gitea_mcp_server.tools.errors.run_validation` (presence / type /
     enum / unknown args).  Pagination bounds are validated by the executor that
-    owns paging — exactly once per call — so a paginated tool whose mode makes
-    ``page``/``limit`` inert (``fetch_all=true``) never runs this.
+    owns paging — exactly once per call.
 
     Args:
         kwargs: The tool arguments.
         param_properties: The tool's ``parameters.properties`` dict, or ``None``.
+        inert: Parameter names made inert by the call's active mode; skipped.
 
     Raises:
-        ValidationError: If a present ``page``/``limit`` is invalid.
+        ValidationError: If a present, non-inert ``page``/``limit`` is invalid.
     """
     if "page" not in kwargs and "limit" not in kwargs:
+        return
+    page = None if "page" in inert else kwargs.get("page")
+    limit = None if "limit" in inert else kwargs.get("limit")
+    if page is None and limit is None:
         return
     limit_schema = (param_properties or {}).get("limit")
     limit_max = (
@@ -248,8 +266,8 @@ def validate_pagination_from_schema(
         else PAGE_SIZE_MAX
     )
     validate_pagination(
-        kwargs.get("page"),
-        kwargs.get("limit"),
+        page,
+        limit,
         page_size_name="limit",
         page_size_max=limit_max,
     )

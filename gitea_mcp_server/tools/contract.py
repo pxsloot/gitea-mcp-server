@@ -76,6 +76,7 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
     apply_to,
     extract_from,
+    inert_params,
     validate_extracted,
 )
 
@@ -240,6 +241,11 @@ def build_transform_fn(
         # format, etc.
         virtual_values["_raw_schema"] = reg.output_schema_raw
 
+        # Params the call's active virtual params neutralize (e.g. ``fetch_all``
+        # makes page/limit inert).  Derived from the registry as data and
+        # handed to the display pipeline — it never hardcodes a mode's name.
+        inert = inert_params(virtual_values)
+
         # Display type-binding key: the pre-wrap response type.  The pipeline
         # maps it to a domain markdown formatter; absent means the generic
         # renderer.
@@ -259,7 +265,7 @@ def build_transform_fn(
                 detail=virtual_values.get("detail", DEFAULT_DETAIL),
                 page=page,
                 limit=limit,
-                fetch_all=virtual_values.get("fetch_all", False),
+                inert=inert,
                 schema=virtual_values.get("_raw_schema"),
                 extra=display_extra,
                 response_type=response_type,

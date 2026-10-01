@@ -80,7 +80,7 @@ from gitea_mcp_server.tools.schemas import (
     unwrap_result_schema,
 )
 from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
-from gitea_mcp_server.tools.virtual_params import inject_into
+from gitea_mcp_server.tools.virtual_params import inert_params, inject_into
 from gitea_mcp_server.uri_utils import expand_path_params
 from gitea_mcp_server.validation import (
     ValidationError,
@@ -765,7 +765,7 @@ class _ToolWrappingTransform(Transform):
 
         async def executor(
             kwargs: dict[str, Any],
-            _extracted: dict[str, Any] | None,
+            extracted: dict[str, Any] | None,
             ctx: Any | None,
         ) -> ExecutionResult:
             return await self._run_transform_pipeline(
@@ -773,6 +773,10 @@ class _ToolWrappingTransform(Transform):
                 tool,
                 customization,
                 ctx=ctx,
+                # Params the call's active virtual params neutralize (empty for
+                # autogen today — ``fetch_all`` is synthetic-only) — derived
+                # from the registry so the site is mode-agnostic.
+                inert=inert_params(extracted or {}),
             )
 
         return executor
@@ -902,6 +906,7 @@ class _ToolWrappingTransform(Transform):
         tool: Tool,
         customization: ToolCustomization | None,
         ctx: Any | None = None,
+        inert: frozenset[str] = frozenset(),
     ) -> ExecutionResult:
         """Run the full tool execution pipeline: validate, execute, classify.
 
@@ -951,6 +956,7 @@ class _ToolWrappingTransform(Transform):
             is_binary_response,
             response_transform,
             output_schema,
+            inert=inert,
         )
 
     async def _try_handle_text_response(
@@ -1245,6 +1251,7 @@ class _ToolWrappingTransform(Transform):
         is_binary_response: bool,
         response_transform: str | None,
         output_schema: dict[str, Any] | None,
+        inert: frozenset[str] = frozenset(),
     ) -> ExecutionResult:
         """Run the tool execution pipeline with an optional Context.
 
@@ -1281,9 +1288,12 @@ class _ToolWrappingTransform(Transform):
                     tool.parameters.get("properties"),
                 )
                 # Pagination bounds are the paging executor's concern, not
-                # run_validation's (see its docstring).  Autogen has no
-                # fetch_all, so its page/limit are always effective.
-                validate_pagination_from_schema(kwargs, tool.parameters.get("properties"))
+                # run_validation's (see its docstring).  Params neutralized by
+                # the call's active mode (derived from the registry) are
+                # skipped; autogen has none today.
+                validate_pagination_from_schema(
+                    kwargs, tool.parameters.get("properties"), inert=inert
+                )
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 

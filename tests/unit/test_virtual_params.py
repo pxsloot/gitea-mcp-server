@@ -21,6 +21,7 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_scope_filter,
     apply_to,
     extract_from,
+    inert_params,
     inject_into,
     validate_extracted,
 )
@@ -857,3 +858,38 @@ class TestDetailSchemaSingleSource:
 
         assert _VIRTUAL_PARAMS["detail"].schema["enum"] == DETAIL_PARAM_SCHEMA["enum"]
         assert _VIRTUAL_PARAMS["detail"].schema["enum"] is not DETAIL_PARAM_SCHEMA["enum"]
+
+
+class TestInertParams:
+    """``inert_params`` derives neutralization from the registry, not names.
+
+    The "this mode makes that parameter inert" knowledge lives on the
+    :class:`VirtualParam` entry (``neutralizes``); consumers receive the set
+    as data.  Regression for #697's generalization: adding a new neutralizing
+    mode is a registry entry, and no consumer hardcodes ``fetch_all``.
+    """
+
+    def test_fetch_all_neutralizes_page_and_limit(self) -> None:
+        assert inert_params({"fetch_all": True}) == frozenset({"page", "limit"})
+
+    def test_inactive_mode_neutralizes_nothing(self) -> None:
+        assert inert_params({"fetch_all": False}) == frozenset()
+
+    def test_no_virtual_params_is_empty(self) -> None:
+        assert inert_params({}) == frozenset()
+
+    def test_non_neutralizing_params_and_metadata_are_ignored(self) -> None:
+        """``format`` has no effect; pipeline metadata keys are ignored."""
+        assert inert_params({"format": "json", "_raw_schema": {"type": "object"}}) == frozenset()
+
+    def test_declarative_neutralizes_union(self) -> None:
+        """A custom entry's ``neutralizes`` is honoured (no name hardcoding)."""
+        entry = VirtualParam(
+            schema={"type": "boolean"},
+            default=False,
+            description="A hypothetical mode.",
+            neutralizes=frozenset({"state"}),
+        )
+        with patch.dict("gitea_mcp_server.tools.virtual_params._VIRTUAL_PARAMS", {"mode": entry}):
+            assert inert_params({"mode": True}) == frozenset({"state"})
+            assert inert_params({"mode": False}) == frozenset()

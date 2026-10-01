@@ -493,6 +493,19 @@ class TestValidatePagination:
         validate_pagination()  # no error
         validate_pagination(page=None, page_size=None)
 
+    def test_inert_params_are_skipped(self) -> None:
+        """Neutralized params are not validated (#697 generalization).
+
+        A call mode (``fetch_all``) may neutralize ``page``/``limit``; the
+        inert set is threaded as data, so validation applies only to the
+        arguments the effective call uses.
+        """
+        validate_pagination(page=0, page_size=99999, inert=frozenset({"page", "limit"}))
+        # A non-inert param is still checked.
+        with pytest.raises(ValidationError) as exc:
+            validate_pagination(page=0, page_size=50, inert=frozenset({"limit"}))
+        assert exc.value.field == "page"
+
     @pytest.mark.parametrize(
         ("page", "page_size"),
         [

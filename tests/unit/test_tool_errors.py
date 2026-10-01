@@ -462,6 +462,20 @@ class TestRunValidation:
         validate_pagination_from_schema({}, {"limit": {"maximum": 100}})
         validate_pagination_from_schema({"query": "x"})
 
+    def test_schema_aware_pagination_skips_inert(self) -> None:
+        """Params neutralized by the active mode are dropped before validation."""
+        validate_pagination_from_schema(
+            {"page": 0, "limit": 99999},
+            {"limit": {"maximum": 100}},
+            inert=frozenset({"page", "limit"}),
+        )
+        with pytest.raises(ValidationError, match="page must be >= 1"):
+            validate_pagination_from_schema(
+                {"page": 0, "limit": 99999},
+                {"limit": {"maximum": 100}},
+                inert=frozenset({"limit"}),
+            )
+
     def test_validator_raises_type_error_wraps_cleanly(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

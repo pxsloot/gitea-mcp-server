@@ -56,6 +56,7 @@ from pydantic import Field
 from gitea_mcp_server.constants import PAGE_SIZE_MAX
 from gitea_mcp_server.pagination import PAGINATION_SCHEMA_PROPERTIES
 from gitea_mcp_server.registration import REGISTRATION_KEY, ToolRegistration
+from gitea_mcp_server.tools.virtual_params import inert_params
 from gitea_mcp_server.validation import validate_pagination
 
 
@@ -291,12 +292,11 @@ def make_impl_executor(
        impl declares.  This covers the generic ``format``/``detail``/
        ``fetch_all`` and any tool-specific param that collides with a
        registry name (e.g. ``tool_info``'s ``detail``).
-    2. **Validate pagination** (when *paginated* and ``fetch_all`` is not
-       set) — friendly ``page >= 1`` / ``limit <= limit_max`` errors, matching
-       autogen.  ``fetch_all=true`` makes ``page``/``limit`` inert (both the
-       impl and the result pipeline ignore them), so they are deliberately not
-       validated in that mode: validation applies only to arguments the call
-       uses.
+    2. **Validate pagination** (when *paginated*) — friendly ``page >= 1`` /
+       ``limit <= limit_max`` errors, matching autogen.  Parameters the call
+       neutralizes are skipped: ``inert_params(extracted)`` yields them from
+       the registry (``fetch_all`` neutralizes ``page``/``limit``), so
+       validation applies only to the arguments the call uses.
     3. **Call the impl** with ``ctx`` when declared.
 
     The impl returns raw data — an
@@ -323,15 +323,17 @@ def make_impl_executor(
         for name, value in (extracted or {}).items():
             if name in fn_params:
                 call_kwargs[name] = value
-        # ``fetch_all`` makes page/limit inert (the impl and the pipeline
-        # ignore them), so validating bounds would reject an argument the call
-        # never uses.  Validated exactly once, here, in the layer that pages.
-        if paginated and not (extracted or {}).get("fetch_all"):
+        # Skip params the call's active mode neutralizes (e.g. ``fetch_all``
+        # makes page/limit inert): validating bounds would reject an argument
+        # the call never uses.  Derived from the registry, not a hardcoded
+        # name.  Validated exactly once, here, in the layer that pages.
+        if paginated:
             validate_pagination(
                 call_kwargs.get("page"),
                 call_kwargs.get("limit"),
                 page_size_name="limit",
                 page_size_max=effective_limit_max,
+                inert=inert_params(extracted or {}),
             )
         if "ctx" in fn_params:
             call_kwargs["ctx"] = ctx

@@ -214,6 +214,47 @@ def validate_pagination(
             _raise_validation_error(msg, page_size_name)
 
 
+def validate_pagination_from_schema(
+    kwargs: dict[str, Any],
+    param_properties: dict[str, Any] | None = None,
+) -> None:
+    """Validate ``page``/``limit`` using the bound declared in *param_properties*.
+
+    The schema-aware companion to :func:`validate_pagination`: it reads the
+    ``limit`` parameter's ``maximum`` from the tool's parameter schema, so the
+    per-tool bound (autogen ``SCHEMA_CONSTRAINTS``, synthetic ``limit_max``) is
+    respected without hardcoding a family-specific default.  A no-op when
+    neither parameter is present.
+
+    This is a distinct concern from
+    :func:`~gitea_mcp_server.tools.errors.run_validation` (presence / type /
+    enum / unknown args).  Pagination bounds are validated by the executor that
+    owns paging — exactly once per call — so a paginated tool whose mode makes
+    ``page``/``limit`` inert (``fetch_all=true``) never runs this.
+
+    Args:
+        kwargs: The tool arguments.
+        param_properties: The tool's ``parameters.properties`` dict, or ``None``.
+
+    Raises:
+        ValidationError: If a present ``page``/``limit`` is invalid.
+    """
+    if "page" not in kwargs and "limit" not in kwargs:
+        return
+    limit_schema = (param_properties or {}).get("limit")
+    limit_max = (
+        limit_schema.get("maximum", PAGE_SIZE_MAX)
+        if isinstance(limit_schema, dict)
+        else PAGE_SIZE_MAX
+    )
+    validate_pagination(
+        kwargs.get("page"),
+        kwargs.get("limit"),
+        page_size_name="limit",
+        page_size_max=limit_max,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Schema-driven enum validation
 # ---------------------------------------------------------------------------

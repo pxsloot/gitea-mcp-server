@@ -190,7 +190,8 @@ _VIRTUAL_PARAMS["fetch_all"] = VirtualParam(
     default=False,
     description=(
         "When true, return all matching results without page slicing "
-        "(in-memory; no HTTP loop).  Default false — single page only."
+        "(in-memory; no HTTP loop); ``page``/``limit`` are ignored and not "
+        "validated.  Default false — single page only."
     ),
     tool_predicate=lambda t: bool((reg := get_tool_registration(t)) and reg.synthetic),
 )

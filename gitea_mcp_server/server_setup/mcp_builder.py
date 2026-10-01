@@ -82,7 +82,11 @@ from gitea_mcp_server.tools.schemas import (
 from gitea_mcp_server.tools.synthetic_contract import SyntheticExecutorRegistry
 from gitea_mcp_server.tools.virtual_params import inject_into
 from gitea_mcp_server.uri_utils import expand_path_params
-from gitea_mcp_server.validation import ValidationError, augment_schema_with_validation
+from gitea_mcp_server.validation import (
+    ValidationError,
+    augment_schema_with_validation,
+    validate_pagination_from_schema,
+)
 
 if TYPE_CHECKING:
     from gitea_mcp_server.client import GiteaClient
@@ -830,9 +834,14 @@ class _ToolWrappingTransform(Transform):
         ``SINGLE_VALIDATORS`` — against the tool's parameter schema before
         delegating to the executor, matching the autogen pipeline's
         validation surface.  ``ValidationError`` is converted to
-        ``ValueError`` (the friendly error surface autogen uses).  Pagination
-        (``page``/``limit`` with the tool's ``limit_max``) is validated
-        inside the executor itself.
+        ``ValueError`` (the friendly error surface autogen uses).
+
+        Pagination is *not* validated here: ``run_validation`` is
+        pagination-agnostic.  The executor built by
+        :func:`~gitea_mcp_server.tools.synthetic_contract.make_impl_executor`
+        owns ``page``/``limit`` bounds and skips them when ``fetch_all``
+        makes the pair inert — validated exactly once, in the layer that
+        pages.
         """
         required = tool.parameters.get("required")
         properties = tool.parameters.get("properties")
@@ -1271,6 +1280,10 @@ class _ToolWrappingTransform(Transform):
                     tool.parameters.get("required"),
                     tool.parameters.get("properties"),
                 )
+                # Pagination bounds are the paging executor's concern, not
+                # run_validation's (see its docstring).  Autogen has no
+                # fetch_all, so its page/limit are always effective.
+                validate_pagination_from_schema(kwargs, tool.parameters.get("properties"))
                 span.set_attribute("tool.name", tool.name)
                 span.set_attribute("validation.arg_count", len(kwargs))
 

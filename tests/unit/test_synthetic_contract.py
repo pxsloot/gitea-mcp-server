@@ -203,6 +203,24 @@ class TestSyntheticToolRegistration:
             assert exc_info.value.field == field
 
     @pytest.mark.asyncio
+    async def test_fetch_all_skips_pagination_bounds(self) -> None:
+        """``fetch_all=true`` makes page/limit inert, so they are not validated.
+
+        Regression for #697: an agent passing a large ``limit`` (or ``page=0``)
+        alongside ``fetch_all`` must not be rejected for a parameter the call
+        ignores.
+        """
+        mcp = FastMCP("test")
+        _, executor = self._register_example(mcp)
+
+        # Out-of-bounds values are accepted when fetch_all is set ...
+        await executor({"page": 0, "limit": 500}, {"fetch_all": True}, None)
+        # ... and still rejected when it is not.
+        for extracted in ({"fetch_all": False}, {}):
+            with pytest.raises(ValidationError):
+                await executor({"page": 0, "limit": 500}, extracted, None)
+
+    @pytest.mark.asyncio
     async def test_schema_declares_pagination_metadata(self) -> None:
         """Registered paginated tools expose metadata in their output schema."""
         mcp = FastMCP("test")

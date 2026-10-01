@@ -23,7 +23,7 @@ from gitea_mcp_server.tools.errors import (
     _param_is_boolean,
     run_validation,
 )
-from gitea_mcp_server.validation import ValidationError
+from gitea_mcp_server.validation import ValidationError, validate_pagination_from_schema
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 
@@ -433,14 +433,34 @@ class TestRunValidation:
             {"owner": "valid-owner", "repo": "valid-repo"}, required_params=["owner", "repo"]
         )
 
-    def test_pagination_validation_passes(self) -> None:
-        """When page/limit are present with valid values, should not raise."""
-        run_validation({"page": 1, "limit": 50})
+    def test_pagination_is_not_run_validation_concern(self) -> None:
+        """run_validation is pagination-agnostic (bounds belong to the executor).
 
-    def test_pagination_validation_rejects_invalid(self) -> None:
-        """When limit is too high, should raise ValidationError."""
-        with pytest.raises(ValidationError, match="page|limit"):
-            run_validation({"page": 1, "limit": 99999})
+        Regression for #697: pagination bounds are validated once, by the
+        executor that pages; run_validation must not reject an out-of-bounds
+        page/limit, or a mode that makes them inert (``fetch_all=true``)
+        cannot bypass the check.
+        """
+        run_validation({"page": 1, "limit": 99999})  # should not raise
+
+    def test_schema_aware_pagination_accepts_valid(self) -> None:
+        """validate_pagination_from_schema passes valid values through."""
+        validate_pagination_from_schema(
+            {"page": 1, "limit": 50}, {"limit": {"type": "integer", "maximum": 100}}
+        )
+
+    def test_schema_aware_pagination_rejects_above_schema_max(self) -> None:
+        """The bound is read from the parameter schema's ``limit.maximum``."""
+        with pytest.raises(ValidationError, match="limit must be <= 100"):
+            validate_pagination_from_schema(
+                {"page": 1, "limit": 101},
+                {"limit": {"type": "integer", "maximum": 100}},
+            )
+
+    def test_schema_aware_pagination_no_op_without_params(self) -> None:
+        """Absent page/limit means nothing to validate."""
+        validate_pagination_from_schema({}, {"limit": {"maximum": 100}})
+        validate_pagination_from_schema({"query": "x"})
 
     def test_validator_raises_type_error_wraps_cleanly(
         self, monkeypatch: pytest.MonkeyPatch

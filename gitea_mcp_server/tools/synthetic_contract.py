@@ -291,8 +291,12 @@ def make_impl_executor(
        impl declares.  This covers the generic ``format``/``detail``/
        ``fetch_all`` and any tool-specific param that collides with a
        registry name (e.g. ``tool_info``'s ``detail``).
-    2. **Validate pagination** (when *paginated*) — friendly ``page >= 1`` /
-       ``limit <= limit_max`` errors, matching autogen.
+    2. **Validate pagination** (when *paginated* and ``fetch_all`` is not
+       set) — friendly ``page >= 1`` / ``limit <= limit_max`` errors, matching
+       autogen.  ``fetch_all=true`` makes ``page``/``limit`` inert (both the
+       impl and the result pipeline ignore them), so they are deliberately not
+       validated in that mode: validation applies only to arguments the call
+       uses.
     3. **Call the impl** with ``ctx`` when declared.
 
     The impl returns raw data — an
@@ -319,7 +323,10 @@ def make_impl_executor(
         for name, value in (extracted or {}).items():
             if name in fn_params:
                 call_kwargs[name] = value
-        if paginated:
+        # ``fetch_all`` makes page/limit inert (the impl and the pipeline
+        # ignore them), so validating bounds would reject an argument the call
+        # never uses.  Validated exactly once, here, in the layer that pages.
+        if paginated and not (extracted or {}).get("fetch_all"):
             validate_pagination(
                 call_kwargs.get("page"),
                 call_kwargs.get("limit"),

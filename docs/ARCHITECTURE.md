@@ -445,9 +445,13 @@ implementation — both return raw ``ExecutionResult`` data.  The virtual-param
 registry retains only pre-request concerns (``sudo``, ``content_type``);
 ``format``/``detail``/``fetch_all`` are hook-less pipeline options read by
 the result pipeline.  Synthetic executors are wrapped with ``run_validation``
-(missing/unknown/enum validation against the tool's schema, matching autogen)
-and pagination is one rule (``validation.validate_pagination``) — both
-families name the page-size parameter ``limit``, with a per-tool
+(missing/unknown/enum validation against the tool's schema, matching autogen);
+``run_validation`` is pagination-agnostic.  Pagination bounds are owned by the
+paging executor — the autogen HTTP pipeline (via
+``validation.validate_pagination_from_schema``) or the synthetic executor
+(``tools/synthetic_contract.make_impl_executor``) — and validated exactly once
+per call.  A mode that makes the pair inert (``fetch_all=true``) skips that
+check.  Both families name the page-size parameter ``limit``, with a per-tool
 ``limit_max`` for synthetic (e.g. ``read_doc`` allows 200) and the cap read
 from the parameter schema.
 

@@ -170,7 +170,7 @@ tool_names:
       If using `due_date`, only the date part is used (time is ignored).
       Set `unset_due_date` to true to remove an existing deadline.
 
-      Use `issue_replace_labels` to change the issue's labels
+      Use `issue_replace_labels` to replace all labels.
 
   # Current user identity lookup
   user_get_current:

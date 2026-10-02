@@ -15,24 +15,31 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import respx
 
 from gitea_mcp_server.client import GiteaClient
+from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
+from gitea_mcp_server.openapi_converter.normalize import normalize_spec
+from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
 from gitea_mcp_server.registration import (
     RETIRED_RESOURCE_META_KEYS,
     RETIRED_TOOL_META_KEYS,
     get_resource_registration,
     get_tool_registration,
 )
+from gitea_mcp_server.resources.factory import derive_resource_uri
 from gitea_mcp_server.resources.meta import DETAILS, SIZE_HINTS
 from gitea_mcp_server.server import create_mcp_server
+from gitea_mcp_server.uri_utils import clean_resource_uri
 from tests.conftest import SimpleConfig
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
+
+    from gitea_mcp_server.openapi_types import OpenAPISpec, SwaggerV2Spec
 
 _FIXTURE = Path(__file__).parent.parent / "swagger.v1.json"
 
@@ -89,6 +96,33 @@ def _record_problems(tool: Any) -> list[str]:
     return record.validate()
 
 
+def _converted_fixture() -> OpenAPISpec:
+    """Load the committed fixture and run the production conversion pipeline.
+
+    The raw fixture is Swagger 2.0; ``x-wildcard-path-param`` and
+    ``x-param-rename`` are stamped *during* conversion, so the expected
+    resource URIs must be derived from the converted spec — the same shape
+    the server registers from.
+    """
+    with _FIXTURE.open() as f:
+        raw: dict[str, Any] = json.load(f)
+    spec = cast("OpenAPISpec", convert_swagger_to_openapi_v3(cast("SwaggerV2Spec", raw)))
+    resolve_param_collisions(spec)
+    normalize_spec(spec)
+    return spec
+
+
+async def _resource_uris(mcp: FastMCP) -> set[str]:
+    """The registered resource URIs (concrete + templates), cleaned."""
+    resources = [*await mcp.list_resources(), *await mcp.list_resource_templates()]
+    uris: set[str] = set()
+    for resource in resources:
+        uri = getattr(resource, "uri", None) or getattr(resource, "uri_template", None)
+        if uri:
+            uris.add(clean_resource_uri(str(uri)))
+    return uris
+
+
 @pytest.mark.asyncio
 async def test_every_exposed_tool_has_a_complete_record() -> None:
     """Full autogen + synthetic surface (lazy off) carries complete records."""
@@ -123,6 +157,71 @@ async def test_every_registered_resource_has_a_complete_record() -> None:
         elif record.size_hint not in SIZE_HINTS or record.default_detail not in DETAILS:
             failures[uri] = [f"bogus domain values {record.size_hint!r}/{record.default_detail!r}"]
     assert not failures, f"incomplete resource records: {failures}"
+
+
+@pytest.mark.asyncio
+async def test_every_get_endpoint_with_params_registers_a_resource() -> None:
+    """Every parameterized GET endpoint registers a resource (issue #783).
+
+    The expected set is derived from the **converted** fixture via
+    ``derive_resource_uri`` — the same single source of truth the factory
+    uses — so wildcard (``{filepath*}``) and query-suffix templates are
+    represented correctly.  Filtering is off in this test config
+    (``tool_filtering_enabled=False``), so the only exclusion is a
+    ``deprecated`` operation.
+
+    This covers "expected but not registered"; the reverse direction is
+    covered by ``test_every_registered_resource_has_a_complete_record``.
+    """
+    mcp, _prefix = await _make_server(lazy=False)
+    registered = await _resource_uris(mcp)
+
+    spec = _converted_fixture()
+    expected = {
+        clean_resource_uri(derive_resource_uri(spec, path, "GET"))
+        for path, item in spec["paths"].items()
+        if "get" in item and "{" in path and not item["get"].get("deprecated", False)
+    }
+
+    assert expected, "expected at least one parameterized GET in the fixture"
+    missing = expected - registered
+    assert not missing, f"parameterized GET endpoints registered no resource: {sorted(missing)}"
+
+
+@pytest.mark.asyncio
+async def test_hyphenated_path_placeholders_carry_param_rename() -> None:
+    """Every hyphenated path placeholder has an x-param-rename entry (#783).
+
+    The resource and cache surfaces read this contract to bridge the wire
+    spelling (``{repository-id}``) and the normalized kwarg
+    (``repository_id``).  Pin the direction, not merely non-emptiness — a
+    collision-derived map must not satisfy the assertion.
+    """
+    spec = _converted_fixture()
+    checked = 0
+    for path, item in spec["paths"].items():
+        operation = item.get("get")
+        if not isinstance(operation, dict):
+            continue
+        hyphenated = [name for name in _path_placeholders(path) if "-" in name]
+        if not hyphenated:
+            continue
+        rename_map = operation.get("x-param-rename") or {}
+        for wire in hyphenated:
+            normalized = wire.replace("-", "_")
+            assert rename_map.get(normalized) == wire, (
+                f"{path}: expected x-param-rename[{normalized!r}] == {wire!r}, "
+                f"got {rename_map!r}"
+            )
+            checked += 1
+    assert checked, "expected at least one hyphenated path placeholder in the fixture"
+
+
+def _path_placeholders(path: str) -> list[str]:
+    """Path-placeholder names in a spec path (template form)."""
+    from gitea_mcp_server.uri_utils import path_param_names
+
+    return path_param_names(path)
 
 
 @pytest.mark.asyncio

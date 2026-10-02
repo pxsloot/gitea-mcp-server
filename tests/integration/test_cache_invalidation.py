@@ -658,5 +658,171 @@ class TestQueryVariantStaleness:
             assert issues_route.call_count == 2, "third read should hit the API again"
 
 
+# ---------------------------------------------------------------------------
+# End-to-end: renamed path params (hyphen / camelCase) invalidate correctly
+# ---------------------------------------------------------------------------
+
+# Swagger 2.0 spec with renamed path placeholders.  Rule A renames the
+# parameter *definition* to snake_case but leaves the route template in its
+# original spelling, so the invalidation target must be substituted to the
+# wire form the cache keyed.
+#
+# The GET/POST pair satisfies the path-prefix rule: the resource api_path
+# ``/activitypub/user-id/{user-id}`` is a prefix of the write path
+# ``/activitypub/user-id/{user-id}/inbox``.
+RENAMED_PARAM_SWAGGER_SPEC = {
+    "swagger": "2.0",
+    "info": {"title": "Gitea API", "version": "1.0"},
+    "basePath": "/api/v1",
+    "paths": {
+        "/activitypub/user-id/{user-id}": {
+            "get": {
+                "operationId": "activitypubGetUser",
+                "summary": "Get a user's ActivityPub actor",
+                "parameters": [
+                    {"name": "user-id", "in": "path", "required": True, "type": "integer"}
+                ],
+                "responses": {
+                    "200": {"description": "ok", "schema": {"type": "object"}}
+                },
+            },
+        },
+        "/activitypub/user-id/{user-id}/inbox": {
+            "post": {
+                "operationId": "activitypubPostInbox",
+                "summary": "Post to a user's ActivityPub inbox",
+                "parameters": [
+                    {"name": "user-id", "in": "path", "required": True, "type": "integer"}
+                ],
+                "responses": {
+                    "200": {"description": "ok", "schema": {"type": "object"}}
+                },
+            },
+        },
+        "/repos/{owner}/{repo}/wiki/page/{pageName}": {
+            "get": {
+                "operationId": "repoGetWikiPage",
+                "summary": "Get a wiki page",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "pageName", "in": "path", "required": True, "type": "string"},
+                ],
+                "responses": {
+                    "200": {"description": "ok", "schema": {"type": "object"}}
+                },
+            },
+            "patch": {
+                "operationId": "repoEditWikiPage",
+                "summary": "Edit a wiki page",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "pageName", "in": "path", "required": True, "type": "string"},
+                ],
+                "responses": {
+                    "200": {"description": "ok", "schema": {"type": "object"}}
+                },
+            },
+        },
+    },
+}
+
+
+class TestRenamedParamInvalidation:
+    """A write clears a cached read whose path carries a renamed placeholder.
+
+    Rule A leaves the route template in its original spelling
+    (``{user-id}``, ``{pageName}``) while tool arguments carry the normalized
+    name (``user_id``, ``page_name``).  The invalidation target must be
+    substituted to the wire form the cache keyed — otherwise the read stays
+    stale.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hyphenated_write_invalidates_hyphenated_read(self) -> None:
+        import httpx
+
+        config = SimpleConfig(
+            url=BASE_TEST_URL,
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(
+                200, json=RENAMED_PARAM_SWAGGER_SPEC
+            )
+            actor_route = mock.get(f"{BASE_TEST_URL}/api/v1/activitypub/user-id/7")
+            actor_route.side_effect = [
+                httpx.Response(200, json={"version": "v1"}),
+                httpx.Response(200, json={"version": "v2"}),
+            ]
+            mock.post(f"{BASE_TEST_URL}/api/v1/activitypub/user-id/7/inbox").respond(
+                200, json={"ok": True}
+            )
+
+            mcp = await create_mcp_server(gitea_client)
+
+            # Read the wire-form URI — cached under the wire key.
+            r1 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v1" in r1.contents[0].content
+            r2 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v1" in r2.contents[0].content
+            assert actor_route.call_count == 1, "second read should come from cache"
+
+            # Write tool — must invalidate the hyphenated read.
+            await mcp.call_tool("gitea_activitypub_post_inbox", {"user_id": 7})
+
+            r3 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v2" in r3.contents[0].content
+            assert actor_route.call_count == 2, "write should have invalidated the read"
+
+    @pytest.mark.asyncio
+    async def test_camelcase_write_invalidates_camelcase_read(self) -> None:
+        import httpx
+
+        config = SimpleConfig(
+            url=BASE_TEST_URL,
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(
+                200, json=RENAMED_PARAM_SWAGGER_SPEC
+            )
+            page_route = mock.get(f"{BASE_TEST_URL}/api/v1/repos/o/r/wiki/page/Home")
+            page_route.side_effect = [
+                httpx.Response(200, json={"version": "v1"}),
+                httpx.Response(200, json={"version": "v2"}),
+            ]
+            mock.patch(f"{BASE_TEST_URL}/api/v1/repos/o/r/wiki/page/Home").respond(
+                200, json={"ok": True}
+            )
+
+            mcp = await create_mcp_server(gitea_client)
+
+            r1 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v1" in r1.contents[0].content
+            r2 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v1" in r2.contents[0].content
+            assert page_route.call_count == 1, "second read should come from cache"
+
+            # The tool kwarg is the normalized ``page_name``.
+            await mcp.call_tool(
+                "gitea_repo_edit_wiki_page",
+                {"owner": "o", "repo": "r", "page_name": "Home"},
+            )
+
+            r3 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v2" in r3.contents[0].content
+            assert page_route.call_count == 2, "write should have invalidated the read"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

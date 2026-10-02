@@ -965,6 +965,172 @@
           }
         }
       }
+    },
+    "/activitypub/repository-id/{repository-id}": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "activitypub"
+        ],
+        "summary": "Get a repository's ActivityPub actor",
+        "operationId": "activitypubGetRepository",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "repository id",
+            "name": "repository-id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/activitypub/user-id/{user-id}": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "activitypub"
+        ],
+        "summary": "Get a user's ActivityPub actor",
+        "operationId": "activitypubGetUser",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "user id",
+            "name": "user-id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/activitypub/user-id/{user-id}/activities/{activity-id}": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "activitypub"
+        ],
+        "summary": "Get an ActivityPub activity",
+        "operationId": "activitypubGetActivity",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "user id",
+            "name": "user-id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "activity id",
+            "name": "activity-id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/activitypub/user-id/{user-id}/activities/{activity-id}/activity": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "activitypub"
+        ],
+        "summary": "Get an ActivityPub activity detail",
+        "operationId": "activitypubGetActivityDetail",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "user id",
+            "name": "user-id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "activity id",
+            "name": "activity-id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/activitypub/user-id/{user-id}/outbox": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "activitypub"
+        ],
+        "summary": "Get a user's ActivityPub outbox",
+        "operationId": "activitypubGetUserOutbox",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "user id",
+            "name": "user-id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {

@@ -1389,6 +1389,125 @@ class TestMakeApiResourcePathEncoding:
 
 
 # ---------------------------------------------------------------------------
+# Tests: make_api_resource -- hyphenated / renamed path params (issue #783)
+# ---------------------------------------------------------------------------
+
+
+def _hyphen_spec() -> OpenAPISpec:
+    """A converted-shape spec with a hyphenated placeholder and its rename map."""
+    return make_openapi_spec(
+        paths={
+            "/activitypub/repository-id/{repository-id}": {
+                "get": {
+                    "operationId": "activitypubGetRepository",
+                    "parameters": [
+                        {
+                            "name": "repository_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "x-param-rename": {"repository_id": "repository-id"},
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {"schema": {"type": "object"}}
+                            },
+                        }
+                    },
+                }
+            },
+        }
+    )
+
+
+class TestMakeApiResourceHyphenatedPathParams:
+    """A hyphenated placeholder registers and substitutes the normalized kwarg.
+
+    Uses a **real** ``FastMCP`` — the ``MagicMock(spec=FastMCP)`` used
+    elsewhere never invokes FastMCP's URI/signature validation, which is why
+    this class of bug was invisible.
+    """
+
+    @pytest.mark.asyncio
+    async def test_registers_and_substitutes_normalized_kwarg(self) -> None:
+        mcp = FastMCP("test")
+        client = _make_mock_client(json_response={"ok": True})
+        spec = _hyphen_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://activitypub/repository-id/{repository-id}",
+            api_path="/activitypub/repository-id/{repository-id}",
+        )
+
+        assert handler is not None
+        # The resource is registered as a template (not silently skipped).
+        templates = await mcp.list_resource_templates()
+        assert any(
+            "activitypub/repository-id/{repository-id}" in str(t.uri_template)
+            for t in templates
+        )
+
+        # The normalized kwarg substitutes into the hyphenated wire path.
+        await handler(repository_id=115)
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/activitypub/repository-id/115"
+
+    @pytest.mark.asyncio
+    async def test_read_through_fastmcp_resolves_wire_uri(self) -> None:
+        """A read of the wire-form URI reaches the handler with the normalized kwarg."""
+        mcp = FastMCP("test")
+        client = _make_mock_client(json_response={"ok": True})
+        spec = _hyphen_spec()
+
+        make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://activitypub/repository-id/{repository-id}",
+            api_path="/activitypub/repository-id/{repository-id}",
+        )
+
+        result = await mcp.read_resource("gitea://activitypub/repository-id/115")
+        assert result is not None
+        client.request.assert_called_once()
+        args, _ = client.request.call_args
+        assert args[1] == "/activitypub/repository-id/115"
+
+    @pytest.mark.asyncio
+    async def test_404_maps_to_not_found(self) -> None:
+        mcp = FastMCP("test")
+        client = _make_mock_client()
+
+        class Mock404(Exception):
+            def __init__(self) -> None:
+                self.status_code = HTTP_STATUS_NOT_FOUND
+                super().__init__("Not found")
+
+        client.request = AsyncMock(side_effect=Mock404())
+        spec = _hyphen_spec()
+
+        handler = make_api_resource(
+            mcp,
+            client,
+            spec,
+            uri="gitea://activitypub/repository-id/{repository-id}",
+            api_path="/activitypub/repository-id/{repository-id}",
+        )
+
+        assert handler is not None
+        with pytest.raises(ResourceError) as exc:
+            await handler(repository_id=999)
+        assert exc.value.args[0]["code"] == "NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
 # Tests: make_api_resource -- context_meta_keys (path + query params)
 # ---------------------------------------------------------------------------
 

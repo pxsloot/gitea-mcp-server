@@ -19,9 +19,9 @@ import pytest
 
 from gitea_mcp_server.openapi_converter import convert_swagger_to_openapi_v3
 from gitea_mcp_server.openapi_converter.param_collision import resolve_param_collisions
+from gitea_mcp_server.param_rename import read_param_rename
 from gitea_mcp_server.server_setup.mcp_builder import (
     _apply_param_rename,
-    _read_param_rename,
     create_openapi_provider,
 )
 from tests.helpers.spec_fixtures import make_openapi_spec
@@ -273,7 +273,7 @@ class TestSpecLevelResolution:
 
 
 # ---------------------------------------------------------------------------
-# Tests: runtime shim (_read_param_rename / _apply_param_rename)
+# Tests: runtime shim (read_param_rename / _apply_param_rename)
 # ---------------------------------------------------------------------------
 
 
@@ -281,9 +281,9 @@ class TestRuntimeShim:
     """Tests that the runtime shim correctly fixes parameter_map."""
 
     def test_read_param_rename_after_resolution(self, blocking_spec: OpenAPISpec) -> None:
-        """_read_param_rename finds the x-param-rename set by resolution."""
+        """read_param_rename finds the x-param-rename set by resolution."""
         resolve_param_collisions(blocking_spec)
-        rename_map = _read_param_rename(
+        rename_map = read_param_rename(
             blocking_spec,
             "/repos/{owner}/{repo}/issues/{index}/blocks",
             "POST",

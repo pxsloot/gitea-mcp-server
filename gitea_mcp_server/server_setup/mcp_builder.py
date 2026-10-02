@@ -467,30 +467,6 @@ def _build_customization_meta(
     component.meta = component_meta
 
 
-def _read_param_rename(
-    openapi_spec: OpenAPISpec,
-    path: str,
-    method: str,
-) -> dict[str, str] | None:
-    """Read the ``x-param-rename`` mapping from a spec operation.
-
-    Thin re-export of :func:`gitea_mcp_server.param_rename.read_param_rename`
-    — the single home for the contract, shared with the resource and
-    cache-invalidation surfaces.  Kept as a module-local name for the existing
-    call sites in this module.
-
-    Args:
-        openapi_spec: The OpenAPI 3.1 spec.
-        path: The route path (e.g. ``/repos/{owner}/{repo}/issues/{index}/blocks``).
-        method: The HTTP method (e.g. ``"POST"``).
-
-    Returns:
-        Dict mapping new names to original names (e.g. ``{"body_owner": "owner"}``),
-        or ``None`` if no rename mapping exists.
-    """
-    return read_param_rename(openapi_spec, path, method)
-
-
 def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
     """Walk an exception's cause chain to find an ``httpx.HTTPStatusError``.
 
@@ -582,7 +558,7 @@ def _apply_param_rename(
     """
     path = getattr(route, "path", "")
     method = getattr(route, "method", "")
-    rename_map = _read_param_rename(openapi_spec, path, method)
+    rename_map = read_param_rename(openapi_spec, path, method)
     if not rename_map:
         return
 

@@ -25,10 +25,7 @@ from gitea_mcp_server.openapi_converter.param_collision import (
     _resolve_operation_collisions,
     resolve_param_collisions,
 )
-from gitea_mcp_server.server_setup.mcp_builder import (
-    _apply_param_rename,
-    _read_param_rename,
-)
+from gitea_mcp_server.server_setup.mcp_builder import _apply_param_rename
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 # ===========================================================================
@@ -1734,57 +1731,8 @@ class TestResolveParamCollisions:
 
 
 # ===========================================================================
-# Tests: _read_param_rename and _apply_param_rename (runtime shim)
+# Tests: _apply_param_rename (runtime shim)
 # ===========================================================================
-
-
-class TestReadParamRename:
-    """Tests for reading the ``x-param-rename`` from the spec."""
-
-    def test_reads_rename_map(self) -> None:
-        """``x-param-rename`` is read correctly."""
-        spec = make_openapi_spec(
-            paths={
-                "/test/{owner}": {
-                    "post": {
-                        "operationId": "test",
-                        "x-param-rename": {"body_owner": "owner"},
-                    },
-                },
-            },
-        )
-        result = _read_param_rename(spec, "/test/{owner}", "POST")
-        assert result == {"body_owner": "owner"}
-
-    def test_no_rename_map(self) -> None:
-        """No ``x-param-rename`` returns None."""
-        spec = make_openapi_spec(
-            paths={
-                "/test/{owner}": {
-                    "post": {"operationId": "test"},
-                },
-            },
-        )
-        assert _read_param_rename(spec, "/test/{owner}", "POST") is None
-
-    def test_wrong_method(self) -> None:
-        """Wrong method returns None."""
-        spec = make_openapi_spec(
-            paths={
-                "/test/{owner}": {
-                    "post": {
-                        "operationId": "test",
-                        "x-param-rename": {"body_owner": "owner"},
-                    },
-                },
-            },
-        )
-        assert _read_param_rename(spec, "/test/{owner}", "GET") is None
-
-    def test_nonexistent_path(self) -> None:
-        """Nonexistent path returns None."""
-        spec = make_openapi_spec()
-        assert _read_param_rename(spec, "/nonexistent", "POST") is None
 
 
 class TestApplyParamRename:

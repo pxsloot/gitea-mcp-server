@@ -4,6 +4,21 @@ Flat infrastructure module — no domain dependencies.  Provides helpers for
 working with RFC 6570 URI templates used across the resource registration,
 tool, and display layers.
 
+Path placeholders
+-----------------
+:func:`iter_path_params` / :func:`path_param_names` are the **single
+path-placeholder parser**.  They recognize ``{param}`` and ``{param*}``,
+including kebab-case names (``{repository-id}``), and deliberately do **not**
+match an RFC 6570 ``{?a,b}`` query suffix — that is a separate grammar, still
+handled by :func:`clean_resource_uri` (``\\{\\?[^}]+\\}$``),
+:func:`expand_path_params` (partition on ``{?``), and FastMCP.  Do not claim a
+single *URI* placeholder contract while that second grammar lives on.
+
+The parser is **structural**: it reports names in template form (original
+spelling preserved).  The normalized↔wire rename mapping is the spec's
+``x-param-rename`` contract (``gitea_mcp_server.param_rename``), read by both
+the tool and resource surfaces — not derived from the placeholder names.
+
 Percent-encoding
 ----------------
 Path parameter values are percent-encoded when substituted into a URI or an
@@ -43,13 +58,51 @@ This is the single home for that contract.  Audited substitution sites
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 from fastmcp.resources.template import expand_uri_template
 
-# ``{param*}`` — a wildcard path parameter that may span ``/``.
-_WILDCARD_PARAM_RE = re.compile(r"\{(\w+)\*\}")
+# A path placeholder: ``{param}`` or ``{param*}``.  The name charset includes
+# ``-`` so kebab-case placeholders (``{repository-id}``) are recognized — the
+# route template keeps the original wire spelling while Rule A renames the
+# parameter *definition* to snake_case (see ``openapi_converter.normalize``).
+# An RFC 6570 ``{?a,b}`` query suffix is deliberately **not** matched: it is a
+# different grammar (see the module docstring).
+_PATH_PARAM_RE = re.compile(r"\{([\w-]+)(\*)?\}")
+
+
+def iter_path_params(template: str) -> Iterator[tuple[str, bool]]:
+    """Yield ``(name, is_wildcard)`` for each path placeholder in a template.
+
+    Names are in **template form** — the original spelling is preserved
+    (``{repository-id}`` yields ``"repository-id"``, not ``"repository_id"``).
+    The normalized↔wire mapping is the spec's ``x-param-rename`` contract, not
+    this parser's concern.
+
+    Args:
+        template: A URI or API-path template.
+
+    Yields:
+        ``(name, is_wildcard)`` in template order.
+    """
+    for match in _PATH_PARAM_RE.finditer(template):
+        yield match.group(1), match.group(2) is not None
+
+
+def path_param_names(template: str) -> list[str]:
+    """Return the path-placeholder names in a template, order-preserving.
+
+    Template-form names (hyphens preserved).  A ``{?a,b}`` query suffix is not
+    a path placeholder and is not returned.
+
+    Args:
+        template: A URI or API-path template.
+
+    Returns:
+        The path-param names (e.g. ``["owner", "repo", "repository-id"]``).
+    """
+    return [name for name, _ in iter_path_params(template)]
 
 
 def clean_resource_uri(uri: str) -> str:
@@ -97,7 +150,7 @@ def wildcard_param_names(uri_template: str) -> set[str]:
     Returns:
         The set of wildcard parameter names (e.g. ``{"filepath"}``).
     """
-    return set(_WILDCARD_PARAM_RE.findall(uri_template))
+    return {name for name, is_wildcard in iter_path_params(uri_template) if is_wildcard}
 
 
 def render_wildcard_segment(uri: str, param: str) -> str:
@@ -153,6 +206,8 @@ def expand_path_params(template: str, params: Mapping[str, Any]) -> str:
 __all__ = [
     "clean_resource_uri",
     "expand_path_params",
+    "iter_path_params",
+    "path_param_names",
     "render_wildcard_segment",
     "wildcard_param_names",
 ]

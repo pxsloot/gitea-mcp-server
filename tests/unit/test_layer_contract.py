@@ -39,6 +39,7 @@ LAYERS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
             "gitea_mcp_server.schema_utils",
             "gitea_mcp_server.marker",
             "gitea_mcp_server.pagination",
+            "gitea_mcp_server.param_rename",
             "gitea_mcp_server.uri_utils",
             "gitea_mcp_server.context_utils",
             "gitea_mcp_server.request_context",

@@ -73,7 +73,6 @@ Parameter                         Default        Purpose
 import inspect
 import json
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, cast
@@ -87,6 +86,7 @@ from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.models import ViewHints
 from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 from gitea_mcp_server.openapi_types import OpenAPISpec
+from gitea_mcp_server.param_rename import path_param_map
 from gitea_mcp_server.registration import build_content_meta
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.surface import register_resource_surface
@@ -99,6 +99,7 @@ from gitea_mcp_server.tools.schemas import (
 from gitea_mcp_server.uri_utils import (
     clean_resource_uri,
     expand_path_params,
+    path_param_names,
     render_wildcard_segment,
     wildcard_param_names,
 )
@@ -888,11 +889,21 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
         error_message = "Resource not found."
     _resource_type: str = resource_type or format_hint or "api"
 
-    # Detect whether the URI has path parameters -- concrete URIs
+    # Detect whether the URI needs a parameterized handler.  Concrete URIs
     # (e.g. ``gitea://user``) need a handler with no function params,
     # otherwise FastMCP creates a ResourceTemplate and fails the
     # "URI template must contain at least one parameter" validation.
-    _has_uri_params = bool(re.search(r"\{[\w?*,]+\}", uri))
+    #
+    # The invariant: a parameterized URI must never be classified concrete.
+    # The predicate reads the URI's own shape — path placeholders (including
+    # kebab-case, via the shared parser), declared query/context params, or a
+    # ``{?query}`` suffix.  The suffix arm is the structural check; the
+    # ``query_params``/``context_params`` arms are redundant for a well-formed
+    # resource (the suffix is contractually required) but keep the predicate
+    # honest if a caller declares params without the suffix.
+    _has_uri_params = bool(
+        path_param_names(uri) or query_params or context_params or clean_resource_uri(uri) != uri
+    )
 
     # Render the wildcard intent (declared in the resource URI as ``{param*}``)
     # onto the API path once at registration: multi-segment values like file
@@ -901,6 +912,16 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     _api_path_template = api_path
     for _wildcard_param in wildcard_param_names(uri):
         _api_path_template = render_wildcard_segment(_api_path_template, _wildcard_param)
+
+    # Path-param classification map, built once at registration.  Rule A
+    # renames the parameter *definition* to snake_case but leaves the route
+    # template in its original spelling, so a handler kwarg may be the
+    # normalized name (``repository_id``) while the template carries the wire
+    # name (``{repository-id}``).  ``path_param_map`` owns the contract read,
+    # the inversion, and the restriction to the template's actual placeholders
+    # (so a body/query rename can never be routed into ``path_params``).
+    _path_names = set(path_param_names(api_path))
+    _param_map = path_param_map(openapi_spec, api_path, method_lower, _path_names)
 
     if _has_uri_params:
 
@@ -922,7 +943,14 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                     context_params and key in context_params
                 ):
                     continue
-                if f"{{{key}}}" in api_path:
+                wire = _param_map.arg_to_wire.get(key)
+                if wire is not None:
+                    # Normalized kwarg -> wire placeholder (e.g. repository_id
+                    # -> {repository-id}).
+                    path_params[wire] = value
+                elif key in _path_names:
+                    # Already wire-spelled: snake_case, or a camelCase original
+                    # FastMCP passes through unchanged (e.g. {pageName}).
                     path_params[key] = value
                 else:
                     logger.warning(

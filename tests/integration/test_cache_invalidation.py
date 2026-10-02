@@ -154,6 +154,11 @@ def _register_surface() -> None:
     )
 
 
+def _templates(targets: list[tuple[str, dict[str, str]]]) -> set[str]:
+    """The URI templates in a derived target list (drops the arg-key maps)."""
+    return {template for template, _ in targets}
+
+
 @pytest.fixture(autouse=True)
 def clear_invalidation_state() -> Generator[None, None, None]:
     """Clear the invalidation map, surface, and pending tools before each test."""
@@ -250,7 +255,7 @@ class TestCacheInvalidationIntegration:
         record_write_tool("label_create", "/repos/{owner}/{repo}/labels", "POST")
         build_invalidation_map(spec)
 
-        assert set(TOOL_INVALIDATION_MAP["label_create"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["label_create"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/labels",
             "gitea://repos/{owner}/{repo}/issues",
@@ -278,21 +283,35 @@ class TestCacheInvalidationIntegration:
         build_invalidation_map(spec)
 
         # Issues
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["issue_create"]
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["issue_delete"]
-        # Pulls (merge has no response type — path-prefix still covers the list)
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["pull_create"]
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["pull_merge"]
-        # Repo (full prefix: issue writes invalidate the repo resource too)
-        assert "gitea://repos/{owner}/{repo}" in TOOL_INVALIDATION_MAP["issue_create"]
-        # Files + readme wrapper
-        assert (
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}" in TOOL_INVALIDATION_MAP["file_put"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["issue_create"]
         )
-        assert "gitea://repos/{owner}/{repo}/readme" in TOOL_INVALIDATION_MAP["file_put"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["issue_delete"]
+        )
+        # Pulls (merge has no response type — path-prefix still covers the list)
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["pull_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["pull_merge"]
+        )
+        # Repo (full prefix: issue writes invalidate the repo resource too)
+        assert "gitea://repos/{owner}/{repo}" in _templates(TOOL_INVALIDATION_MAP["issue_create"])
+        # Files + readme wrapper
+        assert "gitea://repos/{owner}/{repo}/contents/{filepath*}" in _templates(
+            TOOL_INVALIDATION_MAP["file_put"]
+        )
+        assert "gitea://repos/{owner}/{repo}/readme" in _templates(
+            TOOL_INVALIDATION_MAP["file_put"]
+        )
         # Labels cross-tree
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["label_create"]
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["label_create"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["label_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["label_create"]
+        )
 
     @pytest.mark.asyncio
     async def test_safe_methods_not_recorded(self) -> None:
@@ -317,7 +336,7 @@ class TestTemplateSubstitution:
 
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "myorg", "repo": "myrepo"}
-        assert _substitute_template(template, params) == "gitea://repos/myorg/myrepo/issues"
+        assert _substitute_template(template, params, {}) == "gitea://repos/myorg/myrepo/issues"
 
     def test_filepath_substitution(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
@@ -325,7 +344,8 @@ class TestTemplateSubstitution:
         template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
         assert (
-            _substitute_template(template, params) == "gitea://repos/org/repo/contents/src/main.py"
+            _substitute_template(template, params, {})
+            == "gitea://repos/org/repo/contents/src/main.py"
         )
 
     def test_missing_parameter_raises(self) -> None:
@@ -334,14 +354,14 @@ class TestTemplateSubstitution:
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org"}  # missing repo
         with pytest.raises(ValueError, match="Missing parameters"):
-            _substitute_template(template, params)
+            _substitute_template(template, params, {})
 
     def test_extra_parameters_ignored(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org", "repo": "repo", "extra": "ignored"}
-        assert _substitute_template(template, params) == "gitea://repos/org/repo/issues"
+        assert _substitute_template(template, params, {}) == "gitea://repos/org/repo/issues"
 
 
 class TestToolInvalidationCoverage:
@@ -362,7 +382,9 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"pr_write_{i}", path, "POST")
         build_invalidation_map(spec)
         for i in range(len(pr_write_paths)):
-            assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP[f"pr_write_{i}"]
+            assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+                TOOL_INVALIDATION_MAP[f"pr_write_{i}"]
+            )
 
     def test_repo_write_tools_are_mapped(self) -> None:
         """Repository write operations should invalidate repo resource."""
@@ -378,7 +400,9 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"repo_write_{i}", path, method)
         build_invalidation_map(spec)
         for i in range(len(paths_and_methods)):
-            assert "gitea://repos/{owner}/{repo}" in TOOL_INVALIDATION_MAP[f"repo_write_{i}"]
+            assert "gitea://repos/{owner}/{repo}" in _templates(
+                TOOL_INVALIDATION_MAP[f"repo_write_{i}"]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -501,20 +525,22 @@ class TestEndToEndInvalidationMap:
 
         # Drift: every derived target must be a registered resource.
         for tool, targets in ci_module.TOOL_INVALIDATION_MAP.items():
-            for target in targets:
+            for target, _arg_keys in targets:
                 assert target in surface, (
                     f"{tool} invalidation target {target!r} is not a registered resource"
                 )
 
         # Spot-check the derivation rules through the real wiring.
         # Path-prefix: an issue write invalidates the repo resource too.
-        assert "gitea://repos/{owner}/{repo}" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
-        assert (
-            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        assert "gitea://repos/{owner}/{repo}" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["issue_create"]
         )
         # Cross-tree: a label write invalidates issues (Issue references Label).
-        assert (
-            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["label_create"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["label_create"]
         )
 
 
@@ -649,6 +675,164 @@ class TestQueryVariantStaleness:
             r3 = await mcp.read_resource("gitea://repos/owner/repo/issues?state=open")
             assert "v2" in r3.contents[0].content
             assert issues_route.call_count == 2, "third read should hit the API again"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: renamed path params (hyphen / camelCase) invalidate correctly
+# ---------------------------------------------------------------------------
+
+# Swagger 2.0 spec with renamed path placeholders.  Rule A renames the
+# parameter *definition* to snake_case but leaves the route template in its
+# original spelling, so the invalidation target must be substituted to the
+# wire form the cache keyed.
+#
+# The GET/POST pair satisfies the path-prefix rule: the resource api_path
+# ``/activitypub/user-id/{user-id}`` is a prefix of the write path
+# ``/activitypub/user-id/{user-id}/inbox``.
+RENAMED_PARAM_SWAGGER_SPEC = {
+    "swagger": "2.0",
+    "info": {"title": "Gitea API", "version": "1.0"},
+    "basePath": "/api/v1",
+    "paths": {
+        "/activitypub/user-id/{user-id}": {
+            "get": {
+                "operationId": "activitypubGetUser",
+                "summary": "Get a user's ActivityPub actor",
+                "parameters": [
+                    {"name": "user-id", "in": "path", "required": True, "type": "integer"}
+                ],
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
+            },
+        },
+        "/activitypub/user-id/{user-id}/inbox": {
+            "post": {
+                "operationId": "activitypubPostInbox",
+                "summary": "Post to a user's ActivityPub inbox",
+                "parameters": [
+                    {"name": "user-id", "in": "path", "required": True, "type": "integer"}
+                ],
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
+            },
+        },
+        "/repos/{owner}/{repo}/wiki/page/{pageName}": {
+            "get": {
+                "operationId": "repoGetWikiPage",
+                "summary": "Get a wiki page",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "pageName", "in": "path", "required": True, "type": "string"},
+                ],
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
+            },
+            "patch": {
+                "operationId": "repoEditWikiPage",
+                "summary": "Edit a wiki page",
+                "parameters": [
+                    {"name": "owner", "in": "path", "required": True, "type": "string"},
+                    {"name": "repo", "in": "path", "required": True, "type": "string"},
+                    {"name": "pageName", "in": "path", "required": True, "type": "string"},
+                ],
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
+            },
+        },
+    },
+}
+
+
+class TestRenamedParamInvalidation:
+    """A write clears a cached read whose path carries a renamed placeholder.
+
+    Rule A leaves the route template in its original spelling
+    (``{user-id}``, ``{pageName}``) while tool arguments carry the normalized
+    name (``user_id``, ``page_name``).  The invalidation target must be
+    substituted to the wire form the cache keyed — otherwise the read stays
+    stale.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hyphenated_write_invalidates_hyphenated_read(self) -> None:
+        import httpx
+
+        config = SimpleConfig(
+            url=BASE_TEST_URL,
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(
+                200, json=RENAMED_PARAM_SWAGGER_SPEC
+            )
+            actor_route = mock.get(f"{BASE_TEST_URL}/api/v1/activitypub/user-id/7")
+            actor_route.side_effect = [
+                httpx.Response(200, json={"version": "v1"}),
+                httpx.Response(200, json={"version": "v2"}),
+            ]
+            mock.post(f"{BASE_TEST_URL}/api/v1/activitypub/user-id/7/inbox").respond(
+                200, json={"ok": True}
+            )
+
+            mcp = await create_mcp_server(gitea_client)
+
+            # Read the wire-form URI — cached under the wire key.
+            r1 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v1" in r1.contents[0].content
+            r2 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v1" in r2.contents[0].content
+            assert actor_route.call_count == 1, "second read should come from cache"
+
+            # Write tool — must invalidate the hyphenated read.
+            await mcp.call_tool("gitea_activitypub_post_inbox", {"user_id": 7})
+
+            r3 = await mcp.read_resource("gitea://activitypub/user-id/7")
+            assert "v2" in r3.contents[0].content
+            assert actor_route.call_count == 2, "write should have invalidated the read"
+
+    @pytest.mark.asyncio
+    async def test_camelcase_write_invalidates_camelcase_read(self) -> None:
+        import httpx
+
+        config = SimpleConfig(
+            url=BASE_TEST_URL,
+            token="test_token",
+            log_level="ERROR",
+            tool_filtering_enabled=False,
+        )
+        gitea_client = GiteaClient(config)
+
+        with respx.mock() as mock:
+            mock.get(f"{BASE_TEST_URL}/swagger.v1.json").respond(
+                200, json=RENAMED_PARAM_SWAGGER_SPEC
+            )
+            page_route = mock.get(f"{BASE_TEST_URL}/api/v1/repos/o/r/wiki/page/Home")
+            page_route.side_effect = [
+                httpx.Response(200, json={"version": "v1"}),
+                httpx.Response(200, json={"version": "v2"}),
+            ]
+            mock.patch(f"{BASE_TEST_URL}/api/v1/repos/o/r/wiki/page/Home").respond(
+                200, json={"ok": True}
+            )
+
+            mcp = await create_mcp_server(gitea_client)
+
+            r1 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v1" in r1.contents[0].content
+            r2 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v1" in r2.contents[0].content
+            assert page_route.call_count == 1, "second read should come from cache"
+
+            # The tool kwarg is the normalized ``page_name``.
+            await mcp.call_tool(
+                "gitea_repo_edit_wiki_page",
+                {"owner": "o", "repo": "r", "page_name": "Home"},
+            )
+
+            r3 = await mcp.read_resource("gitea://repos/o/r/wiki/page/Home")
+            assert "v2" in r3.contents[0].content
+            assert page_route.call_count == 2, "write should have invalidated the read"
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ from gitea_mcp_server.pagination import (
     PAGINATION_SCHEMA_PROPERTIES,
     pagination_ctx,
 )
+from gitea_mcp_server.param_rename import read_param_rename
 from gitea_mcp_server.registration import (
     REGISTRATION_KEY,
     ToolRegistration,
@@ -466,40 +467,6 @@ def _build_customization_meta(
     component.meta = component_meta
 
 
-def _read_param_rename(
-    openapi_spec: OpenAPISpec,
-    path: str,
-    method: str,
-) -> dict[str, str] | None:
-    """Read the ``x-param-rename`` mapping from a spec operation.
-
-    This mapping is set by :func:`resolve_param_collisions` for operations
-    where path parameter names collide with body property names, and by
-    :func:`normalize_spec` for non-snake_case parameter renames.  It maps
-    renamed names back to their original names.
-
-    Args:
-        openapi_spec: The OpenAPI 3.1 spec.
-        path: The route path (e.g. ``/repos/{owner}/{repo}/issues/{index}/blocks``).
-        method: The HTTP method (e.g. ``"POST"``).
-
-    Returns:
-        Dict mapping new names to original names (e.g. ``{"body_owner": "owner"}``),
-        or ``None`` if no rename mapping exists.
-    """
-    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    path_item = paths.get(path)
-    if not isinstance(path_item, dict):
-        return None
-    operation = path_item.get(method.lower())
-    if not isinstance(operation, dict):
-        return None
-    rename_map = operation.get("x-param-rename")
-    if isinstance(rename_map, dict) and rename_map:
-        return cast("dict[str, str]", rename_map)
-    return None
-
-
 def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
     """Walk an exception's cause chain to find an ``httpx.HTTPStatusError``.
 
@@ -591,7 +558,7 @@ def _apply_param_rename(
     """
     path = getattr(route, "path", "")
     method = getattr(route, "method", "")
-    rename_map = _read_param_rename(openapi_spec, path, method)
+    rename_map = read_param_rename(openapi_spec, path, method)
     if not rename_map:
         return
 

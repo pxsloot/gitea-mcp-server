@@ -168,8 +168,8 @@ def main() -> None:
     print("\n📋 Invalidation Mapping:")
     for tool, templates in sorted(TOOL_INVALIDATION_MAP.items()):
         print(f"  {tool}:")
-        for template in templates:
-            print(f"    → {template}")
+        for template, arg_keys in templates:
+            print(f"    → {template}  (args: {arg_keys})")
 
     # 4. Simulate caching a resource (including a query variant) in the cache.
     print_section("Simulating Cache Population")

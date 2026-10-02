@@ -496,7 +496,7 @@ page-size parameter ``limit``, with a per-tool ``limit_max`` for synthetic
 | `scope.py` | Scope derivation (shared leaf between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
 | `pagination.py` | Pagination metadata, headers |
-| `param_rename.py` | The ``x-param-rename`` contract — ``read_param_rename`` reads the spec operation's normalized→wire rename map (Rule A + collision resolution).  The single home for the contract, read by the tool surface (``mcp_builder._apply_param_rename``), the resource factory (path-param classification), and cache invalidation (wire-form substitution).  Leaf module |
+| `param_rename.py` | The ``x-param-rename`` contract — the single home for the spec operation's normalized→wire rename map (Rule A + collision resolution).  ``read_param_rename`` exposes the raw map to the tool surface (``mcp_builder._apply_param_rename``); ``path_param_map`` returns the shared wire↔normalized view (both directions, restricted to a template's actual placeholders) consumed by the resource factory (path-param classification) and cache invalidation (wire-form substitution).  Leaf module |
 | `uri_utils.py` | URI template helpers (``clean_resource_uri``, ``render_wildcard_segment``, ``iter_path_params`` / ``path_param_names`` (the single path-placeholder parser), ``wildcard_param_names``, ``expand_path_params``) shared by resources, tools, and display layers.  ``expand_path_params`` is the single percent-encoding contract for path substitution — the inverse of FastMCP's resource matcher; the module docstring carries the audited substitution-site sweep (#736) |
 
 ---

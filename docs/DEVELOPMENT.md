@@ -927,11 +927,14 @@ spelling**.  A placeholder therefore has two valid spellings: the wire form in
 the template (``{repository-id}``, ``{pageName}``) and the normalized form in
 Python (``repository_id``, ``page_name``).  The spec's ``x-param-rename``
 extension is the contract bridging them — ``{normalized: wire}`` — and
-``gitea_mcp_server/param_rename.py`` (``read_param_rename``) is its single
-home.  The tool surface (``mcp_builder._apply_param_rename``), the resource
-factory (path-param classification), and cache invalidation (wire-form
-substitution) all read it.  Do not reconstruct the mapping with a string
-transform: collision renames (``body_owner`` → ``owner``) and camelCase renames
+``gitea_mcp_server/param_rename.py`` is its single home.  ``read_param_rename``
+exposes the raw map; ``path_param_map`` returns the shared wire↔normalized view
+(both directions, restricted to a template's actual placeholders) consumed by
+the resource factory (path-param classification) and cache invalidation
+(wire-form substitution).  The tool surface
+(``mcp_builder._apply_param_rename``) reads the raw map.  Do not reconstruct
+the mapping with a string transform: collision renames
+(``body_owner`` → ``owner``) and camelCase renames
 (``pageName`` → ``page_name``) are not hyphen transforms.
 
 The path-placeholder parser is ``uri_utils.iter_path_params`` /

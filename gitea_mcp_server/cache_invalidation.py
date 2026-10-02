@@ -65,7 +65,7 @@ from fastmcp.server.middleware.middleware import (
 )
 
 from gitea_mcp_server.constants import HTTP_METHODS_SAFE
-from gitea_mcp_server.param_rename import read_param_rename
+from gitea_mcp_server.param_rename import path_param_map
 from gitea_mcp_server.resources.surface import get_resource_surface
 from gitea_mcp_server.uri_utils import iter_path_params
 
@@ -206,12 +206,16 @@ def _arg_keys_for(
 
     The template carries the wire spelling (``{repository-id}``); tool
     arguments carry the Rule A-normalized name (``repository_id``).  The
-    spec's ``x-param-rename`` is the contract bridging the two.  Read it from
-    the resource's GET operation — resolved through ``_find_spec_path`` so a
-    concrete wrapper api_path (e.g. the readme) still finds its spec path.
+    spec's ``x-param-rename`` is the contract bridging the two, read through
+    :func:`~gitea_mcp_server.param_rename.path_param_map` — the shared view
+    that owns the inversion and the restriction to the template's placeholders.
 
-    Identity entries are included for unchanged placeholders, so the
-    substitution lookup is uniform (no ``None`` branch in the hot path).
+    The map is read from the resource's GET operation — resolved through
+    ``_find_spec_path`` so a concrete wrapper api_path (e.g. the readme) still
+    finds its spec path.  Rule A normalization is per-parameter-name, and path
+    placeholders shared by prefix-related paths normalize identically, so the
+    resource's wire spelling is the correct target for the write tool's
+    arguments.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (may be ``None``).
@@ -222,15 +226,15 @@ def _arg_keys_for(
         ``{wire_placeholder: normalized_arg_key}`` for every placeholder.
     """
     entry = surface.get(template)
-    rename_map: dict[str, str] = {}
+    spec_path: str | None = None
     if openapi_spec is not None and entry is not None:
         spec_path = _find_spec_path(openapi_spec, entry.api_path)
-        if spec_path is not None:
-            rename_map = read_param_rename(openapi_spec, spec_path, "get") or {}
 
-    # rename_map is normalized -> wire; invert to wire -> normalized.
-    wire_to_arg = {wire: normalized for normalized, wire in rename_map.items()}
-    return {name: wire_to_arg.get(name, name) for name, _ in iter_path_params(template)}
+    placeholders = [name for name, _ in iter_path_params(template)]
+    if spec_path is None:
+        # No spec path — identity mapping.
+        return {name: name for name in placeholders}
+    return path_param_map(openapi_spec, spec_path, "get", placeholders).wire_to_arg
 
 
 # ---------------------------------------------------------------------------

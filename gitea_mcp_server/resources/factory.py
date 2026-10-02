@@ -86,7 +86,7 @@ from gitea_mcp_server.constants import HTTP_STATUS_NOT_FOUND
 from gitea_mcp_server.models import ViewHints
 from gitea_mcp_server.openapi_converter.display_hints import view_hints_for
 from gitea_mcp_server.openapi_types import OpenAPISpec
-from gitea_mcp_server.param_rename import read_param_rename
+from gitea_mcp_server.param_rename import path_param_map
 from gitea_mcp_server.registration import build_content_meta
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.resources.surface import register_resource_surface
@@ -894,11 +894,13 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # otherwise FastMCP creates a ResourceTemplate and fails the
     # "URI template must contain at least one parameter" validation.
     #
-    # The predicate is the URI's own shape: path placeholders (including
+    # The invariant: a parameterized URI must never be classified concrete.
+    # The predicate reads the URI's own shape — path placeholders (including
     # kebab-case, via the shared parser), declared query/context params, or a
-    # ``{?query}`` suffix the caller did not route through ``param_config``.
-    # The last arm is cheap insurance against the exact bug class of #783 —
-    # a parameterized URI misclassified as concrete and silently skipped.
+    # ``{?query}`` suffix.  The suffix arm is the structural check; the
+    # ``query_params``/``context_params`` arms are redundant for a well-formed
+    # resource (the suffix is contractually required) but keep the predicate
+    # honest if a caller declares params without the suffix.
     _has_uri_params = bool(
         path_param_names(uri) or query_params or context_params or clean_resource_uri(uri) != uri
     )
@@ -915,17 +917,11 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # renames the parameter *definition* to snake_case but leaves the route
     # template in its original spelling, so a handler kwarg may be the
     # normalized name (``repository_id``) while the template carries the wire
-    # name (``{repository-id}``).  The spec's ``x-param-rename`` is the
-    # contract; intersect it with the template's actual path placeholders so a
-    # body/query rename can never be routed into ``path_params``.
+    # name (``{repository-id}``).  ``path_param_map`` owns the contract read,
+    # the inversion, and the restriction to the template's actual placeholders
+    # (so a body/query rename can never be routed into ``path_params``).
     _path_names = set(path_param_names(api_path))
-    _rename_map = {
-        normalized: wire
-        for normalized, wire in (
-            read_param_rename(openapi_spec, api_path, method_lower) or {}
-        ).items()
-        if wire in _path_names
-    }
+    _param_map = path_param_map(openapi_spec, api_path, method_lower, _path_names)
 
     if _has_uri_params:
 
@@ -947,7 +943,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
                     context_params and key in context_params
                 ):
                     continue
-                wire = _rename_map.get(key)
+                wire = _param_map.arg_to_wire.get(key)
                 if wire is not None:
                     # Normalized kwarg -> wire placeholder (e.g. repository_id
                     # -> {repository-id}).

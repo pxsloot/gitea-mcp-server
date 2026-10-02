@@ -283,21 +283,35 @@ class TestCacheInvalidationIntegration:
         build_invalidation_map(spec)
 
         # Issues
-        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["issue_create"])
-        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["issue_delete"])
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["issue_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["issue_delete"]
+        )
         # Pulls (merge has no response type — path-prefix still covers the list)
-        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["pull_create"])
-        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["pull_merge"])
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["pull_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["pull_merge"]
+        )
         # Repo (full prefix: issue writes invalidate the repo resource too)
         assert "gitea://repos/{owner}/{repo}" in _templates(TOOL_INVALIDATION_MAP["issue_create"])
         # Files + readme wrapper
-        assert (
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}" in _templates(TOOL_INVALIDATION_MAP["file_put"])
+        assert "gitea://repos/{owner}/{repo}/contents/{filepath*}" in _templates(
+            TOOL_INVALIDATION_MAP["file_put"]
         )
-        assert "gitea://repos/{owner}/{repo}/readme" in _templates(TOOL_INVALIDATION_MAP["file_put"])
+        assert "gitea://repos/{owner}/{repo}/readme" in _templates(
+            TOOL_INVALIDATION_MAP["file_put"]
+        )
         # Labels cross-tree
-        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["label_create"])
-        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["label_create"])
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            TOOL_INVALIDATION_MAP["label_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+            TOOL_INVALIDATION_MAP["label_create"]
+        )
 
     @pytest.mark.asyncio
     async def test_safe_methods_not_recorded(self) -> None:
@@ -330,7 +344,8 @@ class TestTemplateSubstitution:
         template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
         assert (
-            _substitute_template(template, params, {}) == "gitea://repos/org/repo/contents/src/main.py"
+            _substitute_template(template, params, {})
+            == "gitea://repos/org/repo/contents/src/main.py"
         )
 
     def test_missing_parameter_raises(self) -> None:
@@ -367,7 +382,9 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"pr_write_{i}", path, "POST")
         build_invalidation_map(spec)
         for i in range(len(pr_write_paths)):
-            assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP[f"pr_write_{i}"])
+            assert "gitea://repos/{owner}/{repo}/pulls" in _templates(
+                TOOL_INVALIDATION_MAP[f"pr_write_{i}"]
+            )
 
     def test_repo_write_tools_are_mapped(self) -> None:
         """Repository write operations should invalidate repo resource."""
@@ -383,7 +400,9 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"repo_write_{i}", path, method)
         build_invalidation_map(spec)
         for i in range(len(paths_and_methods)):
-            assert "gitea://repos/{owner}/{repo}" in _templates(TOOL_INVALIDATION_MAP[f"repo_write_{i}"])
+            assert "gitea://repos/{owner}/{repo}" in _templates(
+                TOOL_INVALIDATION_MAP[f"repo_write_{i}"]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -682,9 +701,7 @@ RENAMED_PARAM_SWAGGER_SPEC = {
                 "parameters": [
                     {"name": "user-id", "in": "path", "required": True, "type": "integer"}
                 ],
-                "responses": {
-                    "200": {"description": "ok", "schema": {"type": "object"}}
-                },
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
             },
         },
         "/activitypub/user-id/{user-id}/inbox": {
@@ -694,9 +711,7 @@ RENAMED_PARAM_SWAGGER_SPEC = {
                 "parameters": [
                     {"name": "user-id", "in": "path", "required": True, "type": "integer"}
                 ],
-                "responses": {
-                    "200": {"description": "ok", "schema": {"type": "object"}}
-                },
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
             },
         },
         "/repos/{owner}/{repo}/wiki/page/{pageName}": {
@@ -708,9 +723,7 @@ RENAMED_PARAM_SWAGGER_SPEC = {
                     {"name": "repo", "in": "path", "required": True, "type": "string"},
                     {"name": "pageName", "in": "path", "required": True, "type": "string"},
                 ],
-                "responses": {
-                    "200": {"description": "ok", "schema": {"type": "object"}}
-                },
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
             },
             "patch": {
                 "operationId": "repoEditWikiPage",
@@ -720,9 +733,7 @@ RENAMED_PARAM_SWAGGER_SPEC = {
                     {"name": "repo", "in": "path", "required": True, "type": "string"},
                     {"name": "pageName", "in": "path", "required": True, "type": "string"},
                 ],
-                "responses": {
-                    "200": {"description": "ok", "schema": {"type": "object"}}
-                },
+                "responses": {"200": {"description": "ok", "schema": {"type": "object"}}},
             },
         },
     },

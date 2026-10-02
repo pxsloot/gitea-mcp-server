@@ -26,7 +26,10 @@ the body.  At runtime, the shim in ``mcp_builder._apply_param_rename``
 corrects the ``parameter_map`` so the HTTP request still sends the original
 wire name — for path parameters this means correcting ``openapi_name`` back
 to the original segment name, so the ``{placeholder}`` in the unchanged route
-path template is substituted with the original wire name.
+path template is substituted with the original wire name.  The resource
+factory and cache invalidation read the same ``x-param-rename`` contract
+(``gitea_mcp_server.param_rename.read_param_rename``) to bridge the wire and
+normalized spellings — the tool shim is one consumer, not the only one.
 
 **Rule B — boolean-check response normalization.**  Gitea models "is this
 thing true?" endpoints as a GET that returns ``204 No Content`` on success

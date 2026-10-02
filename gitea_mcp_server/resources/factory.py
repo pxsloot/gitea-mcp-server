@@ -900,10 +900,7 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     # The last arm is cheap insurance against the exact bug class of #783 —
     # a parameterized URI misclassified as concrete and silently skipped.
     _has_uri_params = bool(
-        path_param_names(uri)
-        or query_params
-        or context_params
-        or clean_resource_uri(uri) != uri
+        path_param_names(uri) or query_params or context_params or clean_resource_uri(uri) != uri
     )
 
     # Render the wildcard intent (declared in the resource URI as ``{param*}``)
@@ -924,7 +921,9 @@ def make_api_resource(  # noqa: PLR0913,PLR0912,PLR0915 -- params are all indepe
     _path_names = set(path_param_names(api_path))
     _rename_map = {
         normalized: wire
-        for normalized, wire in (read_param_rename(openapi_spec, api_path, method_lower) or {}).items()
+        for normalized, wire in (
+            read_param_rename(openapi_spec, api_path, method_lower) or {}
+        ).items()
         if wire in _path_names
     }
 

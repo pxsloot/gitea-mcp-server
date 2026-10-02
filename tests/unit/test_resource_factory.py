@@ -1412,9 +1412,7 @@ def _hyphen_spec() -> OpenAPISpec:
                     "responses": {
                         "200": {
                             "description": "ok",
-                            "content": {
-                                "application/json": {"schema": {"type": "object"}}
-                            },
+                            "content": {"application/json": {"schema": {"type": "object"}}},
                         }
                     },
                 }
@@ -1449,8 +1447,7 @@ class TestMakeApiResourceHyphenatedPathParams:
         # The resource is registered as a template (not silently skipped).
         templates = await mcp.list_resource_templates()
         assert any(
-            "activitypub/repository-id/{repository-id}" in str(t.uri_template)
-            for t in templates
+            "activitypub/repository-id/{repository-id}" in str(t.uri_template) for t in templates
         )
 
         # The normalized kwarg substitutes into the hyphenated wire path.

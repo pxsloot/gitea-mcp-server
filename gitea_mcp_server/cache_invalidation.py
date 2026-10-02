@@ -45,10 +45,11 @@ URI the cache keyed.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import mcp
     from fastmcp.tools.base import ToolResult
 
@@ -192,8 +193,7 @@ def _derive_targets(
                     targets.add(base_uri)
 
     return [
-        (template, _arg_keys_for(openapi_spec, surface, template))
-        for template in sorted(targets)
+        (template, _arg_keys_for(openapi_spec, surface, template)) for template in sorted(targets)
     ]
 
 

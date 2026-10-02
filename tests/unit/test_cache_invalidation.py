@@ -308,14 +308,18 @@ class TestComputeUrisToInvalidate:
 
     def test_issue_create_invalidates_issues(self) -> None:
         """issue_create_repo_issue invalidates issues list."""
-        TOOL_INVALIDATION_MAP["issue_create_repo_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
+        TOOL_INVALIDATION_MAP["issue_create_repo_issue"] = _map_for(
+            "gitea://repos/{owner}/{repo}/issues"
+        )
         arguments = {"owner": "org", "repo": "repo", "title": "Bug"}
         uris = compute_uris_to_invalidate("issue_create_repo_issue", arguments)
         assert uris == ["gitea://repos/org/repo/issues"]
 
     def test_pr_create_invalidates_pulls(self) -> None:
         """pull_request_create invalidates pulls list."""
-        TOOL_INVALIDATION_MAP["pull_request_create"] = _map_for("gitea://repos/{owner}/{repo}/pulls")
+        TOOL_INVALIDATION_MAP["pull_request_create"] = _map_for(
+            "gitea://repos/{owner}/{repo}/pulls"
+        )
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
         uris = compute_uris_to_invalidate("pull_request_create", arguments)
         assert uris == ["gitea://repos/org/repo/pulls"]
@@ -335,7 +339,9 @@ class TestComputeUrisToInvalidate:
 
     def test_file_operation_invalidates_file_resource(self) -> None:
         """repo_create_content invalidates file resource with correct path."""
-        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for(
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        )
         arguments = {
             "owner": "org",
             "repo": "repo",
@@ -350,7 +356,9 @@ class TestComputeUrisToInvalidate:
         Encoding here would double-encode relative to the cache's canonical
         (percent-decoded) keys.
         """
-        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for(
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        )
         arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
         assert uris == ["gitea://repos/org/repo/contents/my file.txt"]
@@ -391,7 +399,9 @@ class TestComputeUrisToInvalidate:
     @pytest.mark.asyncio
     async def test_raw_target_invalidates_encoded_read(self) -> None:
         """A raw invalidation target clears a read the agent spelled encoded."""
-        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for(
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
+        )
         cache = ResponseCache()
         cache.put("gitea://repos/org/repo/contents/my%20file.txt", {"title": "x"}, ttl=30)
         arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
@@ -443,8 +453,8 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("milestoneEdit", "/repos/{owner}/{repo}/milestones/{id}", "PATCH")])
-        assert (
-            "gitea://repos/{owner}/{repo}/milestones/{id}" in _templates(TOOL_INVALIDATION_MAP["milestoneEdit"])
+        assert "gitea://repos/{owner}/{repo}/milestones/{id}" in _templates(
+            TOOL_INVALIDATION_MAP["milestoneEdit"]
         )
 
     def test_branch_create_covers_branch_list(self) -> None:
@@ -452,16 +462,17 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("branchCreate", "/repos/{owner}/{repo}/branches", "POST")])
-        assert "gitea://repos/{owner}/{repo}/branches" in _templates(TOOL_INVALIDATION_MAP["branchCreate"])
+        assert "gitea://repos/{owner}/{repo}/branches" in _templates(
+            TOOL_INVALIDATION_MAP["branchCreate"]
+        )
 
     def test_branch_delete_covers_single_branch(self) -> None:
         """A branch delete invalidates the single-branch resource (wildcard template)."""
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("branchDelete", "/repos/{owner}/{repo}/branches/{branch}", "DELETE")])
-        assert (
-            "gitea://repos/{owner}/{repo}/branches/{branch*}"
-            in _templates(TOOL_INVALIDATION_MAP["branchDelete"])
+        assert "gitea://repos/{owner}/{repo}/branches/{branch*}" in _templates(
+            TOOL_INVALIDATION_MAP["branchDelete"]
         )
 
     def test_tag_create_covers_tag_list(self) -> None:
@@ -476,7 +487,9 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("tagDelete", "/repos/{owner}/{repo}/tags/{tag}", "DELETE")])
-        assert "gitea://repos/{owner}/{repo}/tags/{tag*}" in _templates(TOOL_INVALIDATION_MAP["tagDelete"])
+        assert "gitea://repos/{owner}/{repo}/tags/{tag*}" in _templates(
+            TOOL_INVALIDATION_MAP["tagDelete"]
+        )
 
     def test_repo_edit_only_repo(self) -> None:
         """A repo edit invalidates only the repo resource (no cross-tree)."""
@@ -536,7 +549,9 @@ class TestDeriveTargets:
             "gitea://repos/{owner}/{repo}/widgets", "/repos/{owner}/{repo}/widgets"
         )
         _build_map(spec, [("widgetCreate", "/repos/{owner}/{repo}/widgets", "POST")])
-        assert _templates(TOOL_INVALIDATION_MAP["widgetCreate"]) == {"gitea://repos/{owner}/{repo}/widgets"}
+        assert _templates(TOOL_INVALIDATION_MAP["widgetCreate"]) == {
+            "gitea://repos/{owner}/{repo}/widgets"
+        }
 
 
 class TestDrift:

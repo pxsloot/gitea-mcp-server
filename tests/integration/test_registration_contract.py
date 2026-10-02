@@ -206,12 +206,11 @@ async def test_hyphenated_path_placeholders_carry_param_rename() -> None:
         hyphenated = [name for name in _path_placeholders(path) if "-" in name]
         if not hyphenated:
             continue
-        rename_map = operation.get("x-param-rename") or {}
+        rename_map = cast("dict[str, str]", operation.get("x-param-rename") or {})
         for wire in hyphenated:
             normalized = wire.replace("-", "_")
             assert rename_map.get(normalized) == wire, (
-                f"{path}: expected x-param-rename[{normalized!r}] == {wire!r}, "
-                f"got {rename_map!r}"
+                f"{path}: expected x-param-rename[{normalized!r}] == {wire!r}, got {rename_map!r}"
             )
             checked += 1
     assert checked, "expected at least one hyphenated path placeholder in the fixture"

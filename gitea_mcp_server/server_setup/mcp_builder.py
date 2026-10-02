@@ -52,6 +52,7 @@ from gitea_mcp_server.pagination import (
     PAGINATION_SCHEMA_PROPERTIES,
     pagination_ctx,
 )
+from gitea_mcp_server.param_rename import read_param_rename
 from gitea_mcp_server.registration import (
     REGISTRATION_KEY,
     ToolRegistration,
@@ -473,10 +474,10 @@ def _read_param_rename(
 ) -> dict[str, str] | None:
     """Read the ``x-param-rename`` mapping from a spec operation.
 
-    This mapping is set by :func:`resolve_param_collisions` for operations
-    where path parameter names collide with body property names, and by
-    :func:`normalize_spec` for non-snake_case parameter renames.  It maps
-    renamed names back to their original names.
+    Thin re-export of :func:`gitea_mcp_server.param_rename.read_param_rename`
+    — the single home for the contract, shared with the resource and
+    cache-invalidation surfaces.  Kept as a module-local name for the existing
+    call sites in this module.
 
     Args:
         openapi_spec: The OpenAPI 3.1 spec.
@@ -487,17 +488,7 @@ def _read_param_rename(
         Dict mapping new names to original names (e.g. ``{"body_owner": "owner"}``),
         or ``None`` if no rename mapping exists.
     """
-    paths: dict[str, Any] = cast("dict[str, Any]", openapi_spec.get("paths", {}))
-    path_item = paths.get(path)
-    if not isinstance(path_item, dict):
-        return None
-    operation = path_item.get(method.lower())
-    if not isinstance(operation, dict):
-        return None
-    rename_map = operation.get("x-param-rename")
-    if isinstance(rename_map, dict) and rename_map:
-        return cast("dict[str, str]", rename_map)
-    return None
+    return read_param_rename(openapi_spec, path, method)
 
 
 def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:

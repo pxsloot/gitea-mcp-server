@@ -154,6 +154,11 @@ def _register_surface() -> None:
     )
 
 
+def _templates(targets: list[tuple[str, dict[str, str]]]) -> set[str]:
+    """The URI templates in a derived target list (drops the arg-key maps)."""
+    return {template for template, _ in targets}
+
+
 @pytest.fixture(autouse=True)
 def clear_invalidation_state() -> Generator[None, None, None]:
     """Clear the invalidation map, surface, and pending tools before each test."""
@@ -250,7 +255,7 @@ class TestCacheInvalidationIntegration:
         record_write_tool("label_create", "/repos/{owner}/{repo}/labels", "POST")
         build_invalidation_map(spec)
 
-        assert set(TOOL_INVALIDATION_MAP["label_create"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["label_create"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/labels",
             "gitea://repos/{owner}/{repo}/issues",
@@ -278,21 +283,21 @@ class TestCacheInvalidationIntegration:
         build_invalidation_map(spec)
 
         # Issues
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["issue_create"]
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["issue_delete"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["issue_create"])
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["issue_delete"])
         # Pulls (merge has no response type — path-prefix still covers the list)
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["pull_create"]
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["pull_merge"]
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["pull_create"])
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["pull_merge"])
         # Repo (full prefix: issue writes invalidate the repo resource too)
-        assert "gitea://repos/{owner}/{repo}" in TOOL_INVALIDATION_MAP["issue_create"]
+        assert "gitea://repos/{owner}/{repo}" in _templates(TOOL_INVALIDATION_MAP["issue_create"])
         # Files + readme wrapper
         assert (
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}" in TOOL_INVALIDATION_MAP["file_put"]
+            "gitea://repos/{owner}/{repo}/contents/{filepath*}" in _templates(TOOL_INVALIDATION_MAP["file_put"])
         )
-        assert "gitea://repos/{owner}/{repo}/readme" in TOOL_INVALIDATION_MAP["file_put"]
+        assert "gitea://repos/{owner}/{repo}/readme" in _templates(TOOL_INVALIDATION_MAP["file_put"])
         # Labels cross-tree
-        assert "gitea://repos/{owner}/{repo}/issues" in TOOL_INVALIDATION_MAP["label_create"]
-        assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP["label_create"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(TOOL_INVALIDATION_MAP["label_create"])
+        assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP["label_create"])
 
     @pytest.mark.asyncio
     async def test_safe_methods_not_recorded(self) -> None:
@@ -317,7 +322,7 @@ class TestTemplateSubstitution:
 
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "myorg", "repo": "myrepo"}
-        assert _substitute_template(template, params) == "gitea://repos/myorg/myrepo/issues"
+        assert _substitute_template(template, params, {}) == "gitea://repos/myorg/myrepo/issues"
 
     def test_filepath_substitution(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
@@ -325,7 +330,7 @@ class TestTemplateSubstitution:
         template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
         assert (
-            _substitute_template(template, params) == "gitea://repos/org/repo/contents/src/main.py"
+            _substitute_template(template, params, {}) == "gitea://repos/org/repo/contents/src/main.py"
         )
 
     def test_missing_parameter_raises(self) -> None:
@@ -334,14 +339,14 @@ class TestTemplateSubstitution:
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org"}  # missing repo
         with pytest.raises(ValueError, match="Missing parameters"):
-            _substitute_template(template, params)
+            _substitute_template(template, params, {})
 
     def test_extra_parameters_ignored(self) -> None:
         from gitea_mcp_server.cache_invalidation import _substitute_template
 
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org", "repo": "repo", "extra": "ignored"}
-        assert _substitute_template(template, params) == "gitea://repos/org/repo/issues"
+        assert _substitute_template(template, params, {}) == "gitea://repos/org/repo/issues"
 
 
 class TestToolInvalidationCoverage:
@@ -362,7 +367,7 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"pr_write_{i}", path, "POST")
         build_invalidation_map(spec)
         for i in range(len(pr_write_paths)):
-            assert "gitea://repos/{owner}/{repo}/pulls" in TOOL_INVALIDATION_MAP[f"pr_write_{i}"]
+            assert "gitea://repos/{owner}/{repo}/pulls" in _templates(TOOL_INVALIDATION_MAP[f"pr_write_{i}"])
 
     def test_repo_write_tools_are_mapped(self) -> None:
         """Repository write operations should invalidate repo resource."""
@@ -378,7 +383,7 @@ class TestToolInvalidationCoverage:
             record_write_tool(f"repo_write_{i}", path, method)
         build_invalidation_map(spec)
         for i in range(len(paths_and_methods)):
-            assert "gitea://repos/{owner}/{repo}" in TOOL_INVALIDATION_MAP[f"repo_write_{i}"]
+            assert "gitea://repos/{owner}/{repo}" in _templates(TOOL_INVALIDATION_MAP[f"repo_write_{i}"])
 
 
 # ---------------------------------------------------------------------------
@@ -501,20 +506,22 @@ class TestEndToEndInvalidationMap:
 
         # Drift: every derived target must be a registered resource.
         for tool, targets in ci_module.TOOL_INVALIDATION_MAP.items():
-            for target in targets:
+            for target, _arg_keys in targets:
                 assert target in surface, (
                     f"{tool} invalidation target {target!r} is not a registered resource"
                 )
 
         # Spot-check the derivation rules through the real wiring.
         # Path-prefix: an issue write invalidates the repo resource too.
-        assert "gitea://repos/{owner}/{repo}" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
-        assert (
-            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        assert "gitea://repos/{owner}/{repo}" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["issue_create"]
+        )
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["issue_create"]
         )
         # Cross-tree: a label write invalidates issues (Issue references Label).
-        assert (
-            "gitea://repos/{owner}/{repo}/issues" in ci_module.TOOL_INVALIDATION_MAP["label_create"]
+        assert "gitea://repos/{owner}/{repo}/issues" in _templates(
+            ci_module.TOOL_INVALIDATION_MAP["label_create"]
         )
 
 

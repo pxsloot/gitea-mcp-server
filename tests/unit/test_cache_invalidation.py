@@ -205,6 +205,20 @@ def _build_map(spec: Any, tools: list[tuple[str, str, str]]) -> None:
     build_invalidation_map(spec)
 
 
+def _templates(targets: list[tuple[str, dict[str, str]]]) -> set[str]:
+    """The URI templates in a derived target list (drops the arg-key maps)."""
+    return {template for template, _ in targets}
+
+
+def _map_for(template: str) -> list[tuple[str, dict[str, str]]]:
+    """A hand-built target list for a template with no renames.
+
+    Used by substitution tests that exercise ``compute_uris_to_invalidate``
+    without a spec; the empty arg-key map is the identity mapping.
+    """
+    return [(template, {})]
+
+
 @pytest.fixture(autouse=True)
 def clear_invalidation_state() -> Generator[None, None, None]:
     """Clear the invalidation map, surface, and pending tools before each test."""
@@ -224,14 +238,14 @@ class TestSubstituteTemplate:
         """Basic parameter substitution."""
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "myorg", "repo": "myrepo"}
-        result = _substitute_template(template, params)
+        result = _substitute_template(template, params, {})
         assert result == "gitea://repos/myorg/myrepo/issues"
 
     def test_multiple_parameters(self) -> None:
         """Multiple parameters are all substituted."""
         template = "gitea://repos/{owner}/{repo}/contents/{filepath}"
         params = {"owner": "org", "repo": "repo", "filepath": "src/main.py"}
-        result = _substitute_template(template, params)
+        result = _substitute_template(template, params, {})
         assert result == "gitea://repos/org/repo/contents/src/main.py"
 
     def test_missing_parameter_raises(self) -> None:
@@ -239,21 +253,47 @@ class TestSubstituteTemplate:
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org"}  # missing repo
         with pytest.raises(ValueError, match="Missing parameters"):
-            _substitute_template(template, params)
+            _substitute_template(template, params, {})
 
     def test_extra_parameters_ignored(self) -> None:
         """Extra parameters not in template are ignored."""
         template = "gitea://repos/{owner}/{repo}/issues"
         params = {"owner": "org", "repo": "repo", "extra": "ignored"}
-        result = _substitute_template(template, params)
+        result = _substitute_template(template, params, {})
         assert result == "gitea://repos/org/repo/issues"
 
     def test_wildcard_parameter(self) -> None:
         """Wildcard parameters are handled."""
         template = "gitea://repos/{owner}/{repo}/contents/{filepath*}"
         params = {"owner": "org", "repo": "repo", "filepath": "docs/guide/intro.md"}
-        result = _substitute_template(template, params)
+        result = _substitute_template(template, params, {})
         assert result == "gitea://repos/org/repo/contents/docs/guide/intro.md"
+
+    def test_hyphenated_placeholder_resolves_normalized_arg(self) -> None:
+        """A wire placeholder resolves the normalized tool-argument key.
+
+        The template keeps the wire spelling (``{repository-id}``) while tool
+        arguments carry the Rule A-normalized name (``repository_id``); the
+        arg-key map bridges them.
+        """
+        template = "gitea://activitypub/repository-id/{repository-id}"
+        params = {"repository_id": "115"}
+        result = _substitute_template(template, params, {"repository-id": "repository_id"})
+        assert result == "gitea://activitypub/repository-id/115"
+
+    def test_camelcase_placeholder_resolves_normalized_arg(self) -> None:
+        """A camelCase wire placeholder resolves the normalized arg key.
+
+        ``{pageName}`` extracts as ``pageName``; tool arguments carry
+        ``page_name``.  Without the map this raised ``ValueError`` and the
+        target was silently dropped.
+        """
+        template = "gitea://repos/{owner}/{repo}/wiki/page/{pageName}"
+        params = {"owner": "o", "repo": "r", "page_name": "MyPage"}
+        result = _substitute_template(
+            template, params, {"owner": "owner", "repo": "repo", "pageName": "page_name"}
+        )
+        assert result == "gitea://repos/o/r/wiki/page/MyPage"
 
 
 class TestComputeUrisToInvalidate:
@@ -261,21 +301,21 @@ class TestComputeUrisToInvalidate:
 
     def test_issue_edit_invalidates_issues(self) -> None:
         """issue_edit_issue invalidates issues list."""
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         arguments = {"owner": "myorg", "repo": "myrepo", "index": 42}
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
         assert uris == ["gitea://repos/myorg/myrepo/issues"]
 
     def test_issue_create_invalidates_issues(self) -> None:
         """issue_create_repo_issue invalidates issues list."""
-        TOOL_INVALIDATION_MAP["issue_create_repo_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_create_repo_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         arguments = {"owner": "org", "repo": "repo", "title": "Bug"}
         uris = compute_uris_to_invalidate("issue_create_repo_issue", arguments)
         assert uris == ["gitea://repos/org/repo/issues"]
 
     def test_pr_create_invalidates_pulls(self) -> None:
         """pull_request_create invalidates pulls list."""
-        TOOL_INVALIDATION_MAP["pull_request_create"] = ["gitea://repos/{owner}/{repo}/pulls"]
+        TOOL_INVALIDATION_MAP["pull_request_create"] = _map_for("gitea://repos/{owner}/{repo}/pulls")
         arguments = {"owner": "org", "repo": "repo", "head": "feature", "base": "main"}
         uris = compute_uris_to_invalidate("pull_request_create", arguments)
         assert uris == ["gitea://repos/org/repo/pulls"]
@@ -288,16 +328,14 @@ class TestComputeUrisToInvalidate:
 
     def test_repo_edit_invalidates_repo_resource(self) -> None:
         """repo_edit invalidates repository resource."""
-        TOOL_INVALIDATION_MAP["repo_edit"] = ["gitea://repos/{owner}/{repo}"]
+        TOOL_INVALIDATION_MAP["repo_edit"] = _map_for("gitea://repos/{owner}/{repo}")
         arguments = {"owner": "org", "repo": "repo"}
         uris = compute_uris_to_invalidate("repo_edit", arguments)
         assert uris == ["gitea://repos/org/repo"]
 
     def test_file_operation_invalidates_file_resource(self) -> None:
         """repo_create_content invalidates file resource with correct path."""
-        TOOL_INVALIDATION_MAP["repo_create_content"] = [
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
-        ]
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
         arguments = {
             "owner": "org",
             "repo": "repo",
@@ -312,30 +350,28 @@ class TestComputeUrisToInvalidate:
         Encoding here would double-encode relative to the cache's canonical
         (percent-decoded) keys.
         """
-        TOOL_INVALIDATION_MAP["repo_create_content"] = [
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
-        ]
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
         arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
         uris = compute_uris_to_invalidate("repo_create_content", arguments)
         assert uris == ["gitea://repos/org/repo/contents/my file.txt"]
 
     def test_missing_parameters_skipped(self) -> None:
         """If required parameters are missing, template is skipped gracefully."""
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         arguments = {"owner": "org"}  # missing repo
         uris = compute_uris_to_invalidate("issue_edit_issue", arguments)
         assert uris == []
 
     def test_prefix_stripping(self) -> None:
         """Namespaced tool names are stripped before map lookup."""
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         arguments = {"owner": "org", "repo": "repo", "index": 1}
         uris = compute_uris_to_invalidate("gitea_issue_edit_issue", arguments, tool_prefix="gitea_")
         assert uris == ["gitea://repos/org/repo/issues"]
 
     def test_prefix_stripping_unknown_tool_returns_empty(self) -> None:
         """A namespaced tool absent from the map invalidates nothing."""
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         assert compute_uris_to_invalidate("gitea_unknown_tool", {}, tool_prefix="gitea_") == []
 
     @pytest.mark.asyncio
@@ -355,9 +391,7 @@ class TestComputeUrisToInvalidate:
     @pytest.mark.asyncio
     async def test_raw_target_invalidates_encoded_read(self) -> None:
         """A raw invalidation target clears a read the agent spelled encoded."""
-        TOOL_INVALIDATION_MAP["repo_create_content"] = [
-            "gitea://repos/{owner}/{repo}/contents/{filepath*}"
-        ]
+        TOOL_INVALIDATION_MAP["repo_create_content"] = _map_for("gitea://repos/{owner}/{repo}/contents/{filepath*}")
         cache = ResponseCache()
         cache.put("gitea://repos/org/repo/contents/my%20file.txt", {"title": "x"}, ttl=30)
         arguments = {"owner": "org", "repo": "repo", "filepath": "my file.txt"}
@@ -374,7 +408,7 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("issueCreate", "/repos/{owner}/{repo}/issues", "POST")])
-        assert set(TOOL_INVALIDATION_MAP["issueCreate"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["issueCreate"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/issues",
         }
@@ -384,7 +418,7 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("labelCreate", "/repos/{owner}/{repo}/labels", "POST")])
-        assert set(TOOL_INVALIDATION_MAP["labelCreate"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["labelCreate"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/labels",
             "gitea://repos/{owner}/{repo}/issues",
@@ -396,7 +430,7 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("milestoneCreate", "/repos/{owner}/{repo}/milestones", "POST")])
-        assert set(TOOL_INVALIDATION_MAP["milestoneCreate"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["milestoneCreate"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/milestones",
             "gitea://repos/{owner}/{repo}/milestones/{id}",
@@ -410,7 +444,7 @@ class TestDeriveTargets:
         _register_surface()
         _build_map(spec, [("milestoneEdit", "/repos/{owner}/{repo}/milestones/{id}", "PATCH")])
         assert (
-            "gitea://repos/{owner}/{repo}/milestones/{id}" in TOOL_INVALIDATION_MAP["milestoneEdit"]
+            "gitea://repos/{owner}/{repo}/milestones/{id}" in _templates(TOOL_INVALIDATION_MAP["milestoneEdit"])
         )
 
     def test_branch_create_covers_branch_list(self) -> None:
@@ -418,7 +452,7 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("branchCreate", "/repos/{owner}/{repo}/branches", "POST")])
-        assert "gitea://repos/{owner}/{repo}/branches" in TOOL_INVALIDATION_MAP["branchCreate"]
+        assert "gitea://repos/{owner}/{repo}/branches" in _templates(TOOL_INVALIDATION_MAP["branchCreate"])
 
     def test_branch_delete_covers_single_branch(self) -> None:
         """A branch delete invalidates the single-branch resource (wildcard template)."""
@@ -427,7 +461,7 @@ class TestDeriveTargets:
         _build_map(spec, [("branchDelete", "/repos/{owner}/{repo}/branches/{branch}", "DELETE")])
         assert (
             "gitea://repos/{owner}/{repo}/branches/{branch*}"
-            in TOOL_INVALIDATION_MAP["branchDelete"]
+            in _templates(TOOL_INVALIDATION_MAP["branchDelete"])
         )
 
     def test_tag_create_covers_tag_list(self) -> None:
@@ -435,21 +469,21 @@ class TestDeriveTargets:
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("tagCreate", "/repos/{owner}/{repo}/tags", "POST")])
-        assert "gitea://repos/{owner}/{repo}/tags" in TOOL_INVALIDATION_MAP["tagCreate"]
+        assert "gitea://repos/{owner}/{repo}/tags" in _templates(TOOL_INVALIDATION_MAP["tagCreate"])
 
     def test_tag_delete_covers_single_tag(self) -> None:
         """A tag delete invalidates the single-tag resource."""
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("tagDelete", "/repos/{owner}/{repo}/tags/{tag}", "DELETE")])
-        assert "gitea://repos/{owner}/{repo}/tags/{tag*}" in TOOL_INVALIDATION_MAP["tagDelete"]
+        assert "gitea://repos/{owner}/{repo}/tags/{tag*}" in _templates(TOOL_INVALIDATION_MAP["tagDelete"])
 
     def test_repo_edit_only_repo(self) -> None:
         """A repo edit invalidates only the repo resource (no cross-tree)."""
         spec = _make_spec()
         _register_surface()
         _build_map(spec, [("repoEdit", "/repos/{owner}/{repo}", "PATCH")])
-        assert TOOL_INVALIDATION_MAP["repoEdit"] == ["gitea://repos/{owner}/{repo}"]
+        assert _templates(TOOL_INVALIDATION_MAP["repoEdit"]) == {"gitea://repos/{owner}/{repo}"}
 
     def test_safe_method_not_recorded(self) -> None:
         """GET tools are not recorded and produce no invalidation targets."""
@@ -463,7 +497,7 @@ class TestDeriveTargets:
         """Without a spec, only path-prefix targets are derived."""
         _register_surface()
         _build_map(None, [("labelCreate", "/repos/{owner}/{repo}/labels", "POST")])
-        assert set(TOOL_INVALIDATION_MAP["labelCreate"]) == {
+        assert _templates(TOOL_INVALIDATION_MAP["labelCreate"]) == {
             "gitea://repos/{owner}/{repo}",
             "gitea://repos/{owner}/{repo}/labels",
         }
@@ -477,7 +511,7 @@ class TestDeriveTargets:
         spec = make_openapi_spec(paths={"/weird": "not-a-dict"})
         register_resource_surface("gitea://weird", "/weird")
         _build_map(spec, [("weirdWrite", "/weird", "POST")])
-        assert TOOL_INVALIDATION_MAP["weirdWrite"] == ["gitea://weird"]
+        assert _templates(TOOL_INVALIDATION_MAP["weirdWrite"]) == {"gitea://weird"}
 
     def test_path_item_without_get_operation_skips_cross_tree(self) -> None:
         """A path item with only a write op yields no referenced types.
@@ -502,7 +536,7 @@ class TestDeriveTargets:
             "gitea://repos/{owner}/{repo}/widgets", "/repos/{owner}/{repo}/widgets"
         )
         _build_map(spec, [("widgetCreate", "/repos/{owner}/{repo}/widgets", "POST")])
-        assert TOOL_INVALIDATION_MAP["widgetCreate"] == ["gitea://repos/{owner}/{repo}/widgets"]
+        assert _templates(TOOL_INVALIDATION_MAP["widgetCreate"]) == {"gitea://repos/{owner}/{repo}/widgets"}
 
 
 class TestDrift:
@@ -527,7 +561,7 @@ class TestDrift:
         _build_map(spec, tools)
         assert TOOL_INVALIDATION_MAP, "expected at least one derived target"
         for tool, targets in TOOL_INVALIDATION_MAP.items():
-            for target in targets:
+            for target, _arg_keys in targets:
                 assert target in surface, (
                     f"{tool} invalidation target {target!r} is not a registered resource"
                 )
@@ -566,7 +600,7 @@ class TestCacheInvalidationMiddleware:
         cache.put("gitea://repos/org/repo/issues", {"title": "stale"}, ttl=30)
         middleware = self._make_middleware(cache)
 
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         mock_context, mock_call_next = self._make_context_and_call_next()
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -580,7 +614,7 @@ class TestCacheInvalidationMiddleware:
         cache.put("gitea://repos/org/repo/issues", {"title": "kept"}, ttl=30)
         middleware = self._make_middleware(cache)
 
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         mock_context, mock_call_next = self._make_context_and_call_next(is_error=True)
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -610,7 +644,7 @@ class TestCacheInvalidationMiddleware:
         cache.put("gitea://repos/org/repo/issues?state=open", {"title": "open"}, ttl=30)
         middleware = self._make_middleware(cache)
 
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
         mock_context, mock_call_next = self._make_context_and_call_next()
 
         await middleware.on_call_tool(mock_context, mock_call_next)
@@ -630,8 +664,8 @@ class TestIntegration:
         cache.put("gitea://repos/testorg/testrepo", {"name": "stale"}, ttl=30)
 
         TOOL_INVALIDATION_MAP["issue_edit_issue"] = [
-            "gitea://repos/{owner}/{repo}",
-            "gitea://repos/{owner}/{repo}/issues",
+            ("gitea://repos/{owner}/{repo}", {}),
+            ("gitea://repos/{owner}/{repo}/issues", {}),
         ]
 
         middleware = CacheInvalidationMiddleware(cache)
@@ -682,7 +716,7 @@ class TestClearLabelServiceCache:
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
 
-        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["repo_create_label"] = _map_for("gitea://repos/{owner}/{repo}/labels")
 
         mock_context, mock_call_next = self._make_context_and_call_next(
             tool_name="repo_create_label", arguments={"owner": "myorg", "repo": "myrepo"}
@@ -703,7 +737,7 @@ class TestClearLabelServiceCache:
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
 
-        TOOL_INVALIDATION_MAP["issue_edit_issue"] = ["gitea://repos/{owner}/{repo}/issues"]
+        TOOL_INVALIDATION_MAP["issue_edit_issue"] = _map_for("gitea://repos/{owner}/{repo}/issues")
 
         mock_context, mock_call_next = self._make_context_and_call_next(
             tool_name="issue_edit_issue", arguments={"owner": "org", "repo": "repo", "index": 1}
@@ -718,7 +752,7 @@ class TestClearLabelServiceCache:
         """When label_service is None, no error is raised."""
         middleware = self._make_middleware(label_service=None)
 
-        TOOL_INVALIDATION_MAP["repo_create_label"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["repo_create_label"] = _map_for("gitea://repos/{owner}/{repo}/labels")
 
         mock_context, mock_call_next = self._make_context_and_call_next(
             tool_name="repo_create_label", arguments={"owner": "org", "repo": "repo"}
@@ -741,7 +775,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["test_label_tool"] = _map_for("gitea://repos/{owner}/{repo}/labels")
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -765,7 +799,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["test_label_tool"] = _map_for("gitea://repos/{owner}/{repo}/labels")
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -785,7 +819,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["test_label_tool"] = _map_for("gitea://repos/{owner}/{repo}/labels")
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -805,7 +839,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["test_label_tool"] = _map_for("gitea://repos/{owner}/{repo}/labels")
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()
@@ -825,7 +859,7 @@ class TestClearLabelServiceCache:
 
         from gitea_mcp_server.label_service import LabelService
 
-        TOOL_INVALIDATION_MAP["test_label_tool"] = ["gitea://repos/{owner}/{repo}/labels"]
+        TOOL_INVALIDATION_MAP["test_label_tool"] = _map_for("gitea://repos/{owner}/{repo}/labels")
         label_service = MagicMock(spec=LabelService)
         middleware = self._make_middleware(label_service=label_service)
         mock_context, mock_call_next = self._make_context_and_call_next()

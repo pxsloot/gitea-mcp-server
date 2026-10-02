@@ -32,12 +32,20 @@ Target derivation has two parts:
 Both parts derive from the same single source of truth as resource
 registration (the spec + the resource surface), so a URI change can never
 silently break cache invalidation again.
+
+Each derived target is a ``(uri_template, arg_keys)`` pair.  ``arg_keys`` maps
+each wire placeholder in the template to the normalized tool-argument key that
+supplies its value (``{"repository-id": "repository_id"}``), read from the
+spec's ``x-param-rename`` contract (``gitea_mcp_server.param_rename``).  This
+bridges Rule A's rename — the template keeps the wire spelling while tool
+arguments carry the normalized name — so substitution produces the wire-form
+URI the cache keyed.
 """
 
 from __future__ import annotations
 
 import logging
-import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -56,14 +64,19 @@ from fastmcp.server.middleware.middleware import (
 )
 
 from gitea_mcp_server.constants import HTTP_METHODS_SAFE
+from gitea_mcp_server.param_rename import read_param_rename
 from gitea_mcp_server.resources.surface import get_resource_surface
+from gitea_mcp_server.uri_utils import iter_path_params
 
 logger = logging.getLogger(__name__)
 
 # Global invalidation map populated by ``build_invalidation_map`` after
 # resource registration.  Maps tool name (bare operationId, not namespaced)
-# -> list of resource URI templates (base form, no ``{?query}`` suffix).
-TOOL_INVALIDATION_MAP: dict[str, list[str]] = {}
+# -> list of ``(uri_template, arg_keys)`` targets, where ``arg_keys`` maps each
+# wire placeholder in the template to the normalized tool-argument key that
+# supplies its value (e.g. ``{"repository-id": "repository_id"}``).  The map is
+# intrinsic to the template, so it travels with it — no parallel side table.
+TOOL_INVALIDATION_MAP: dict[str, list[tuple[str, dict[str, str]]]] = {}
 
 # Write tools recorded during tool customization (``record_write_tool``),
 # consumed by ``build_invalidation_map`` after resource registration.
@@ -143,11 +156,13 @@ def _derive_targets(
     method: str,
     surface: dict[str, ResourceSurfaceEntry],
     resource_types: dict[str, set[str]],
-) -> list[str]:
-    """Compute the invalidation URI templates for one write tool.
+) -> list[tuple[str, dict[str, str]]]:
+    """Compute the invalidation targets for one write tool.
 
     Path-prefix (full prefix, no exceptions) plus cross-tree type
-    references.  Returns sorted base URI templates.
+    references.  Returns sorted ``(uri_template, arg_keys)`` targets, where
+    ``arg_keys`` maps each wire placeholder in the template to the normalized
+    tool-argument key that supplies its value.
 
     Args:
         openapi_spec: Post-conversion OpenAPI 3.1 spec (may be ``None``).
@@ -157,7 +172,7 @@ def _derive_targets(
         resource_types: Precomputed ``base_uri -> referenced types`` map.
 
     Returns:
-        Sorted list of base URI templates to invalidate.
+        Sorted list of ``(base_uri_template, arg_keys)`` targets.
     """
     targets: set[str] = set()
 
@@ -176,7 +191,46 @@ def _derive_targets(
                 if modified in types:
                     targets.add(base_uri)
 
-    return sorted(targets)
+    return [
+        (template, _arg_keys_for(openapi_spec, surface, template))
+        for template in sorted(targets)
+    ]
+
+
+def _arg_keys_for(
+    openapi_spec: OpenAPISpec | None,
+    surface: dict[str, ResourceSurfaceEntry],
+    template: str,
+) -> dict[str, str]:
+    """Map each wire placeholder in ``template`` to its normalized arg key.
+
+    The template carries the wire spelling (``{repository-id}``); tool
+    arguments carry the Rule A-normalized name (``repository_id``).  The
+    spec's ``x-param-rename`` is the contract bridging the two.  Read it from
+    the resource's GET operation — resolved through ``_find_spec_path`` so a
+    concrete wrapper api_path (e.g. the readme) still finds its spec path.
+
+    Identity entries are included for unchanged placeholders, so the
+    substitution lookup is uniform (no ``None`` branch in the hot path).
+
+    Args:
+        openapi_spec: Post-conversion OpenAPI 3.1 spec (may be ``None``).
+        surface: Registered resource surface (base URI -> entry).
+        template: The base URI template to resolve.
+
+    Returns:
+        ``{wire_placeholder: normalized_arg_key}`` for every placeholder.
+    """
+    entry = surface.get(template)
+    rename_map: dict[str, str] = {}
+    if openapi_spec is not None and entry is not None:
+        spec_path = _find_spec_path(openapi_spec, entry.api_path)
+        if spec_path is not None:
+            rename_map = read_param_rename(openapi_spec, spec_path, "get") or {}
+
+    # rename_map is normalized -> wire; invert to wire -> normalized.
+    wire_to_arg = {wire: normalized for normalized, wire in rename_map.items()}
+    return {name: wire_to_arg.get(name, name) for name, _ in iter_path_params(template)}
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +351,11 @@ def _get_resource_types(openapi_spec: OpenAPISpec, api_path: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def _substitute_template(template: str, params: dict[str, Any]) -> str:
+def _substitute_template(
+    template: str,
+    params: dict[str, Any],
+    arg_keys: Mapping[str, str],
+) -> str:
     """Substitute parameters into a URI template.
 
     Values are substituted **raw**, not percent-encoded: the result is a cache
@@ -306,9 +364,16 @@ def _substitute_template(template: str, params: dict[str, Any]) -> str:
     matches a read the agent spelled encoded (and vice versa).  Encoding here
     would double-encode relative to that canonical form.
 
+    ``arg_keys`` maps each wire placeholder in ``template`` to the normalized
+    tool-argument key that supplies its value (e.g.
+    ``{"repository-id": "repository_id"}``).  This bridges Rule A's rename:
+    the template keeps the wire spelling while tool arguments carry the
+    normalized name.  Identity entries cover unchanged placeholders.
+
     Args:
         template: URI template with {placeholders}
         params: Dictionary of parameter values
+        arg_keys: Wire-placeholder -> normalized-argument-key map.
 
     Returns:
         URI with placeholders replaced
@@ -317,26 +382,27 @@ def _substitute_template(template: str, params: dict[str, Any]) -> str:
         ValueError: If required parameters are missing
     """
     # Find all parameter names in the template (handle {param} and {param*})
-    param_names = re.findall(r"\{(\w+)(?:\*)?\}", template)
+    param_names = [name for name, _ in iter_path_params(template)]
+
+    # Resolve each placeholder to the argument key that supplies its value.
+    resolved = {name: arg_keys.get(name, name) for name in param_names}
 
     # Check for missing required parameters
-    missing = [p for p in param_names if p not in params]
+    missing = [name for name, arg in resolved.items() if arg not in params]
     if missing:
         msg = f"Missing parameters for URI template: {missing}"
         raise ValueError(msg)
 
     # Replace each parameter
     result = template
-    for param in param_names:
+    for name in param_names:
+        value = str(params.get(resolved[name], ""))
         # Check if the template uses wildcard syntax {param*}
-        placeholder_with_asterisk = f"{{{param}*}}"
-        placeholder_standard = f"{{{param}}}"
-
+        placeholder_with_asterisk = f"{{{name}*}}"
+        placeholder_standard = f"{{{name}}}"
         if placeholder_with_asterisk in template:
-            value = str(params.get(param, ""))
             result = result.replace(placeholder_with_asterisk, value)
         elif placeholder_standard in template:
-            value = str(params.get(param, ""))
             result = result.replace(placeholder_standard, value)
 
     return result
@@ -376,9 +442,9 @@ def compute_uris_to_invalidate(
     templates = TOOL_INVALIDATION_MAP[tool_name]
     uris = []
 
-    for template in templates:
+    for template, arg_keys in templates:
         try:
-            uri = _substitute_template(template, arguments)
+            uri = _substitute_template(template, arguments, arg_keys)
             uris.append(uri)
         except ValueError as e:
             logger.debug(

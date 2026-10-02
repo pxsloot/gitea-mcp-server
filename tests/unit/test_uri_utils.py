@@ -6,9 +6,82 @@ from fastmcp.resources.template import match_uri_template
 from gitea_mcp_server.uri_utils import (
     clean_resource_uri,
     expand_path_params,
+    iter_path_params,
+    path_param_names,
     render_wildcard_segment,
     wildcard_param_names,
 )
+
+
+class TestIterPathParams:
+    """Tests for iter_path_params — the single path-placeholder parser."""
+
+    def test_yields_name_and_wildcard_flag(self) -> None:
+        assert list(iter_path_params("gitea://repos/{owner}/{repo}")) == [
+            ("owner", False),
+            ("repo", False),
+        ]
+
+    def test_wildcard_flag(self) -> None:
+        assert list(iter_path_params("gitea://x/{filepath*}")) == [("filepath", True)]
+
+    def test_hyphenated_name_preserved(self) -> None:
+        """Kebab-case placeholders are recognized, spelling preserved."""
+        assert list(iter_path_params("gitea://activitypub/repository-id/{repository-id}")) == [
+            ("repository-id", False)
+        ]
+
+    def test_multi_hyphen(self) -> None:
+        assert list(
+            iter_path_params("gitea://activitypub/user-id/{user-id}/activities/{activity-id}")
+        ) == [("user-id", False), ("activity-id", False)]
+
+    def test_dot_literal_between_placeholders(self) -> None:
+        assert list(iter_path_params("/repos/{owner}/{repo}/git/commits/{sha}.{diffType}")) == [
+            ("owner", False),
+            ("repo", False),
+            ("sha", False),
+            ("diffType", False),
+        ]
+
+    def test_query_suffix_not_matched(self) -> None:
+        """A {?a,b} query suffix is a different grammar — not a path param."""
+        assert list(iter_path_params("gitea://repos/{owner}/{repo}/issues{?state,type}")) == [
+            ("owner", False),
+            ("repo", False),
+        ]
+
+    def test_literal_hyphen_segment_not_matched(self) -> None:
+        """A hyphen in a literal segment is not a placeholder."""
+        assert list(iter_path_params("gitea://repos/{owner}/{repo}/mirror-sync")) == [
+            ("owner", False),
+            ("repo", False),
+        ]
+
+    def test_no_placeholders(self) -> None:
+        assert list(iter_path_params("gitea://user")) == []
+
+
+class TestPathParamNames:
+    """Tests for path_param_names — order-preserving template-form names."""
+
+    def test_order_preserved(self) -> None:
+        assert path_param_names("gitea://repos/{owner}/{repo}/contents/{filepath*}") == [
+            "owner",
+            "repo",
+            "filepath",
+        ]
+
+    def test_hyphen_preserved(self) -> None:
+        assert path_param_names("gitea://activitypub/repository-id/{repository-id}") == [
+            "repository-id"
+        ]
+
+    def test_query_suffix_excluded(self) -> None:
+        assert path_param_names("gitea://repos/{owner}/{repo}/issues{?state}") == ["owner", "repo"]
+
+    def test_empty(self) -> None:
+        assert path_param_names("gitea://user") == []
 
 
 class TestCleanResourceUri:

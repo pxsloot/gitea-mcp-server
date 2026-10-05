@@ -1,7 +1,7 @@
 ---
 audience: developer
 type: reference
-covers: How we treat documentation -- audience split, the de-duplication invariant, and the pragmatic Diátaxis view
+covers: How we treat documentation -- audience split, the de-duplication invariant, decision-shaped content, and the pragmatic Diátaxis view
 ---
 
 # Documentation Standards

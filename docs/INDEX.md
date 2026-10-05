@@ -40,7 +40,7 @@ mention is a one-line pointer, not a copy.
 | `docs/SKILL.md` | developer | reference | Project conventions, workflows, checklists, FAQ, and documentation philosophy | You need the developer handbook — red flags, common tasks, checklists |
 | `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
 | `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
-| `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |
+| `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, decision-shaped content, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |
 | `docs/ISSUE_STANDARDS.md` | developer | reference | Issue creation, AC vs design, epic/phase model, templates | You are creating or shaping an issue |
 
 ## Topic ownership (canonical home)
@@ -72,5 +72,5 @@ truth. Other mentions point here.
 | Testing patterns | `TESTING_STANDARDS.md` |
 | Typed spec fixtures / `make_openapi_spec` | `testing/FIXTURES.md` |
 | Agent instructions intent / editing rules | `AGENT_INSTRUCTIONS_STANDARDS.md` |
-| Documentation-set principles (audience, de-dup, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |
+| Documentation-set principles (audience, de-dup, decision-shaped content, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |
 | Issue workflow / AC vs design / epics and phases | `ISSUE_STANDARDS.md` |

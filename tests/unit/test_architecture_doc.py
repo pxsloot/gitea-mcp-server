@@ -189,9 +189,17 @@ def test_no_retired_mechanism_identifiers_in_docs() -> None:
 # heading or Contracts & Invariants entry.  Ordinals were replaced by titles
 # precisely so pointers stay meaningful; a stale title pointer (the class this
 # guard exists to catch) is what makes the next reader fail to find the rule.
+#
+# References are hard-wrapped and come in two shapes: a title after the arrow,
+# and a title named before it (``the "X" entry in ARCHITECTURE.md``).  The
+# sweep is therefore not line-oriented.  ``rhs`` spans one wrapped continuation
+# line but never crosses a blank line or a table row -- a table row is a
+# self-contained reference on one physical line.
 
-_ARCH_REF_RE = re.compile(r"ARCHITECTURE\.md`?\s*(?:→|->)\s*(?P<rhs>[^\n]*(?:\n\s{2,}[^\n]*)?)")
+_ARCH_REF_RE = re.compile(r"ARCHITECTURE\.md`?\s*(?:→|->)\s*(?P<rhs>[^\n]*(?:\n(?![|\n])[^\n]*)?)")
+_PRE_ARROW_REF_RE = re.compile(r"[\"'](?P<title>[^\"']+)[\"']\s+entry in\s+[^\n]*ARCHITECTURE\.md")
 _QUOTED_RE = re.compile(r"[\"'](?P<title>[^\"']+)[\"']")
+_SENTENCE_END_RE = re.compile(r"\.\s")
 
 
 def _normalize_anchor(text: str) -> str:
@@ -236,24 +244,50 @@ def _architecture_anchors() -> set[str]:
     return {anchor for anchor in anchors if anchor}
 
 
+def _resolves(title: str, anchors: set[str]) -> bool:
+    """A reference resolves on an exact title or a title prefix."""
+    return any(anchor == title or anchor.startswith(title) for anchor in anchors)
+
+
 def _unresolved_arch_refs(text: str, anchors: set[str]) -> list[str]:
-    """Return the quoted titles in ARCHITECTURE.md references absent from *anchors*."""
+    """Return quoted titles in ARCHITECTURE.md references absent from *anchors*."""
     offenders: list[str] = []
     for ref in _ARCH_REF_RE.finditer(text):
-        for quoted in _QUOTED_RE.finditer(ref.group("rhs")):
+        # A reference ends at the first sentence break, so a following sentence
+        # on the wrapped line cannot contribute an unrelated quoted phrase.
+        rhs = _SENTENCE_END_RE.split(ref.group("rhs"), maxsplit=1)[0]
+        for quoted in _QUOTED_RE.finditer(rhs):
             title = _normalize_anchor(quoted.group("title"))
-            if title and title not in anchors:
+            if title and not _resolves(title, anchors):
                 offenders.append(quoted.group("title"))
+    for ref in _PRE_ARROW_REF_RE.finditer(text):
+        title = _normalize_anchor(ref.group("title"))
+        if title and not _resolves(title, anchors):
+            offenders.append(ref.group("title"))
     return offenders
 
 
 def test_cross_reference_sweep_detects_stale_titles() -> None:
-    """The sweep is not vacuous: a stale title is caught, a live one is not."""
+    """The sweep is not vacuous: every reference shape is exercised.
+
+    A stale title is caught in each shape -- same line, wrapped line, and named
+    before the arrow -- and a live title passes in each.
+    """
     anchors = _architecture_anchors()
-    stale = 'See `docs/ARCHITECTURE.md` → "Vendor extension (`x-*`) stripping".\n'
-    live = 'See `docs/ARCHITECTURE.md` → Contracts & Invariants, "One result pipeline".\n'
-    assert _unresolved_arch_refs(stale, anchors)
-    assert _unresolved_arch_refs(live, anchors) == []
+    stale = [
+        'See `docs/ARCHITECTURE.md` → "Vendor extension (`x-*`) stripping".\n',
+        'See `docs/ARCHITECTURE.md` → Contracts &\nInvariants, "Vendor extension (`x-*`) stripping".\n',
+        'the "Vendor extension (`x-*`) stripping" entry in `docs/ARCHITECTURE.md` → Contracts & Invariants.\n',
+    ]
+    live = [
+        'See `docs/ARCHITECTURE.md` → Contracts & Invariants, "One result pipeline".\n',
+        'See `docs/ARCHITECTURE.md` → Contracts &\nInvariants, "The dependency direction is enforced".\n',
+        'the "Only agent-misleading spec quirks are normalized" entry in `docs/ARCHITECTURE.md` → Contracts & Invariants.\n',
+    ]
+    for fixture in stale:
+        assert _unresolved_arch_refs(fixture, anchors), fixture
+    for fixture in live:
+        assert _unresolved_arch_refs(fixture, anchors) == [], fixture
 
 
 def test_architecture_cross_references_resolve() -> None:

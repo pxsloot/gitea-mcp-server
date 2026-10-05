@@ -265,7 +265,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/type_info.py` | ``resolve_type`` tool + ``gitea://types/{typeName}`` resource |
 | `tools/docs_tools.py` | ``search_docs`` / ``read_doc`` tools + guide resources |
 | `tools/virtual_params.py` | virtual parameter registry + lifecycle (inject/extract/validate/apply) |
-| `tools/namespace.py` | ``GiteaNamespace`` transform (prefixes tools, passes resources through) |
+| `tools/namespace.py` | ``GiteaNamespace`` transform (prefixes tool names with the server's ``gitea_``; resources pass through).  A host/client may prepend its own server identifier at the protocol level, so a tool can read ``gitea_mcp_gitea_*`` |
 
 The startup order in which these layers are wired (scope filter → exclusion →
 runtime wrap) is a contributor how-to: see `docs/DEVELOPMENT.md` → "Startup

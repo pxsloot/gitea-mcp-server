@@ -2,7 +2,7 @@
 
 Gitea models "is this thing true?" endpoints (e.g. ``repoPullRequestIsMerged``)
 as a GET returning 204 on success and 404 when the answer is "no".  The
-normalized surface (design decision #17, ``openapi_converter/normalize.py``)
+normalized surface (``openapi_converter/normalize.py``)
 returns ``{"result": true}`` on 204, ``{"result": false}`` on 404 when the
 underlying resource exists, and a clear error when the resource is missing.
 

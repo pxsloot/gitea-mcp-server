@@ -21,7 +21,7 @@ This doc covers issue policy and templates. If you need:
 | Developer handbook, PR checklist, red flags | `docs/SKILL.md` |
 | Documentation structure (audience, de-dup, Diátaxis) | `docs/DOCUMENTATION_STANDARDS.md` |
 | Testing policy, coverage, zones | `docs/TESTING_STANDARDS.md` |
-| Architecture, module map, design decisions | `docs/ARCHITECTURE.md` |
+| Architecture, module map, contracts & invariants | `docs/ARCHITECTURE.md` |
 | Branch naming, PR mechanics, environment setup | `CONTRIBUTING.md` |
 
 ---

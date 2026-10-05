@@ -33,14 +33,14 @@ mention is a one-line pointer, not a copy.
 |-----|----------|------|--------|------------------|
 | `README.md` | enduser | reference | Install, config env vars, transports (stdio/http/docker), quick start | You are installing or running the server |
 | `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
-| `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, design decisions, content-type handling, runtime flows | You need to understand how the server is built |
+| `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, contracts & invariants, content-type handling, runtime flows | You need to understand how the server is built |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
 | `docs/TESTING_STANDARDS.md` | developer | reference | Testing principles, quality gates, coverage policy; see its sub-doc index for specific topics | You are writing or reviewing tests |
 | `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
 | `docs/SKILL.md` | developer | reference | Project conventions, workflows, checklists, FAQ, and documentation philosophy | You need the developer handbook — red flags, common tasks, checklists |
 | `docs/TOOL_ANNOTATIONS.md` | developer | reference | Annotation fields (title, tags, hints), how they are inferred | You need the full semantics of readOnly/destructive/idempotent/openWorld hints |
 | `docs/AGENT_INSTRUCTIONS_STANDARDS.md` | developer | reference | The intent/contract for `agent_instructions.md`: voice, content rules, what the doc must not do | You are editing the injected agent instructions |
-| `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |
+| `docs/DOCUMENTATION_STANDARDS.md` | developer | reference | How we treat documentation: audience split, the de-duplication invariant, decision-shaped content, the pragmatic Diátaxis view | You are adding, splitting, or trimming a doc |
 | `docs/ISSUE_STANDARDS.md` | developer | reference | Issue creation, AC vs design, epic/phase model, templates | You are creating or shaping an issue |
 
 ## Topic ownership (canonical home)
@@ -51,26 +51,26 @@ truth. Other mentions point here.
 | Topic | Canonical home |
 |-------|---------------|
 | Config / ConfigProtocol | `config.py` (source) + `TESTING_STANDARDS.md` (test pattern / SimpleConfig) |
-| Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (design decisions) |
+| Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (contracts & invariants) |
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
-| Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #4) |
-| Registration record (tool/resource metadata contract) | `gitea_mcp_server/registration.py` (source, canonical) + `ARCHITECTURE.md` (design decision #20) |
+| Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (resource derivation, under Pipeline) |
+| Registration record (tool/resource metadata contract) | `gitea_mcp_server/registration.py` (source, canonical) + `ARCHITECTURE.md` (contracts & invariants → registration metadata) |
 | Module map | `ARCHITECTURE.md` |
-| Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (design decision #19) |
+| Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (contracts & invariants → dependency direction) |
 | Transform execution order | `ARCHITECTURE.md` |
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
 | Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |
 | Markdown formatter contract (`MarkdownFormatter`) | `format.py` (source, canonical) + `ARCHITECTURE.md` (pipeline) + `DEVELOPMENT.md` (add-a-formatter how-to) |
 | Output format contract (json/raw vs markdown, `detail`) | `tools/result_pipeline.py` (source, canonical: module docstring) + `tools/virtual_params.py` (registry descriptions, agent-facing echo) + `format.py` (renderer, points here) + `gitea_mcp_server/docs/guides/tool-output-format.md` (agent-facing echo) |
-| Generic schema-anchored markdown view | `format.py` (`_generic_collection_view`, source) + `openapi_converter/display_hints.py` (`view_hints_for`) + `ARCHITECTURE.md` (design decision #18) |
-| Display-view hints (`omit` / `compact` / `flag`, `ViewHints`) | `openapi_converter/display_hints.py` (source, canonical) + `models.py` (`ViewHints`) + `ARCHITECTURE.md` (design decision #18) |
+| Generic schema-anchored markdown view | `format.py` (`_generic_collection_view`, source) + `openapi_converter/display_hints.py` (`view_hints_for`) + `ARCHITECTURE.md` (contracts & invariants → markdown collection view) |
+| Display-view hints (`omit` / `compact` / `flag`, `ViewHints`) | `openapi_converter/display_hints.py` (source, canonical) + `models.py` (`ViewHints`) + `ARCHITECTURE.md` (contracts & invariants → markdown collection view) |
 | Agent-facing `$ref` marker shape | `gitea_mcp_server/marker.py` (source: `ref_marker`/`is_ref_marker`/`ref_marker_label`) + `ARCHITECTURE.md` (pipeline) |
 | Payload `$ref` chain resolution | `gitea_mcp_server/ref_resolver.py` (source: `resolve_ref_chain`) + `ARCHITECTURE.md` (module map) |
-| Cache invalidation / response cache | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (design decision #6) |
+| Cache invalidation / response cache | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (contracts & invariants → cache invalidation) |
 | OpenTelemetry | `DEVELOPMENT.md` |
 | `x-*` stripping / content-type handling | `ARCHITECTURE.md` |
 | Testing patterns | `TESTING_STANDARDS.md` |
 | Typed spec fixtures / `make_openapi_spec` | `testing/FIXTURES.md` |
 | Agent instructions intent / editing rules | `AGENT_INSTRUCTIONS_STANDARDS.md` |
-| Documentation-set principles (audience, de-dup, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |
+| Documentation-set principles (audience, de-dup, decision-shaped content, Diátaxis) | `DOCUMENTATION_STANDARDS.md` |
 | Issue workflow / AC vs design / epics and phases | `ISSUE_STANDARDS.md` |

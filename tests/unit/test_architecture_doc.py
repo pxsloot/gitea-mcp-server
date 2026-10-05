@@ -9,6 +9,7 @@ must be named.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from gitea_mcp_server.registration import (
     RETIRED_RESOURCE_META_KEYS,
@@ -24,7 +25,7 @@ _PACKAGE_TOKEN_RE = re.compile(r"`([A-Za-z0-9_]+/)`")
 def _module_map_section() -> str:
     text = _DOC.read_text()
     start = text.index("## Module Map")
-    end = text.index("## Key Design Decisions")
+    end = text.index("## Contracts & Invariants")
     return text[start:end]
 
 
@@ -104,32 +105,33 @@ _RETIRED_MECHANISM_PATTERNS = (
     re.compile(rf"""meta\.get\(\s*["'](?:{_RETIRED_ALTERNATION})["']"""),
 )
 
-# The design decision that documents the contract is its canonical home and is
-# exempt from the sweep.
-_DECISION_HEADING_RE = re.compile(r"(?m)^\s*\d+\.\s+\*\*Typed registration metadata")
-_NEXT_DECISION_RE = re.compile(r"(?m)^\s*\d+\.\s+\*\*")
+# The Contracts & Invariants entry that documents the registration contract is
+# its canonical home and is exempt from the sweep.
+_ENTRY_HEADING_RE = re.compile(r"(?m)^\*\*Registration metadata")
+_NEXT_ENTRY_RE = re.compile(r"(?m)^\*\*")
 
 
-def _contract_decision_section() -> str:
-    """Return the registration-contract design decision's text (decision #20).
-
-    Keyed on the decision's title (stable across renumbering) and bounded by the
-    next decision or the section separator, so a renumber or an inserted
-    ``---`` neither drops nor over-extends the exemption.
-    """
+def _contracts_section() -> str:
+    """Return the Contracts & Invariants section's text, up to the next rule."""
     text = _DOC.read_text()
-    match = _DECISION_HEADING_RE.search(text)
+    start = text.index("## Contracts & Invariants")
+    end = text.find("\n---\n", start)
+    return text[start : end if end != -1 else len(text)]
+
+
+def _contract_entry_section() -> str:
+    """Return the registration-contract entry's text.
+
+    Keyed on the entry's title (stable across edits) and bounded by the next
+    entry, so an inserted entry neither drops nor over-extends the exemption.
+    """
+    section = _contracts_section()
+    match = _ENTRY_HEADING_RE.search(section)
     if match is None:
         return ""
-    boundaries = []
-    next_decision = _NEXT_DECISION_RE.search(text, match.end())
-    if next_decision:
-        boundaries.append(next_decision.start())
-    separator = text.find("\n---\n", match.end())
-    if separator != -1:
-        boundaries.append(separator)
-    end = min(boundaries) if boundaries else len(text)
-    return text[match.start() : end]
+    next_entry = _NEXT_ENTRY_RE.search(section, match.end())
+    end = next_entry.start() if next_entry else len(section)
+    return section[match.start() : end]
 
 
 def _retired_mechanism_references(text: str) -> list[str]:
@@ -155,18 +157,19 @@ def test_sweep_detects_retired_references() -> None:
 def test_no_retired_mechanism_identifiers_in_docs() -> None:
     """Retired flat-key references do not appear in docs/ outside the contract.
 
-    The registration contract (decision #20) documents the record; the old flat
-    keys are gone.  This test makes DoD #4 ("superseded mentions are gone")
+    The registration contract (the "Registration metadata" entry in
+    Contracts & Invariants) documents the record; the old flat keys are gone.
+    This test makes DoD #4 ("superseded mentions are gone")
     executable, so a stale reference fails the build instead of surfacing later
     as a wiring surprise.
     """
     docs_dir = project_root() / "docs"
-    contract_section = _contract_decision_section()
+    contract_section = _contract_entry_section()
     offenders: dict[str, list[str]] = {}
 
     for doc_path in sorted(docs_dir.rglob("*.md")):
         text = doc_path.read_text()
-        # Exempt decision #20 in ARCHITECTURE.md (it documents the contract).
+        # Exempt the registration-contract entry in ARCHITECTURE.md.
         if doc_path.name == "ARCHITECTURE.md" and contract_section:
             text = text.replace(contract_section, "")
         found = _retired_mechanism_references(text)
@@ -175,6 +178,144 @@ def test_no_retired_mechanism_identifiers_in_docs() -> None:
 
     assert not offenders, (
         f"Retired mechanism identifiers found in docs: {offenders}. "
-        "The registration contract (decision #20) is the canonical home; "
+        "The registration contract entry is the canonical home; "
         "update the reference to the record."
+    )
+
+
+# ── Cross-reference resolution ───────────────────────────────────────────────
+#
+# A reference of the form ``ARCHITECTURE.md`` → "Some Title" must name a real
+# heading or Contracts & Invariants entry.  Ordinals were replaced by titles
+# precisely so pointers stay meaningful; a stale title pointer (the class this
+# guard exists to catch) is what makes the next reader fail to find the rule.
+#
+# References are hard-wrapped and come in two shapes: a title after the arrow,
+# and a title named before it (``the "X" entry in ARCHITECTURE.md``).  The
+# sweep is therefore not line-oriented.  ``rhs`` spans one wrapped continuation
+# line but never crosses a blank line or a table row -- a table row is a
+# self-contained reference on one physical line.
+
+_ARCH_REF_RE = re.compile(r"ARCHITECTURE\.md`?\s*(?:→|->)\s*(?P<rhs>[^\n]*(?:\n(?![|\n])[^\n]*)?)")
+_PRE_ARROW_REF_RE = re.compile(r"[\"'](?P<title>[^\"']+)[\"']\s+entry in\s+[^\n]*ARCHITECTURE\.md")
+_QUOTED_RE = re.compile(r"[\"'](?P<title>[^\"']+)[\"']")
+_SENTENCE_END_RE = re.compile(r"\.\s")
+
+
+def _normalize_anchor(text: str) -> str:
+    """Fold a heading/entry/reference title to a comparable anchor."""
+    text = text.replace("`", "").replace("*", "")
+    text = re.sub(r"\s+", " ", text).strip().casefold()
+    return text.rstrip(" .,)")
+
+
+def _contract_entries() -> list[str]:
+    """Return the bold titles of the Contracts & Invariants entries."""
+    entries: list[str] = []
+    current: list[str] | None = None
+    for line in _contracts_section().splitlines():
+        if line.startswith("**"):
+            if current is not None:
+                entries.append(" ".join(current))
+            current = [line]
+        elif current is not None:
+            if line.strip():
+                current.append(line.strip())
+            else:
+                entries.append(" ".join(current))
+                current = None
+    if current is not None:
+        entries.append(" ".join(current))
+    titles = []
+    for entry in entries:
+        match = re.match(r"\*\*(?P<title>.+?)\*\*", entry)
+        if match:
+            titles.append(match.group("title"))
+    return titles
+
+
+def _architecture_anchors() -> set[str]:
+    """Every title a cross-reference may resolve to (headings + entries)."""
+    anchors = set()
+    for line in _DOC.read_text().splitlines():
+        if line.startswith("#"):
+            anchors.add(_normalize_anchor(line.lstrip("#").strip()))
+    anchors.update(_normalize_anchor(title) for title in _contract_entries())
+    return {anchor for anchor in anchors if anchor}
+
+
+def _resolves(title: str, anchors: set[str]) -> bool:
+    """A reference resolves on an exact title or a title prefix."""
+    return any(anchor == title or anchor.startswith(title) for anchor in anchors)
+
+
+def _unresolved_arch_refs(text: str, anchors: set[str]) -> list[str]:
+    """Return quoted titles in ARCHITECTURE.md references absent from *anchors*."""
+    offenders: list[str] = []
+    for ref in _ARCH_REF_RE.finditer(text):
+        # A reference ends at the first sentence break, so a following sentence
+        # on the wrapped line cannot contribute an unrelated quoted phrase.
+        rhs = _SENTENCE_END_RE.split(ref.group("rhs"), maxsplit=1)[0]
+        for quoted in _QUOTED_RE.finditer(rhs):
+            title = _normalize_anchor(quoted.group("title"))
+            if title and not _resolves(title, anchors):
+                offenders.append(quoted.group("title"))
+    for ref in _PRE_ARROW_REF_RE.finditer(text):
+        title = _normalize_anchor(ref.group("title"))
+        if title and not _resolves(title, anchors):
+            offenders.append(ref.group("title"))
+    return offenders
+
+
+def test_cross_reference_sweep_detects_stale_titles() -> None:
+    """The sweep is not vacuous: every reference shape is exercised.
+
+    A stale title is caught in each shape -- same line, wrapped line, and named
+    before the arrow -- and a live title passes in each.
+    """
+    anchors = _architecture_anchors()
+    stale = [
+        'See `docs/ARCHITECTURE.md` → "Vendor extension (`x-*`) stripping".\n',
+        'See `docs/ARCHITECTURE.md` → Contracts &\nInvariants, "Vendor extension (`x-*`) stripping".\n',
+        'the "Vendor extension (`x-*`) stripping" entry in `docs/ARCHITECTURE.md` → Contracts & Invariants.\n',
+    ]
+    live = [
+        'See `docs/ARCHITECTURE.md` → Contracts & Invariants, "One result pipeline".\n',
+        'See `docs/ARCHITECTURE.md` → Contracts &\nInvariants, "The dependency direction is enforced".\n',
+        'the "Only agent-misleading spec quirks are normalized" entry in `docs/ARCHITECTURE.md` → Contracts & Invariants.\n',
+    ]
+    for fixture in stale:
+        assert _unresolved_arch_refs(fixture, anchors), fixture
+    for fixture in live:
+        assert _unresolved_arch_refs(fixture, anchors) == [], fixture
+
+
+def test_architecture_cross_references_resolve() -> None:
+    """Every ``ARCHITECTURE.md" → "Title" reference names a real title.
+
+    References resolve by section/entry title (never by ordinal); this makes
+    the pointer itself executable, so a renamed heading fails the build
+    instead of sending the next reader to a title that no longer exists.
+    """
+    anchors = _architecture_anchors()
+    offenders: dict[str, list[str]] = {}
+    # This module embeds deliberately stale/live references as fixtures; skip it.
+    self_path = Path(__file__).resolve()
+
+    roots = [project_root() / "docs", project_root() / "gitea_mcp_server", project_root() / "tests"]
+    for root in roots:
+        for path in sorted(root.rglob("*")):
+            if (
+                path.suffix not in {".md", ".py"}
+                or not path.is_file()
+                or path.resolve() == self_path
+            ):
+                continue
+            found = _unresolved_arch_refs(path.read_text(), anchors)
+            if found:
+                offenders[str(path.relative_to(project_root()))] = sorted(set(found))
+
+    assert not offenders, (
+        f"ARCHITECTURE.md cross-references name non-existent titles: {offenders}. "
+        "Point at a current heading or Contracts & Invariants entry by title."
     )

@@ -18,7 +18,7 @@ This doc covers testing principles and quality standards. If you need:
 | Topic | See |
 |-------|-----|
 | Developer checklists, project conventions, how-to workflows | `docs/SKILL.md` |
-| Design decisions, the pipeline, the module map | `docs/ARCHITECTURE.md` |
+| Contracts & invariants, the pipeline, the module map | `docs/ARCHITECTURE.md` |
 | Environment setup, adding customizations, adding resources | `docs/DEVELOPMENT.md` |
 | How token scopes gate tool visibility (and testing scope behavior) | `docs/SCOPE_MODEL.md` |
 | Documentation set structural rules (de-duplication, audience split, Diátaxis) | `docs/DOCUMENTATION_STANDARDS.md` |

@@ -1,6 +1,6 @@
 """Normalize agent-misleading spec quirks at the transform layer.
 
-The server mirrors the OpenAPI spec one-to-one (design decision #17) — the
+The server mirrors the OpenAPI spec one-to-one — the
 spec is the source of truth.  But a few *classes* of spec quirks actively
 mislead agents, and these are systemic: Gitea's spec mixes naming conventions
 and response shapes in ways that recur across many endpoints.  Rather than

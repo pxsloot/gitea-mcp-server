@@ -13,7 +13,7 @@ If you need:
 
 | Topic | See |
 |-------|-----|
-| Design rationale, the pipeline diagram, data flow, key design decisions | `docs/ARCHITECTURE.md` |
+| Pipeline, module map, contracts & invariants, data flow | `docs/ARCHITECTURE.md` |
 | Testing patterns, fixture conventions, mocking rules, coverage policy | `docs/TESTING_STANDARDS.md` |
 | How token scopes gate tool visibility and how `sudo` appears | `docs/SCOPE_MODEL.md` |
 | Project conventions, developer checklists, common tasks | `docs/SKILL.md` |
@@ -128,7 +128,8 @@ maintain.  Two executable guards keep the architecture honest:
   of explicitly forbidden edges.  A module that belongs to no layer fails too.
 
 When you add a module, update the Module Map and the contract's `LAYERS` — the
-tests tell you if you forget.  See `docs/ARCHITECTURE.md` design decision #19.
+tests tell you if you forget.  See `docs/ARCHITECTURE.md` → Contracts &
+Invariants, "The dependency direction is enforced".
 
 ---
 
@@ -603,8 +604,9 @@ Two existing rules show the pattern:
   runtime pipeline returns an unambiguous boolean, distinguishing "not
   merged" from "not found" via ``_boolean_check_resource_uri``.
 
-When adding a rule, update the module docstring, the design decision #17 in
-``docs/ARCHITECTURE.md``, and add unit + integration tests (see
+When adding a rule, update the module docstring, the "Only agent-misleading
+spec quirks are normalized" entry in ``docs/ARCHITECTURE.md`` → Contracts &
+Invariants, and add unit + integration tests (see
 ``tests/unit/openapi_converter/test_normalize.py`` and
 ``tests/integration/test_tool_behaviour.py``).
 
@@ -1318,7 +1320,8 @@ chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup ord
     schema objects (Gitea leaks `x-go-name`/`x-go-package` Go internals) -- this
     is by design, not a bug.  The surgical scope of that strip (schema-level only,
     operation-level `x-*` preserved) and the rationale are in
-    `docs/ARCHITECTURE.md` → "Vendor extension (`x-*`) stripping in the converter".
+    `docs/ARCHITECTURE.md` → Contracts & Invariants,
+    "The `x-*` strip is surgical: schema-level only".
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 audience: developer
 type: reference
-covers: How we treat documentation -- audience split, the de-duplication invariant, decision-shaped content, and the pragmatic Diátaxis view
+covers: How we treat documentation -- audience split, the de-duplication invariant, decision-shaped content (including the principle residue), and the pragmatic Diátaxis view
 ---
 
 # Documentation Standards
@@ -93,19 +93,27 @@ choice while the prose that steered it stays frozen, so the list is guaranteed
 to drift — and the drift is invisible because nothing guards it.
 
 Once a choice is embodied, its prose payload is no longer a *decision*. It is
-one of four different things, and each has a home:
+one of five different things, and each has a home:
 
 | Residue | Question it answers | Home |
 |---------|--------------------|------|
+| **Principle / heuristic** | "how should I shape the next thing?" | `docs/DESIGN.md` |
 | **Invariant / contract** | "X must hold" | A reference section (e.g. `ARCHITECTURE.md` → Contracts & Invariants) plus an executable guard |
 | **Pitfall / rationale** | "Y broke Z; don't reintroduce it" | A constraint entry, or `DEVELOPMENT.md` → Common Pitfalls |
 | **Mechanism** | "how X works" | The canonical module docstring / module map / flow |
 | **Chronology** | "we used to do Y" | Delete — git history and the issue are the record |
 
+A **principle** is the residue that is easy to mistake for a decision and then
+throw away with it. It is not temporal: it states a present-tense stance and
+guides choices not yet made, whereas a decision names a moment (and often a
+discarded alternative). "Derive, don't curate" is a principle; "we chose to
+derive relations instead of curating them" is chronology. The first belongs in
+`DESIGN.md`, the second belongs in git.
+
 The rule:
 
 - Do **not** keep a standing decision list in a developer doc. A decision that
-  still steers belongs in one of the first three rows; a decision that no
+  still steers belongs in one of the first four rows; a decision that no
   longer steers is chronology and goes.
 - A surviving constraint is stated as a present-tense rule with a source
   pointer, and ideally enforced by a test. A constraint that exists only as
@@ -194,6 +202,8 @@ the ARCHITECTURE one-liner still matches.
   treated as integral part of the codebase. This file derives its structural
   policies from that foundation.
 - `docs/INDEX.md` -- the map of all docs, their audiences, and topic ownership.
+- `docs/DESIGN.md` -- the canonical home for design principles, the residue row
+  this file routes forward-looking heuristics to.
 - `docs/AGENT_INSTRUCTIONS_STANDARDS.md` -- the contract for the injected agent
   doc specifically.
 - This file -- the policies (audience split, de-duplication, Diátaxis) derived

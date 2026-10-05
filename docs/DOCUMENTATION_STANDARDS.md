@@ -70,9 +70,9 @@ serves a distinct reader or goal. Examples from this repo:
   why they are no-ops when unset); `DEVELOPMENT.md` carries the *operational
   how-to* (viewer, exporters, env vars). Both stay; the rationale trims its
   restated detail and points to the how-to.
-- **`x-*` stripping** appears as a *design decision* in `ARCHITECTURE.md` and
-  as a *contributor pitfall* in `DEVELOPMENT.md`. Different purpose: rationale
-  vs warning. Both stay.
+- **`x-*` stripping** appears as a *constraint* in `ARCHITECTURE.md` and as a
+  *contributor pitfall* in `DEVELOPMENT.md`. Different purpose: the rule vs the
+  warning. Both stay.
 - **Scope / `sudo` gating** is a *reference* in `SCOPE_MODEL.md` (the
   mechanism) and a *how-to* in `DEVELOPMENT.md` (the step when adding a param).
   The how-to keeps its angle and points to the reference for the mechanism.
@@ -81,6 +81,44 @@ The test for a cut is simple: **is this block saying the same thing from the
 same angle as another block?** If yes → collapse to one canonical home + a
 pointer. If no (different audience/purpose) → keep both, but trim any
 *redundant restatement* so each block owns its angle.
+
+## Decision-shaped content decays
+
+An architecture decision record is a *temporal* genre: it captures a choice at
+a moment, usually paired with a lifecycle (proposed → accepted → superseded).
+This project keeps no supersession machinery and follows an "only the now
+counts" rule (see `docs/SKILL.md`), so a standing "design decisions" list has
+no valid container here. Every refactor edits the code that *embodies* a
+choice while the prose that steered it stays frozen, so the list is guaranteed
+to drift — and the drift is invisible because nothing guards it.
+
+Once a choice is embodied, its prose payload is no longer a *decision*. It is
+one of four different things, and each has a home:
+
+| Residue | Question it answers | Home |
+|---------|--------------------|------|
+| **Invariant / contract** | "X must hold" | A reference section (e.g. `ARCHITECTURE.md` → Contracts & Invariants) plus an executable guard |
+| **Pitfall / rationale** | "Y broke Z; don't reintroduce it" | A constraint entry, or `DEVELOPMENT.md` → Common Pitfalls |
+| **Mechanism** | "how X works" | The canonical module docstring / module map / flow |
+| **Chronology** | "we used to do Y" | Delete — git history and the issue are the record |
+
+The rule:
+
+- Do **not** keep a standing decision list in a developer doc. A decision that
+  still steers belongs in one of the first three rows; a decision that no
+  longer steers is chronology and goes.
+- A surviving constraint is stated as a present-tense rule with a source
+  pointer, and ideally enforced by a test. A constraint that exists only as
+  prose is the next stale block.
+- The steering *process* lives in the issue/plan layer (`ISSUE_STANDARDS.md` →
+  "The plan": a plan starts with a decisions log), not in the architecture doc.
+  Do not keep a frozen copy.
+
+**The test:** can the sentence be stated without referring to a time or a
+discarded alternative? If it can only be phrased as "we chose X over Y" or
+"this replaced Z", it is history. If it states a present constraint, it is an
+invariant. If it describes how code works, it belongs with the module that owns
+it.
 
 ## Pragmatic Diátaxis
 
@@ -143,7 +181,7 @@ source for:
 - **Design invariants**: key structural constraints (e.g. circular-import
   breaker pattern, spec-level filtering guarantees)
 
-ARCHITECTURE.md carries the pipeline diagram, design decisions, and
+ARCHITECTURE.md carries the pipeline, contracts & invariants, and
 cross-cutting topics.  Its module map is a compact orientation table — one
 line per module; for details, read the module docstring.  This means the
 docstring and the ARCHITECTURE module map must not drift: if a module's role

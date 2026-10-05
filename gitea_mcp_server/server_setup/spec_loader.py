@@ -269,7 +269,7 @@ async def load_and_convert_spec(
     # and logged), so no try/except wrapper is needed here.
     resolve_param_collisions(openapi_spec)
 
-    # Normalize agent-misleading spec quirks (design decision #17): rename
+    # Normalize agent-misleading spec quirks (see normalize.py): rename
     # non-snake_case parameters/body properties and annotate boolean-check
     # responses.  Runs AFTER collision resolution so normalization is the
     # final authority on ``x-param-rename`` (it merges, never clobbers).

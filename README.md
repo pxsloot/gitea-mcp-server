@@ -102,16 +102,41 @@ docker run --rm -e GITEA_URL=... -e GITEA_TOKEN=... gitea-mcp-server:latest
 
 For a local test Gitea instance: `docker compose -f docker-compose.gitea.yml up -d`
 
-## Key Features
+## Design highlights
 
-- **Auto-generated tools** from Gitea's Swagger spec (converted 2.0 → 3.1)
-- **Lazy loading** — BM25 search-based tool discovery, not all 200 tools listed upfront
-- **Permission filtering** — tools hidden based on token scopes
-- **Workflow guides** — 16 guides explaining Gitea/Forgejo concepts beyond the API
-- **MCP Resources** — cached, URI-based data access (`gitea://repos/{owner}/{repo}`)
-- **Tool annotations** — read-only/destructive/idempotent hints per tool
-- **mcp_extensions.yaml** — customize tool metadata without code
-- **HTTP/stdio transport**, Docker support, OpenTelemetry observability
+Most MCP servers hand-wrap a handful of endpoints. This one is generated from
+your instance's own API spec and shaped for how agents actually work: it stays
+in lockstep with Gitea, hides what your token cannot use, and spends the minimum
+context to be discovered.
+
+**Generated, not hand-wrapped**
+- Every tool and resource is derived from your instance's Swagger spec
+  (converted 2.0 → 3.1) — there is no endpoint list to fall out of date.
+- Tool and resource metadata ride one typed registration record, checkable over
+  the raw MCP transport.
+
+**Built for agent context**
+- **Lazy loading** — ~400 tools are found through BM25 search, not listed upfront.
+- **Succinct by default** — `format` and `detail` let an agent ask for exactly
+  what it needs; large reads stay cheap.
+- **Scope-aware** — tools and resources your token cannot use are hidden, not
+  discovered as failures at call time.
+
+**Views that stay honest**
+- Markdown views are **anchored to the response schema**, so a new or changed
+  type renders correctly without a hand-written formatter.
+- **One result pipeline** writes both output channels, so every tool returns a
+  consistent shape.
+
+**Gitea-native operations**
+- Cached, URI-addressed **MCP Resources** for reads
+  (`gitea://repos/{owner}/{repo}`).
+- **Workflow guides** — 16 guides for the concepts the API alone does not explain.
+- **`mcp_extensions.yaml`** — override tool metadata without code.
+- stdio + HTTP transports, Docker, and OpenTelemetry observability.
+
+The reasoning behind these choices — and the patterns to follow when extending
+the server — is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Development
 
@@ -130,7 +155,8 @@ uv run mypy gitea_mcp_server/
 uv run pytest --cov=gitea_mcp_server
 ```
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [docs/DESIGN.md](docs/DESIGN.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Contributing
 

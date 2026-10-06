@@ -10,7 +10,7 @@ so you can pick the right one without reading everything.
 | Audience   | Who                                                                 | Primary docs            |
 |------------|---------------------------------------------------------------------|-------------------------|
 | `agent`    | An LLM agent using the tools at runtime (instructions injected on connect) | `agent_instructions.md` |
-| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS`, `SKILL` |
+| `developer`| A contributor to this codebase (human or agent)                      | `DESIGN`, `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS`, `SKILL` |
 | `enduser`  | The person installing and wiring the server into their agent software | `README.md` |
 
 ## How the docs fit together
@@ -19,8 +19,9 @@ so you can pick the right one without reading everything.
 connection time. It is kept short on purpose: it teaches the naming grammar and
 a few workflow skeletons, then points to discovery tools and workflow guides
 for the rest. The developer docs explain the codebase itself. `SCOPE_MODEL` and
-`TOOL_ANNOTATIONS` are reference material; `ARCHITECTURE` is explanation;
-`DEVELOPMENT` is how-to; `TESTING_STANDARDS` is the hub for the testing doc set
+`TOOL_ANNOTATIONS` are reference material; `DESIGN` is the design stance above
+the code, `ARCHITECTURE` is mechanism explanation; `DEVELOPMENT` is how-to;
+`TESTING_STANDARDS` is the hub for the testing doc set
 — see its sub-doc index for layout, zones, fixtures, mocking, and other testing
 topics.
 
@@ -34,6 +35,7 @@ mention is a one-line pointer, not a copy.
 | `README.md` | enduser | reference | Install, config env vars, transports (stdio/http/docker), quick start | You are installing or running the server |
 | `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, contracts & invariants, content-type handling, runtime flows | You need to understand how the server is built |
+| `docs/DESIGN.md` | developer | explanation | The design stance -- the north star, the build/buy/adapt ladder, the recurring patterns behind the codebase, and the anti-patterns the project refuses | You are designing a change or choosing a mechanism |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
 | `docs/TESTING_STANDARDS.md` | developer | reference | Testing principles, quality gates, coverage policy; see its sub-doc index for specific topics | You are writing or reviewing tests |
 | `docs/SCOPE_MODEL.md` | developer | reference | Token scope -> tool/resource visibility, virtual param gating, scope derivation | You need to know why a tool is hidden or how `sudo` appears |
@@ -50,6 +52,7 @@ truth. Other mentions point here.
 
 | Topic | Canonical home |
 |-------|---------------|
+| Design principles / design stance | `DESIGN.md` |
 | Config / ConfigProtocol | `config.py` (source) + `TESTING_STANDARDS.md` (test pattern / SimpleConfig) |
 | Tool naming / prefix / lazy loading | `agent_instructions.md` (grammar) + `ARCHITECTURE.md` (contracts & invariants) |
 | Tool annotations | `TOOL_ANNOTATIONS.md` |

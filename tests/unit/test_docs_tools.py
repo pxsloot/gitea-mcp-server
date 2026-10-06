@@ -1,6 +1,7 @@
 """Tests for docs_tools module."""
 
 import json as json_module
+import re
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from gitea_mcp_server.registration import get_resource_registration
 from gitea_mcp_server.search import BM25SearchEngine
 from gitea_mcp_server.tools.docs_tools import DocGuide, DocManager, register_doc_tools
 from gitea_mcp_server.tools.result_pipeline import render as _pipeline_render
+from tests.helpers.import_graph import project_root
 from tests.helpers.mcp_results import extract_text_from_content_items, get_structured
 
 
@@ -732,3 +734,17 @@ class TestSearchDocsPagination:
         assert sc["has_more"] is False
         assert sc["next_offset"] is None
         assert sc["total_count"] == 5
+
+
+class TestReadmeGuideCount:
+    def test_readme_guide_count_matches_guides_dir(self) -> None:
+        """The README's stated guide count matches the guides directory.
+
+        The count is a curated fact, so it is guarded rather than trusted; the
+        runtime manifest derives from the same directory.
+        """
+        readme = (project_root() / "README.md").read_text(encoding="utf-8")
+        match = re.search(r"(\d+) guides?", readme)
+        assert match is not None, "README no longer states a guide count"
+        guides_dir = project_root() / "gitea_mcp_server" / "docs" / "guides"
+        assert int(match.group(1)) == len(list(guides_dir.glob("*.md")))

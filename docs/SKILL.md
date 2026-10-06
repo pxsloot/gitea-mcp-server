@@ -53,18 +53,11 @@ doc, follow full workflow.**
 
 When you state an invariant — in a design note, a docstring, a comment — turn
 it into a check **before** you write the code. A comment does not fail; a test
-does.
+does. If you cannot express the invariant as a check, you do not yet understand
+it well enough to rely on it.
 
-- "Relations are derived, not curated" → a test that fails if a relation
-  appears in a curated table.
-- "No shared mutable state between specs" → a test that builds two specs and
-  asserts isolation.
-- "The output schema never leaks `x-mcp-*`" → a test that asserts the strip.
-
-This is not ceremony. The recurring failure mode is stating the correct
-principle and then violating it in the implementation — the comment becomes
-the false assumption. If you cannot express the invariant as a check, you do
-not yet understand it well enough to rely on it.
+The canonical statement and its embodiments are Pattern 7 in
+`docs/DESIGN.md`.
 
 ## Split at round two
 

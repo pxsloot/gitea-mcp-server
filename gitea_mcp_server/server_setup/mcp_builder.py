@@ -39,7 +39,7 @@ from mcp.types import TextContent
 
 from gitea_mcp_server.cache_invalidation import record_write_tool
 from gitea_mcp_server.constants import HTTP_METHODS_SAFE, HTTP_STATUS_NOT_FOUND
-from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
+from gitea_mcp_server.context_utils import safe_ctx_info
 from gitea_mcp_server.format import decode_base64_content
 from gitea_mcp_server.label_service import LabelService
 from gitea_mcp_server.models import ToolCustomization
@@ -880,9 +880,10 @@ class _ToolWrappingTransform(Transform):
         that runs before this method is invoked via ``tool.run()``.
 
         ``ctx`` is resolved by the caller (``transform_fn`` in :meth:`_wrap`)
-        and passed down so progress reporting and structured logging work
-        inside the pipeline.  When ``ctx`` is ``None`` (no active MCP session),
-        progress reporting and context logging degrade gracefully.
+        and passed down for structured logging inside the pipeline.  When
+        ``ctx`` is ``None`` (no active MCP session), context logging degrades
+        gracefully.  Progress reporting is owned by the contract spine, not
+        this executor.
 
         Returns raw data only — an :class:`ExecutionResult` (data,
         total_count, shape).  The single result pipeline renders it; no
@@ -1205,7 +1206,7 @@ class _ToolWrappingTransform(Transform):
         )
         return ExecutionResult(data=False, shape="scalar")
 
-    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912, PLR0911 - response-class dispatch (text/binary/empty/list/object) plus validation and progress reporting; extracting branches would scatter the classification the executor exists to centralize
+    async def _pipeline_with_context(  # noqa: PLR0913, PLR0912, PLR0911 - response-class dispatch (text/binary/empty/list/object) plus validation; extracting branches would scatter the classification the executor exists to centralize
         self,
         kwargs: dict[str, Any],
         tool: Tool,
@@ -1268,8 +1269,6 @@ class _ToolWrappingTransform(Transform):
                 extra={"error": str(e)},
             )
             raise ValueError(str(e)) from e
-
-        await safe_ctx_report_progress(ctx, progress=0.5)
 
         try:
             result = await run_with_error_handling(
@@ -1367,16 +1366,12 @@ class _ToolWrappingTransform(Transform):
         # and emits the envelope.  The total comes from the X-Total-Count
         # header captured by the httpx event hook (pagination_ctx).
         if _is_array_response(output_schema) and isinstance(result_data, list):
-            if len(result_data) > 0:
-                await safe_ctx_report_progress(ctx, progress=1.0, total=1.0)
             return ExecutionResult(
                 data=result_data,
                 total_count=pagination_ctx.get().get("total_count"),
                 shape="list",
                 paginated=True,
             )
-
-        await safe_ctx_report_progress(ctx, progress=1.0)
 
         return ExecutionResult(data=result_data, shape="object")
 

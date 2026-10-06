@@ -11,6 +11,10 @@ outside a session.
 These helpers are the single source of truth for safe context operations —
 no module should implement its own ``RuntimeError`` guard around
 ``ctx.info()``, ``ctx.report_progress()``, or ``CurrentContext()``.
+
+``safe_ctx_report_progress`` is consumed by the contract spine
+(``tools/contract.py``) only: the spine owns the MCP progress lifecycle and
+executors never report progress (#825).
 """
 
 from __future__ import annotations

@@ -126,7 +126,7 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     │     │                         (registry schema enum, before executor)
     │     │                         validate real args
     │     │                         → log context (ctx.info)
-    │     │                         → report progress (ctx.report_progress)
+    │     │                         → report progress START (spine-owned)
     │     │                         → call inner tool's run()
     │     └─▶ LabelTransform      — convert labels
     │                              → log context (ctx.info)
@@ -135,7 +135,7 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     │                                    → raw data (ExecutionResult)
     │                              → render (tools/result_pipeline.render):
     │                                shape → paginate → format → ToolResult
-    │                              → report progress (ctx.report_progress)
+    │                              → report progress TERMINAL (spine-owned)
 
 Agent reads a resource:
 
@@ -190,6 +190,11 @@ pipeline (``tools/result_pipeline.render``) then applies shape → paginate →
 format and is the **single writer of both channels**; the full output contract
 is canonical in that module's docstring.  See Contracts & Invariants for the
 rules that follow ("One result pipeline", "Registration metadata").
+
+The spine also owns the **MCP progress lifecycle**: every wrapped call emits a
+start signal (``progress=0.0``) before the executor and a terminal signal
+(``progress=1.0``) after a successful render, identically for autogen and
+synthetic tools.  Executors never report progress.
 
 Pagination bounds are owned by the paging executor and validated exactly once
 per call; params a call neutralizes (``fetch_all`` → ``page``/``limit``) are
@@ -408,6 +413,12 @@ erased from the spec, and each carries a two-directional drift guard.  Source:
 applies shape → paginate → format and is the single writer of both output
 channels.  No display logic lives in an executor.  Source:
 `tools/result_pipeline.py` (canonical module docstring).
+
+**The spine owns the MCP progress lifecycle.** Every wrapped tool call emits one
+start signal (``progress=0.0``) before the executor and one terminal signal
+(``progress=1.0``) after a successful render, identically for autogen and
+synthetic tools; executors never emit progress.  Source: `tools/contract.py`;
+guard: `tests/unit/test_progress_contract.py`.
 
 **The markdown collection view is schema-anchored, not hand-written.** The
 generic collection view derives from the response type's schema — a relation is

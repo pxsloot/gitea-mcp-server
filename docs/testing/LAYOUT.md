@@ -11,7 +11,7 @@ covers: Directory layout, naming conventions, source-to-test mapping, cross-cutt
 ```
 tests/
 ├── __init__.py
-├── conftest.py                             # Infrastructure: SimpleConfig, event_loop, OTel
+├── conftest.py                             # Infrastructure: SimpleConfig, event_loop
 ├── helpers/
 │   ├── __init__.py
 │   ├── import_graph.py                     # Filesystem module discovery + import graph (layer contract)

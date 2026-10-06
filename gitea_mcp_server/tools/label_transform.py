@@ -14,7 +14,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.server.transforms import GetToolNext, Transform
-from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 
 from gitea_mcp_server.exceptions import ValidationError
@@ -117,32 +116,15 @@ class LabelTransform(Transform):
         label_service = self._label_service
         gitea_client = self._gitea_client
 
-        tracer = get_tracer()
-
         async def label_transform_fn(**kwargs: Any) -> ToolResult:
-            with tracer.start_as_current_span(f"{tool.name}.validate_labels") as span:
-                span.set_attribute("tool.name", tool.name)
-                span.set_attribute("labels.has_labels", True)
-
-                # Count label types for observability
-                raw_labels = kwargs.get("labels")
-                if isinstance(raw_labels, list):
-                    int_count = sum(1 for item in raw_labels if isinstance(item, int))
-                    str_count = sum(1 for item in raw_labels if isinstance(item, str))
-                    span.set_attribute("label.count", len(raw_labels))
-                    span.set_attribute("label.integers", int_count)
-                    span.set_attribute("label.strings", str_count)
-
-                try:
-                    await _convert_labels_inline(
-                        kwargs,
-                        label_service,
-                        gitea_client,
-                    )
-                except ValidationError as e:
-                    span.set_attribute("error", True)
-                    span.set_attribute("error.message", str(e))
-                    raise ValueError(str(e)) from e
+            try:
+                await _convert_labels_inline(
+                    kwargs,
+                    label_service,
+                    gitea_client,
+                )
+            except ValidationError as e:
+                raise ValueError(str(e)) from e
             return await original_run(kwargs)
 
         # Preserve all existing metadata - title, tags, description,

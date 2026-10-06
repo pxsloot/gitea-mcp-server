@@ -1,8 +1,8 @@
 """Pytest configuration and fixtures.
 
 This file provides test infrastructure shared across the entire test suite:
-``SimpleConfig`` (canonical test config), session-scoped event loop,
-OpenTelemetry setup, and temp workspace.
+``SimpleConfig`` (canonical test config), session-scoped event loop, and temp
+workspace.
 
 Helper utilities (mock factories, output parsers, spec fixtures) live in
 ``tests/helpers/`` — see that package for ``make_mock_tool``,
@@ -92,45 +92,6 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 def temp_workspace(tmp_path: Path) -> Path:
     """Create a temporary workspace with sample files."""
     return tmp_path
-
-
-# ---------------------------------------------------------------------------
-# OpenTelemetry - InMemorySpanExporter (session-scoped, shared across modules)
-# ---------------------------------------------------------------------------
-
-# OpenTelemetry 1.43+ enforces a set-once guard on the global
-# TracerProvider, so we use a session-scoped autouse fixture to
-# install the InMemorySpanExporter once for the whole test run.
-_TRACE_EXPORTER: Any = None
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _init_otel_exporter() -> None:
-    """Set the global TracerProvider with an InMemorySpanExporter (once).
-
-    OpenTelemetry 1.43+ enforces a set-once guard on
-    ``set_tracer_provider()``, so we must do this once per session
-    rather than in a per-test fixture that saves/restores.
-    """
-    global _TRACE_EXPORTER  # noqa: PLW0603
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-        InMemorySpanExporter,
-    )
-
-    _TRACE_EXPORTER = InMemorySpanExporter()
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(_TRACE_EXPORTER))
-    trace.set_tracer_provider(provider)
-
-
-@pytest.fixture
-def trace_exporter() -> Any:
-    """Return the shared InMemorySpanExporter, cleared between tests."""
-    _TRACE_EXPORTER.clear()
-    return _TRACE_EXPORTER
 
 
 @pytest.fixture

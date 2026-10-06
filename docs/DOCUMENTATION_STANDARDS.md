@@ -66,10 +66,10 @@ serves a distinct reader or goal. Examples from this repo:
     coverage. It stays; it is just labelled distinctly so the two views do not
     read as contradictory.
 - **OpenTelemetry** appears in two docs with different purposes:
-  `ARCHITECTURE.md` carries the *design rationale* (why we add custom spans,
-  why they are no-ops when unset); `DEVELOPMENT.md` carries the *operational
-  how-to* (viewer, exporters, env vars). Both stay; the rationale trims its
-  restated detail and points to the how-to.
+  `ARCHITECTURE.md` carries the *design rationale* (observability is native,
+  never hand-rolled; why spans are no-ops when unset); `DEVELOPMENT.md` carries
+  the *operational how-to* (viewer, exporters, env vars). Both stay; the
+  rationale trims its restated detail and points to the how-to.
 - **`x-*` stripping** appears as a *constraint* in `ARCHITECTURE.md` and as a
   *contributor pitfall* in `DEVELOPMENT.md`. Different purpose: the rule vs the
   warning. Both stay.

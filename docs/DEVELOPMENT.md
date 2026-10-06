@@ -1335,13 +1335,16 @@ with no code changes — it adds no spans of its own.
 
 Install the ``tracing`` extra, which supplies the OpenTelemetry SDK, the OTLP
 exporter, and the ``opentelemetry-instrument`` launcher (via
-``opentelemetry-distro``):
+``opentelemetry-distro``).  ``opentelemetry-distro`` only ships ``0.xbN``
+pre-releases, so the extra's pin tracks betas.
 
 ```bash
+# From a source checkout:
 uv sync --extra tracing
-```
 
-```bash
+# Or, for a published install:
+pip install 'gitea-mcp-server[tracing]'
+
 # Terminal 1: Start otel-desktop-viewer (UI at http://localhost:8000)
 brew install nico-barbas/brew/otel-desktop-viewer
 otel-desktop-viewer

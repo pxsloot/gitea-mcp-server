@@ -110,8 +110,9 @@ in lockstep with Gitea, hides what your token cannot use, and spends the minimum
 context to be discovered.
 
 **Generated, not hand-wrapped**
-- Every tool and resource is derived from your instance's Swagger spec
-  (converted 2.0 → 3.1) — there is no endpoint list to fall out of date.
+- Tools and resources are generated from your instance's Swagger spec
+  (converted 2.0 → 3.1) — there is no endpoint list to fall out of date — with
+  a small hand-written discovery layer on top.
 - Tool and resource metadata ride one typed registration record, checkable over
   the raw MCP transport.
 

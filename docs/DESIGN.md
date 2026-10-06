@@ -62,21 +62,22 @@ delete.
 | **Adapt behind a seam** | The facility is close, but the contract or the fit is off | The conversion/transform layers, the `x-*` extension metadata, `param_rename.py` |
 | **Write your own** | The domain or the spec genuinely demands it, and nothing fits | `tools/result_pipeline.py`, `label_service.py`, `cache_invalidation.py` |
 
-Two rules keep the ladder honest:
+One rule keeps the ladder honest:
 
-- **Prefer the seam that can be removed.** When adapting, isolate the deviation
-  behind one module or transform, so it can be deleted the day the upstream
-  facility catches up. This is what "work *with* FastMCP" means in practice.
 - **Reuse before you grow.** The project already has facilities for validation,
   pagination, caching, search, formatting, scope, and registration. `ARCHITECTURE.md`'s
   Module Map is the inventory; scan it before you add a parallel mechanism. A
   second facility for a solved concern is the most expensive kind of new code.
 
+Preferring the *seam that can be removed* -- the other half of the ladder -- is
+Pattern 4.
+
 ## The recurring patterns
 
-These are the shapes this codebase keeps taking. Each names the principle, where
-it is embodied, and -- where one exists -- the guard that fails the build when
-the principle is broken. The guard, not this prose, is the contract.
+These are the nine recurring patterns this codebase keeps taking. Each names the
+principle, where it is embodied, and -- where one exists -- the guard that fails
+the build when the principle is broken. The guard, not this prose, is the
+contract.
 
 ### 1. Derive, don't curate
 
@@ -91,7 +92,8 @@ entry fails loudly instead of silently degrading.
   resource URIs, names, and descriptions derive from the spec
   (`resources/factory.py`); annotations infer from the HTTP method
   (`tools/customize.py`).
-- Guard: a stale display hint fails conversion; the module map is executable
+- Guard: a stale hint is logged at ERROR and fails the real-spec conformance
+  test (`test_real_spec_curated_hints_are_clean`); the module map is executable
   (`tests/unit/test_architecture_doc.py`).
 
 ### 2. One source of truth; one writer per channel
@@ -106,7 +108,9 @@ refactor to expose it.
   contract, read only through sanctioned accessors (`registration.py`);
   `tools/result_pipeline.render` is the single writer of both output channels;
   `resources/surface.py` is the single source of truth for cache-invalidation
-  targets and per-resource TTLs; `pagination.py` owns the paging contract.
+  targets and per-resource TTLs; `pagination.py` owns the paging metadata keys
+  and `X-Total-Count` capture, while the paging executor owns and validates the
+  bounds.
 
 ### 3. Mirror the source; normalize only the misleading, surgically
 
@@ -169,7 +173,11 @@ assumption.
 - Embodied: the layer contract (`tests/unit/test_layer_contract.py`), the
   executable module map and cross-reference sweep
   (`tests/unit/test_architecture_doc.py`), the agent-instruction line budget,
-  and the drift guards on curated tables.
+  and the drift guards on curated tables. Three canonical moves: "relations are
+  derived, not curated" becomes a test that fails if a relation appears in a
+  curated table; "no shared mutable state between specs" becomes a test that
+  builds two specs and asserts isolation; "the output schema never leaks
+  `x-mcp-*`" becomes a test that asserts the strip.
 - Guard: the guards *are* the pattern -- a principle without one is marked as
   judgement and watched.
 

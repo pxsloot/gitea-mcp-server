@@ -10,7 +10,7 @@ so you can pick the right one without reading everything.
 | Audience   | Who                                                                 | Primary docs            |
 |------------|---------------------------------------------------------------------|-------------------------|
 | `agent`    | An LLM agent using the tools at runtime (instructions injected on connect) | `agent_instructions.md` |
-| `developer`| A contributor to this codebase (human or agent)                      | `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS`, `SKILL` |
+| `developer`| A contributor to this codebase (human or agent)                      | `DESIGN`, `ARCHITECTURE`, `DEVELOPMENT`, `TESTING_STANDARDS`, `SCOPE_MODEL`, `TOOL_ANNOTATIONS`, `AGENT_INSTRUCTIONS_STANDARDS`, `SKILL` |
 | `enduser`  | The person installing and wiring the server into their agent software | `README.md` |
 
 ## How the docs fit together

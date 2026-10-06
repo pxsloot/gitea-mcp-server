@@ -124,11 +124,11 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     │     │                         (spine: tools/contract.build_transform_fn)
     │     │                         extract + validate virtual params
     │     │                         (registry schema enum, before executor)
-    │     │                         validate real args (OTEL: .validate span)
+    │     │                         validate real args
     │     │                         → log context (ctx.info)
     │     │                         → report progress (ctx.report_progress)
     │     │                         → call inner tool's run()
-    │     └─▶ LabelTransform      — convert labels (.validate_labels span)
+    │     └─▶ LabelTransform      — convert labels
     │                              → log context (ctx.info)
     │                              → call original tool's run()
     │           └─▶ OpenAPITool.run() — httpx → Gitea API
@@ -448,12 +448,10 @@ when a file named in the Module Map is missing, when a production module is
 absent from the map, or when a named package does not exist.  Source:
 `tests/unit/test_architecture_doc.py`.
 
-**Observability is free when unset.** FastMCP emits native OTEL spans for all
-MCP operations; we add three custom child spans per tool (``validate``,
-``validate_labels``, ``execute``) for per-stage latency.  The spans are no-ops
-unless an OpenTelemetry SDK and exporter are configured.  The operational
-how-to lives in `docs/DEVELOPMENT.md` → "OpenTelemetry Observability".  Source:
-`server_setup/mcp_builder.py`.
+**Observability is native, never hand-rolled.** The server emits no spans of
+its own; FastMCP emits all MCP operation spans, no-op unless an SDK is
+configured.  Source: FastMCP native instrumentation; the export how-to is
+`docs/DEVELOPMENT.md` → "OpenTelemetry Observability".
 
 ---
 

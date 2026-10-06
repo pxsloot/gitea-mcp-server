@@ -34,7 +34,6 @@ import httpx
 from fastmcp.exceptions import ResourceError
 from fastmcp.server.providers.openapi import MCPType, OpenAPIProvider, OpenAPITool
 from fastmcp.server.transforms import Transform
-from fastmcp.telemetry import get_tracer
 from fastmcp.tools.base import Tool, ToolResult
 from mcp.types import TextContent
 
@@ -1245,24 +1244,17 @@ class _ToolWrappingTransform(Transform):
         6. **Empty-body** (204/205) — ``shape="empty"`` with the visible
            confirmation message so agents receive an explicit success signal.
         """
-        tracer = get_tracer()
-
         try:
-            with tracer.start_as_current_span(f"{tool.name}.validate") as span:
-                run_validation(
-                    kwargs,
-                    tool.parameters.get("required"),
-                    tool.parameters.get("properties"),
-                )
-                # Pagination bounds are the paging executor's concern, not
-                # run_validation's (see its docstring).  Params neutralized by
-                # the call's active mode (derived from the registry) are
-                # skipped; autogen has none today.
-                validate_pagination_from_schema(
-                    kwargs, tool.parameters.get("properties"), inert=inert
-                )
-                span.set_attribute("tool.name", tool.name)
-                span.set_attribute("validation.arg_count", len(kwargs))
+            run_validation(
+                kwargs,
+                tool.parameters.get("required"),
+                tool.parameters.get("properties"),
+            )
+            # Pagination bounds are the paging executor's concern, not
+            # run_validation's (see its docstring).  Params neutralized by
+            # the call's active mode (derived from the registry) are
+            # skipped; autogen has none today.
+            validate_pagination_from_schema(kwargs, tool.parameters.get("properties"), inert=inert)
 
             await safe_ctx_info(
                 ctx,
@@ -1279,40 +1271,36 @@ class _ToolWrappingTransform(Transform):
 
         await safe_ctx_report_progress(ctx, progress=0.5)
 
-        with tracer.start_as_current_span(f"{tool.name}.execute") as span:
-            span.set_attribute("tool.name", tool.name)
-            span.set_attribute("http.route", route_path)
-            span.set_attribute("http.method", route_method)
-            try:
-                result = await run_with_error_handling(
-                    kwargs,
-                    tool,
-                    self._openapi_spec,
-                    route_path,
-                    route_method,
+        try:
+            result = await run_with_error_handling(
+                kwargs,
+                tool,
+                self._openapi_spec,
+                route_path,
+                route_method,
+            )
+        except UnicodeDecodeError:
+            # Binary response — FastMCP's OpenAPITool.run() tries
+            # response.text which crashes on binary data.  Return nil
+            # structured_content so the binary branch below handles it.
+            # NOTE: UnicodeDecodeError subclasses ValueError, so this
+            # must be caught BEFORE the ValueError handler below.
+            if is_binary_response:
+                result = ToolResult(
+                    content=[TextContent(type="text", text="")],
+                    structured_content=None,
                 )
-            except UnicodeDecodeError:
-                # Binary response — FastMCP's OpenAPITool.run() tries
-                # response.text which crashes on binary data.  Return nil
-                # structured_content so the binary branch below handles it.
-                # NOTE: UnicodeDecodeError subclasses ValueError, so this
-                # must be caught BEFORE the ValueError handler below.
-                if is_binary_response:
-                    result = ToolResult(
-                        content=[TextContent(type="text", text="")],
-                        structured_content=None,
-                    )
-                else:
-                    raise
-            except ValueError as e:
-                # Boolean-check endpoints: a 404 may mean "condition false" or
-                # "resource not found".  Disambiguate via the resource machinery
-                # before letting the generic error propagate.
-                if response_transform == "boolean-check":
-                    handled = await self._try_handle_boolean_check_404(e, kwargs, ctx, route_path)
-                    if handled is not None:
-                        return handled
+            else:
                 raise
+        except ValueError as e:
+            # Boolean-check endpoints: a 404 may mean "condition false" or
+            # "resource not found".  Disambiguate via the resource machinery
+            # before letting the generic error propagate.
+            if response_transform == "boolean-check":
+                handled = await self._try_handle_boolean_check_404(e, kwargs, ctx, route_path)
+                if handled is not None:
+                    return handled
+            raise
 
         await safe_ctx_info(
             ctx,

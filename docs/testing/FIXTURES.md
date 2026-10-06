@@ -13,7 +13,6 @@ Put truly shared fixtures in `tests/conftest.py`:
 - `SimpleConfig` — canonical test config stub
 - `swagger_spec_fixture` — loads `tests/swagger.v1.json` for tests that need a real spec
 - `event_loop` — session-scoped default event loop
-- `trace_exporter` — OpenTelemetry InMemorySpanExporter (cleared between tests)
 - `temp_workspace` — temporary workspace directory for file-based tests
 - `isolate_from_project_dotenv` — autouse fixture that changes CWD to ``tmp_path``
   and resets ``Config._instance`` before every test, preventing the project's

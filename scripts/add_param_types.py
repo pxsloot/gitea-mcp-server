@@ -37,12 +37,6 @@ PARAM_TYPE_MAP: dict[str, tuple[str, str, str | None]] = {
     "caplog": ("pytest.LogCaptureFixture", "pytest", None),
     "tmp_path": ("Path", "yes", "pathlib"),
     "request": ("pytest.FixtureRequest", "pytest", None),
-    # OpenTelemetry
-    "trace_exporter": (
-        "InMemorySpanExporter",
-        "yes",
-        "opentelemetry.sdk.trace.export.in_memory_span_exporter",
-    ),
     # Domain objects
     "label_service": ("LabelService", "yes", "gitea_mcp_server.label_service"),
     "_label_service": ("LabelService", "yes", "gitea_mcp_server.label_service"),

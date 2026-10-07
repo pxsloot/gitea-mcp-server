@@ -56,7 +56,7 @@ async def _best_effort(action: str) -> AsyncIterator[None]:
     except RuntimeError:
         pass
     except Exception:  # noqa: BLE001 -- side channel: never fail the call
-        logger.debug("%s failed; progress/logging is best-effort", action, exc_info=True)
+        logger.debug("%s failed; observability is best-effort", action, exc_info=True)
 
 
 async def resolve_current_context() -> Any | None:

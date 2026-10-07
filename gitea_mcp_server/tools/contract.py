@@ -27,7 +27,8 @@ for both tool families:
     4. Resolve the MCP ``Context`` via
        :func:`~gitea_mcp_server.context_utils.resolve_current_context` —
        progress reporting and structured logging degrade to no-ops when no
-       session is active.
+       session is active, and a side-channel failure never aborts the call
+       (best-effort observability).
     5. Emit the progress **start** signal via
        :func:`~gitea_mcp_server.context_utils.safe_ctx_report_progress`.  The
        spine owns the MCP progress lifecycle (start before execution, terminal
@@ -108,7 +109,8 @@ Executor = Callable[
   derivation happens once, in the spine); executors read it instead of
   re-deriving it.
 - ``ctx`` — the resolved MCP ``Context``, or ``None`` when no session is
-  active (progress reporting and logging degrade gracefully).
+  active (progress reporting and logging are best-effort and never abort the
+  call).
 
 Returns raw data as an :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
 (rendered by the single result pipeline in the spine).

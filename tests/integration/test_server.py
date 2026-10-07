@@ -1883,6 +1883,25 @@ class TestWrappingPipelineEdgeCases:
         assert autogen_ctx.progress == expected
         assert synthetic_ctx.progress == expected
 
+    @pytest.mark.asyncio
+    async def test_progress_failure_does_not_abort_call(self, mcp_server: Any) -> None:
+        """A failing progress notification never aborts the tool call (#827).
+
+        End-to-end repro: the client's progress handler raises a non-RuntimeError
+        while the spine reports start and terminal; the call still returns its
+        rendered result.
+        """
+        from tests.helpers.progress import RecordingContext, current_context
+
+        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
+        ctx = RecordingContext(progress_error=ValueError("client progress handler failed"))
+        with current_context(ctx):
+            result = await mcp_server.call_tool("gitea_get_version", {})
+
+        assert result.structured_content is not None
+        assert result.structured_content["result"]["version"] == "1.0.0"
+        assert ctx.progress == [(0.0, 1.0), (1.0, 1.0)]
+
 
 class Test204NoContentWrapping:
     """Tests for 204 No Content response wrapping in the tool pipeline.

@@ -12,6 +12,13 @@ These helpers are the single source of truth for safe context operations —
 no module should implement its own ``RuntimeError`` guard around
 ``ctx.info()``, ``ctx.report_progress()``, or ``CurrentContext()``.
 
+Both side-channel helpers are best-effort: **a progress or log failure never
+aborts the call**.  ``RuntimeError`` (the framework's expected no-session
+signal) degrades silently; any other ``Exception`` from the client/transport
+side channel is traced at ``DEBUG`` and swallowed.  ``BaseException``
+(cancellation, interrupt) is deliberately not caught, so a cancelled call stays
+cancellable.
+
 ``safe_ctx_report_progress`` is consumed by the contract spine
 (``tools/contract.py``) only: the spine owns the MCP progress lifecycle and
 executors never report progress (#825).
@@ -19,10 +26,37 @@ executors never report progress (#825).
 
 from __future__ import annotations
 
-from contextlib import suppress
-from typing import Any
+import logging
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.dependencies import CurrentContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _best_effort(action: str) -> AsyncIterator[None]:
+    """Run a best-effort context side channel; never fail the caller.
+
+    ``RuntimeError`` is the framework's expected no-session signal (no active
+    context, or a session that is gone) and degrades silently.  Any other
+    exception is inconsequential to the call outcome, so it is traced at
+    ``DEBUG`` and swallowed.  ``BaseException`` (cancellation, interrupt) is
+    deliberately not caught.
+
+    Args:
+        action: The context operation, used in the ``DEBUG`` trace.
+    """
+    try:
+        yield
+    except RuntimeError:
+        pass
+    except Exception:  # noqa: BLE001 -- side channel: never fail the call
+        logger.debug("%s failed; progress/logging is best-effort", action, exc_info=True)
 
 
 async def resolve_current_context() -> Any | None:
@@ -49,7 +83,8 @@ async def safe_ctx_info(ctx: Any | None, message: str, **extra: Any) -> None:
 
     When called inside an in-memory ``mcp.call_tool()``, FastMCP provides
     a Context object whose ``session`` property raises ``RuntimeError``.
-    This helper silently degrades so observability is best-effort.
+    Best-effort: every ``Exception`` from the call is swallowed (only
+    ``BaseException`` propagates), so a log failure never aborts the call.
 
     Args:
         ctx: The MCP ``Context`` object, or ``None`` if no session is active.
@@ -58,7 +93,7 @@ async def safe_ctx_info(ctx: Any | None, message: str, **extra: Any) -> None:
     """
     if ctx is None:
         return
-    with suppress(RuntimeError):
+    async with _best_effort("ctx.info"):
         await ctx.info(message, **extra)
 
 
@@ -69,8 +104,10 @@ async def safe_ctx_report_progress(
 ) -> None:
     """Call ``ctx.report_progress()`` if the MCP context and session are available.
 
-    Same degradation pattern as :func:`safe_ctx_info` — progress reporting
-    is best-effort, not guaranteed.
+    Same best-effort contract as :func:`safe_ctx_info`: every ``Exception``
+    from ``ctx.report_progress()`` is swallowed, so a progress failure never
+    aborts the tool call; only ``BaseException`` (cancellation) propagates.
+    The contract spine is the sole consumer.
 
     Args:
         ctx: The MCP ``Context`` object, or ``None`` if no session is active.
@@ -79,7 +116,7 @@ async def safe_ctx_report_progress(
     """
     if ctx is None:
         return
-    with suppress(RuntimeError):
+    async with _best_effort("ctx.report_progress"):
         if total is not None:
             await ctx.report_progress(progress=progress, total=total)
         else:

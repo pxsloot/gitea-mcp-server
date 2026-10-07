@@ -201,8 +201,9 @@ The customization pipeline has two phases:
    ultimately reaching ``_pipeline_with_context()``.  Runtime
    wrapping (validation, label conversion, error handling, text wrapping,
    pagination) all receive ``ctx`` for ``ctx.info()`` logging, gracefully
-   degraded to no-ops when ``ctx`` is ``None``.  Progress reporting is owned
-   by the contract spine, not the executors.
+   degraded to no-ops when ``ctx`` is ``None``; ``safe_ctx_info`` is
+   best-effort, so a client/transport failure never aborts the call.  Progress
+   reporting is owned by the contract spine, not the executors.
 
 Common customizations:
 
@@ -1179,7 +1180,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Concern | Convention |
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
-| Observability | Use ``ctx.info()`` before/after work — agents rely on this. Do **not** emit progress in an impl: the spine owns the MCP progress lifecycle (start + terminal) for every wrapped call (#825) |
+| Observability | Use ``ctx.info()`` before/after work — agents rely on this. It is best-effort: ``safe_ctx_info`` swallows every ``Exception`` (only cancellation propagates), so a log failure never aborts the call (#827). Do **not** emit progress in an impl: the spine owns the MCP progress lifecycle (start + terminal) for every wrapped call (#825) |
 | Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, wrap). The loop builds the executor, stores the registration record, and registers |
 | Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}`` to reject ``detail``/``fetch_all`` entirely, or ``tool_info``/``resolve_type`` → ``{"format"}`` so the impl's own ``detail`` default (``"concise"``) is the single source; ``sudo`` is opt-in). Only allowlisted params are popped from kwargs — an off-profile registry-name key stays in kwargs and is rejected with "Unknown parameter(s)" rather than silently dropped. The executor re-supplies the popped values to the impl. ``format``/``detail``/``fetch_all`` are hook-less pipeline options read by the result pipeline — no display logic lives in the registry |
 | Impl return | Return raw data only — an ``ExecutionResult(data, total_count, shape)``. The single result pipeline slices (``list``), envelopes, and formats — and owns out-of-range handling for every shape: return the full item set (``shape="list"``) or the pre-sliced object (``shape="object"``, e.g. ``read_doc``/``tool_info``) and the pipeline emits the message envelope on out-of-range pages. Set ``message`` only for custom empty-result messages (e.g. cross-link hints). For bespoke markdown (e.g. ``tool_info``, ``read_doc``) set ``markdown_formatter`` / ``markdown_extras`` on the result |

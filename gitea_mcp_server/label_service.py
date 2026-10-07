@@ -7,15 +7,12 @@ previous ``LabelManager`` (caching only) and fragmented helpers in
 """
 
 import logging
-from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
-from fastmcp.dependencies import CurrentContext
-
 from gitea_mcp_server.client import GiteaClient
 from gitea_mcp_server.constants import LABEL_CACHE_TTL
-from gitea_mcp_server.context_utils import safe_ctx_info
+from gitea_mcp_server.context_utils import resolve_current_context, safe_ctx_info
 from gitea_mcp_server.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -249,9 +246,8 @@ class LabelService:
     async def _log_ctx_info(self, msg: str, **extra: Any) -> None:
         """Log a message via MCP context if available, otherwise via stdlib."""
         logger.debug("%s | extra=%s", msg, extra)
-        with suppress(RuntimeError):
-            async with CurrentContext() as ctx:
-                await safe_ctx_info(ctx, msg, extra=extra)
+        ctx = await resolve_current_context()
+        await safe_ctx_info(ctx, msg, extra=extra)
 
     async def _get_or_fetch(self, owner: str, repo: str, client: GiteaClient) -> _LabelCacheEntry:
         """Return a cached entry or fetch + cache from the API."""

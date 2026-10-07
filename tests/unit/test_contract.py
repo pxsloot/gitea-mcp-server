@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastmcp.tools.base import Tool, ToolResult
 
+from gitea_mcp_server.context_utils import safe_ctx_info
 from gitea_mcp_server.tools.contract import (
     PROGRESS_COMPLETE,
     PROGRESS_START,
@@ -715,4 +716,55 @@ class TestProgressLifecycle:
         result = await transform_fn(query="q")
 
         assert ran == ["executor"]
+        assert result.structured_content == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_progress_failure_does_not_abort_the_call(self) -> None:
+        """A client/transport progress failure never aborts the call (#827).
+
+        Both the start and the terminal signal fail; the spine swallows each
+        and still returns the rendered result.
+        """
+        ctx = AsyncMock()
+        ctx.report_progress.side_effect = ValueError("client progress handler failed")
+        ran: list[str] = []
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ran.append("executor")
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with patch(
+            "gitea_mcp_server.tools.contract.resolve_current_context",
+            new=AsyncMock(return_value=ctx),
+        ):
+            result = await transform_fn(query="q")
+
+        assert ran == ["executor"]
+        assert result.structured_content == {"result": "ok"}
+        assert ctx.report_progress.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_executor_log_failure_does_not_abort_the_call(self) -> None:
+        """An executor's ``safe_ctx_info`` failure never aborts the call (#827).
+
+        Executors log breadcrumbs through ``safe_ctx_info``; a failing
+        ``ctx.info`` there must not abort — the ``safe_ctx_info`` half of the
+        class.
+        """
+        ctx = AsyncMock()
+        ctx.info.side_effect = ValueError("client log handler failed")
+
+        async def executor(kwargs: Any, extracted: Any, ctx_arg: Any) -> ExecutionResult:
+            # A real executor logs its route/breadcrumb through the safe helper.
+            await safe_ctx_info(ctx_arg, "route: GET /version")
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with patch(
+            "gitea_mcp_server.tools.contract.resolve_current_context",
+            new=AsyncMock(return_value=ctx),
+        ):
+            result = await transform_fn(query="q")
+
         assert result.structured_content == {"result": "ok"}

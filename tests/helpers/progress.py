@@ -23,13 +23,20 @@ class RecordingContext:
     notifications (integration tests assert on that); ``mark`` lets a unit test
     interleave its own events — e.g. "executor ran" — so it can pin the
     start-before / terminal-after ordering, not just the set of signals.
+
+    ``progress_error`` makes ``report_progress`` record the attempt and then
+    raise, standing in for a client/transport failure.  The spine's best-effort
+    contract (#827) must absorb it: the call still completes.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, progress_error: BaseException | None = None) -> None:
         self.calls: list[tuple[Any, ...]] = []
+        self._progress_error = progress_error
 
     async def report_progress(self, progress: float, total: float | None = None) -> None:
         self.calls.append(("progress", progress, total))
+        if self._progress_error is not None:
+            raise self._progress_error
 
     async def info(self, *args: Any, **kwargs: Any) -> None:
         pass

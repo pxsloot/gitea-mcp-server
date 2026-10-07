@@ -1,10 +1,16 @@
 """Tests for gitea_mcp_server.context_utils — safe MCP context helpers."""
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
 
 from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
+
+# The unexpected (non-RuntimeError) failures a client/transport side channel
+# can raise; every one must be swallowed, not propagate.
+_UNEXPECTED_ERRORS = [ValueError, OSError, Exception]
 
 
 class TestSafeCtxInfo:
@@ -23,22 +29,48 @@ class TestSafeCtxInfo:
         await safe_ctx_info(None, "test message")
 
     @pytest.mark.asyncio
-    async def test_suppresses_runtime_error(self) -> None:
-        """Suppresses RuntimeError from ctx.info() gracefully."""
+    async def test_runtime_error_is_silent(self, caplog: pytest.LogCaptureFixture) -> None:
+        """RuntimeError (no session) degrades without a log record."""
         ctx = AsyncMock()
         ctx.info.side_effect = RuntimeError("session not available")
 
-        # Should not raise
+        with caplog.at_level(logging.DEBUG, logger="gitea_mcp_server.context_utils"):
+            await safe_ctx_info(ctx, "test message")
+
+        ctx.info.assert_awaited_once()
+        assert caplog.records == []
+
+    @pytest.mark.parametrize("exc", _UNEXPECTED_ERRORS)
+    @pytest.mark.asyncio
+    async def test_suppresses_other_exceptions(self, exc: type[Exception]) -> None:
+        """Any Exception from ctx.info() is swallowed; logging is best-effort."""
+        ctx = AsyncMock()
+        ctx.info.side_effect = exc("unexpected error")
+
+        # Must not raise: a log failure never aborts the call.
         await safe_ctx_info(ctx, "test message")
         ctx.info.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_propagates_other_exceptions(self) -> None:
-        """Only RuntimeError is suppressed; other exceptions propagate."""
+    async def test_unexpected_failure_is_traced(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A non-RuntimeError failure is traced at DEBUG and swallowed."""
         ctx = AsyncMock()
         ctx.info.side_effect = ValueError("unexpected error")
 
-        with pytest.raises(ValueError, match="unexpected error"):
+        with caplog.at_level(logging.DEBUG, logger="gitea_mcp_server.context_utils"):
+            await safe_ctx_info(ctx, "test message")
+
+        ctx.info.assert_awaited_once()
+        assert [r.levelno for r in caplog.records] == [logging.DEBUG]
+        assert "ctx.info failed" in caplog.records[0].getMessage()
+
+    @pytest.mark.asyncio
+    async def test_propagates_cancellation(self) -> None:
+        """BaseException (cancellation) is not swallowed."""
+        ctx = AsyncMock()
+        ctx.info.side_effect = asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
             await safe_ctx_info(ctx, "test message")
         ctx.info.assert_awaited_once()
 
@@ -78,34 +110,64 @@ class TestSafeCtxReportProgress:
         await safe_ctx_report_progress(None, progress=1.0, total=1.0)
 
     @pytest.mark.asyncio
-    async def test_suppresses_runtime_error(self) -> None:
-        """Suppresses RuntimeError from ctx.report_progress() gracefully."""
+    async def test_runtime_error_is_silent(self, caplog: pytest.LogCaptureFixture) -> None:
+        """RuntimeError (no session) degrades without a log record."""
         ctx = AsyncMock()
         ctx.report_progress.side_effect = RuntimeError("session not available")
 
-        # Should not raise
+        with caplog.at_level(logging.DEBUG, logger="gitea_mcp_server.context_utils"):
+            await safe_ctx_report_progress(ctx, progress=0.5)
+
+        ctx.report_progress.assert_awaited_once()
+        assert caplog.records == []
+
+    @pytest.mark.asyncio
+    async def test_runtime_error_is_silent_with_total(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """RuntimeError with a total also degrades without a log record."""
+        ctx = AsyncMock()
+        ctx.report_progress.side_effect = RuntimeError("nope")
+
+        with caplog.at_level(logging.DEBUG, logger="gitea_mcp_server.context_utils"):
+            await safe_ctx_report_progress(ctx, progress=0.5, total=1.0)
+
+        ctx.report_progress.assert_awaited_once_with(progress=0.5, total=1.0)
+        assert caplog.records == []
+
+    @pytest.mark.parametrize("exc", _UNEXPECTED_ERRORS)
+    @pytest.mark.asyncio
+    async def test_suppresses_other_exceptions(self, exc: type[Exception]) -> None:
+        """Any Exception from ctx.report_progress() is swallowed (#827)."""
+        ctx = AsyncMock()
+        ctx.report_progress.side_effect = exc("bad progress")
+
+        # Must not raise: a progress failure never aborts the call.
         await safe_ctx_report_progress(ctx, progress=0.5)
         ctx.report_progress.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_propagates_other_exceptions(self) -> None:
-        """Only RuntimeError is suppressed; other exceptions propagate."""
+    async def test_unexpected_failure_is_traced(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A non-RuntimeError failure is traced at DEBUG and swallowed."""
         ctx = AsyncMock()
         ctx.report_progress.side_effect = ValueError("bad progress")
 
-        with pytest.raises(ValueError, match="bad progress"):
+        with caplog.at_level(logging.DEBUG, logger="gitea_mcp_server.context_utils"):
             await safe_ctx_report_progress(ctx, progress=0.5)
+
         ctx.report_progress.assert_awaited_once()
+        assert [r.levelno for r in caplog.records] == [logging.DEBUG]
+        assert "ctx.report_progress failed" in caplog.records[0].getMessage()
 
     @pytest.mark.asyncio
-    async def test_suppresses_runtime_error_with_total(self) -> None:
-        """Suppresses RuntimeError when total is provided too."""
+    async def test_propagates_cancellation(self) -> None:
+        """BaseException (cancellation) is not swallowed."""
         ctx = AsyncMock()
-        ctx.report_progress.side_effect = RuntimeError("nope")
+        ctx.report_progress.side_effect = asyncio.CancelledError()
 
-        # Should not raise
-        await safe_ctx_report_progress(ctx, progress=0.5, total=1.0)
-        ctx.report_progress.assert_awaited_once_with(progress=0.5, total=1.0)
+        with pytest.raises(asyncio.CancelledError):
+            await safe_ctx_report_progress(ctx, progress=0.5)
+        ctx.report_progress.assert_awaited_once()
 
 
 class TestResolveCurrentContext:

@@ -25,6 +25,10 @@ mypy errors and keep test code consistent:
 
 - `tests/helpers/mock_tool.py` — `make_mock_tool`, `make_mock_route`,
   `make_async_mock`, `make_magic_mock`
+- `tests/helpers/ast_guards.py` — `iter_call_sites` (shared AST call-site
+  scanner for structural guards)
+- `tests/helpers/progress.py` — `RecordingContext`, `current_context`
+  (observe the spine's MCP progress lifecycle)
 - `tests/helpers/tool_names.py` — `extract_tool_names`
 - `tests/helpers/spec_fixtures.py` — `base_spec`, `minimal_spec`, `make_openapi_spec`
 - `tests/helpers/mcp_results.py` — `extract_text_content`, `assert_call_success`,

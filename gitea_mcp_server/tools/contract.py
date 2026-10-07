@@ -28,20 +28,27 @@ for both tool families:
        :func:`~gitea_mcp_server.context_utils.resolve_current_context` —
        progress reporting and structured logging degrade to no-ops when no
        session is active.
-    5. ``executor(kwargs, extracted, ctx)`` — backend-specific execution.
+    5. Emit the progress **start** signal via
+       :func:`~gitea_mcp_server.context_utils.safe_ctx_report_progress`.  The
+       spine owns the MCP progress lifecycle (start before execution, terminal
+       after render); executors never report progress.
+    6. ``executor(kwargs, extracted, ctx)`` — backend-specific execution.
        Executors return raw data only — an
        :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
-       (data, total_count, result shape).  The single result pipeline
-       (:func:`~gitea_mcp_server.tools.result_pipeline.render`) then applies
-       shape → paginate → format → ``ToolResult``.
-    6. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
+       (data, total_count, result shape).
+    7. Attach ``_raw_schema``, ``response_type``, and ``view_hints`` (all read
        from the :class:`ToolRegistration`) so the pipeline can render
        schema-aware output (``detail=concise``), dispatch a type-bound domain
        markdown formatter, and refine the generic schema-anchored view with the
        curated display-view deficiencies, and derive the formatter context
        (``extra``) from the call's path/query args so the formatter sees
        repo/type context.
-    7. ``apply_to(result, extracted)`` — run post-hooks (sudo cleanup).
+    8. Render through the single result pipeline
+       (:func:`~gitea_mcp_server.tools.result_pipeline.render`) — shape →
+       paginate → format → ``ToolResult`` — and run post-hooks
+       (``apply_to``: sudo cleanup).
+    9. Emit the progress **terminal** signal on success, then return the
+       ``ToolResult``.
 
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
 ExecutionResult`` with the ``Tool`` bound by closure at wrap time.  Autogen
@@ -68,7 +75,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
 from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE
-from gitea_mcp_server.context_utils import resolve_current_context
+from gitea_mcp_server.context_utils import resolve_current_context, safe_ctx_report_progress
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
@@ -132,6 +139,17 @@ def _derive_display_extra(kwargs: dict[str, Any]) -> dict[str, Any] | None:
     return extra or None
 
 
+# MCP progress lifecycle values.  The spine owns the lifecycle: a start signal
+# before the executor and a terminal signal after a successful render, identical
+# for autogen and synthetic tools.  ``total`` is always 1.0 so clients can render
+# a 0→100% bar.  The lifecycle claims start + completion only — it does not
+# measure work done.  Public contract constants: the guard and behaviour tests
+# assert against these names rather than literals.
+PROGRESS_START: float = 0.0
+PROGRESS_COMPLETE: float = 1.0
+PROGRESS_TOTAL: float = 1.0
+
+
 def build_transform_fn(
     tool: Tool,
     executor: Executor,
@@ -145,9 +163,10 @@ def build_transform_fn(
     The returned callable receives ``**kwargs`` (the agent's arguments) and
     runs the full agent-facing contract spine: extract virtual params, validate
     them against their registry schemas, run pre-hooks, resolve the context,
-    delegate to *executor*, render the raw ``ExecutionResult`` through the
-    single result pipeline, then hand off to :func:`apply_to` for post-hooks
-    (sudo cleanup).
+    emit the progress start signal, delegate to *executor*, render the raw
+    ``ExecutionResult`` through the single result pipeline, hand off to
+    :func:`apply_to` for post-hooks (sudo cleanup), then emit the progress
+    terminal signal on success.  The spine is the sole emitter of MCP progress.
 
     ``openapi_spec`` is captured by the closure and forwarded to
     :func:`render` — it enables root-list item summaries under
@@ -248,6 +267,12 @@ def build_transform_fn(
         if inert:
             virtual_values[INERT_KEY] = inert
 
+        # MCP progress lifecycle — the spine owns both signals, so every
+        # wrapped tool (autogen and synthetic alike) reports identically and an
+        # executor's early return cannot skip the terminal.  Start before the
+        # executor; terminal after a successful render.  No-op when no session.
+        await safe_ctx_report_progress(ctx, progress=PROGRESS_START, total=PROGRESS_TOTAL)
+
         result = await executor(kwargs, virtual_values, ctx)
 
         # Attach raw_schema to the extracted dict so the pipeline can render
@@ -267,8 +292,10 @@ def build_transform_fn(
         view_hints = reg.view_hints
 
         # Executors return raw data; the single result pipeline renders it.
-        # Run post-hooks on the rendered ToolResult and return.
-        return apply_to(
+        # Run post-hooks on the rendered ToolResult.  The terminal progress
+        # signal fires only after a successful render + post-hooks — an errored
+        # call emits the start but never claims completion.
+        rendered = apply_to(
             render(
                 result,
                 fmt=virtual_values.get("format", default_format),
@@ -284,11 +311,16 @@ def build_transform_fn(
             ),
             virtual_values,
         )
+        await safe_ctx_report_progress(ctx, progress=PROGRESS_COMPLETE, total=PROGRESS_TOTAL)
+        return rendered
 
     return transform_fn
 
 
 __all__ = [
+    "PROGRESS_COMPLETE",
+    "PROGRESS_START",
+    "PROGRESS_TOTAL",
     "Executor",
     "build_transform_fn",
 ]

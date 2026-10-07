@@ -11,13 +11,20 @@ from __future__ import annotations
 
 import base64
 from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp.tools.base import Tool, ToolResult
 
-from gitea_mcp_server.tools.contract import build_transform_fn
+from gitea_mcp_server.tools.contract import (
+    PROGRESS_COMPLETE,
+    PROGRESS_START,
+    PROGRESS_TOTAL,
+    build_transform_fn,
+)
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.virtual_params import INERT_KEY
+from tests.helpers.progress import RecordingContext
 from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -560,3 +567,152 @@ class TestDisplayExtraDerivation:
         assert _derive_display_extra({"owner": "o", "repo": None}) == {"owner": "o"}
         assert _derive_display_extra({"owner": None}) is None
         assert _derive_display_extra({}) is None
+
+
+def _result_for_shape(shape: str) -> ExecutionResult:
+    """Return a render-valid ``ExecutionResult`` for one of the six shapes.
+
+    The payload matches what :func:`render` expects per shape (binary carries
+    ``content_info``, empty carries ``message``, list/object carry structured
+    ``data``) so the parametrized test exercises the lifecycle, not render's
+    error-recovery path.
+    """
+    if shape == "empty":
+        return ExecutionResult(
+            data=None, shape="empty", message="Operation completed successfully."
+        )
+    if shape == "binary":
+        return ExecutionResult(data={"content_type": "application/zip", "size": 3}, shape="binary")
+    if shape == "text":
+        return ExecutionResult(data="raw text", shape="text")
+    if shape == "scalar":
+        return ExecutionResult(data=42, shape="scalar")
+    if shape == "list":
+        return ExecutionResult(data=[{"id": 1}], total_count=1, shape="list", paginated=True)
+    return ExecutionResult(data={"k": "v"}, shape="object")
+
+
+class TestProgressLifecycle:
+    """The contract spine owns the MCP progress lifecycle (#825).
+
+    The spine emits a start signal before the executor and a terminal signal
+    after a successful render; executors never emit progress.  A recording
+    executor exercises the spine directly — autogen and synthetic tools are
+    both "an executor" at this seam.
+    """
+
+    @pytest.mark.asyncio
+    async def test_start_executor_terminal_in_order(self) -> None:
+        """The spine emits start, runs the executor, then emits terminal."""
+        ctx = RecordingContext()
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ctx.mark("executor")
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with patch(
+            "gitea_mcp_server.tools.contract.resolve_current_context",
+            new=AsyncMock(return_value=ctx),
+        ):
+            result = await transform_fn(query="q")
+
+        assert result.structured_content == {"result": "ok"}
+        assert ctx.calls == [
+            ("progress", PROGRESS_START, PROGRESS_TOTAL),
+            ("mark", "executor"),
+            ("progress", PROGRESS_COMPLETE, PROGRESS_TOTAL),
+        ]
+
+    @pytest.mark.parametrize("shape", ["scalar", "object", "list", "text", "empty", "binary"])
+    @pytest.mark.asyncio
+    async def test_lifecycle_is_shape_independent(self, shape: str) -> None:
+        """Every result shape gets the same start + terminal signals.
+
+        The historical bug was the autogen executor skipping the terminal on
+        its early-return response classes; the spine must not branch on shape.
+        """
+        ctx = RecordingContext()
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ctx.mark("executor")
+            return _result_for_shape(shape)
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with patch(
+            "gitea_mcp_server.tools.contract.resolve_current_context",
+            new=AsyncMock(return_value=ctx),
+        ):
+            await transform_fn(query="q")
+
+        assert ctx.calls[0] == ("progress", PROGRESS_START, PROGRESS_TOTAL)
+        assert ctx.calls[-1] == ("progress", PROGRESS_COMPLETE, PROGRESS_TOTAL)
+        assert ("mark", "executor") in ctx.calls
+
+    @pytest.mark.asyncio
+    async def test_no_terminal_when_executor_raises(self) -> None:
+        """An errored executor emits the start but never claims completion."""
+        ctx = RecordingContext()
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ctx.mark("executor")
+            msg = "boom"
+            raise ValueError(msg)
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with (
+            patch(
+                "gitea_mcp_server.tools.contract.resolve_current_context",
+                new=AsyncMock(return_value=ctx),
+            ),
+            pytest.raises(ValueError, match="boom"),
+        ):
+            await transform_fn(query="q")
+
+        assert ctx.calls == [
+            ("progress", PROGRESS_START, PROGRESS_TOTAL),
+            ("mark", "executor"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_no_terminal_when_render_raises(self) -> None:
+        """A failed render emits the start but never claims completion."""
+        ctx = RecordingContext()
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ctx.mark("executor")
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        with (
+            patch(
+                "gitea_mcp_server.tools.contract.resolve_current_context",
+                new=AsyncMock(return_value=ctx),
+            ),
+            patch(
+                "gitea_mcp_server.tools.contract.render",
+                side_effect=ValueError("render boom"),
+            ),
+            pytest.raises(ValueError, match="render boom"),
+        ):
+            await transform_fn(query="q")
+
+        assert ctx.calls == [
+            ("progress", PROGRESS_START, PROGRESS_TOTAL),
+            ("mark", "executor"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_no_session_is_noop(self) -> None:
+        """Outside a session (ctx=None) the lifecycle degrades to no-ops."""
+        ran: list[str] = []
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            ran.append("executor")
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        result = await transform_fn(query="q")
+
+        assert ran == ["executor"]
+        assert result.structured_content == {"result": "ok"}

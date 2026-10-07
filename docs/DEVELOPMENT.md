@@ -200,9 +200,9 @@ The customization pipeline has two phases:
    ``_run_transform_pipeline(kwargs, tool, customization, ctx=ctx)``,
    ultimately reaching ``_pipeline_with_context()``.  Runtime
    wrapping (validation, label conversion, error handling, text wrapping,
-   pagination) all receive ``ctx`` for ``ctx.info()`` logging and
-   ``ctx.report_progress()`` calls at key stages, gracefully degraded to
-   no-ops when ``ctx`` is ``None``.
+   pagination) all receive ``ctx`` for ``ctx.info()`` logging, gracefully
+   degraded to no-ops when ``ctx`` is ``None``.  Progress reporting is owned
+   by the contract spine, not the executors.
 
 Common customizations:
 
@@ -352,13 +352,17 @@ The lifecycle functions are called automatically in the transform pipeline:
    no enum (``sudo``, ``fetch_all``) are a no-op.
 4. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
    ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
-5. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
-   synthetic impl) with ``ctx`` for progress reporting and logging; returns
-   raw data (``ExecutionResult``)
-6. ``render(execution_result, ...)`` — the single result pipeline
+5. ``safe_ctx_report_progress(ctx, 0.0, total=1.0)`` — the spine emits the
+   MCP progress **start** signal (executors never report progress)
+6. ``executor(kwargs, extracted, ctx)`` — backend execution (HTTP pipeline or
+   synthetic impl) with ``ctx`` for logging; returns raw data
+   (``ExecutionResult``)
+7. ``render(execution_result, ...)`` — the single result pipeline
    (``tools/result_pipeline.py``) applies shape → paginate → format →
    ``ToolResult``; the single writer of both channels
-7. ``apply_to(result, extracted)`` — runs post-hooks (sudo cleanup only)
+8. ``apply_to(result, extracted)`` — runs post-hooks (sudo cleanup only)
+9. ``safe_ctx_report_progress(ctx, 1.0, total=1.0)`` — the **terminal** signal,
+   emitted only after a successful render
 
 .. note::
 
@@ -1099,9 +1103,9 @@ OpenAPI spec). They live in the same codebase and register themselves via
                 raise_value_error("Not available")
             await ctx.info(f"Processing '{param}'", ...)
             result = do_the_work(my_data, param)
-            await ctx.report_progress(progress=1.0)
             # Return raw data; the single result pipeline renders it for
-            # ``format``/``detail`` — no display logic in the impl.
+            # ``format``/``detail`` — no display logic in the impl.  The spine
+            # emits the MCP progress start/terminal signals (never the impl).
             return ExecutionResult(data=result, shape="object")
 
        register_all_synthetic_tools(mcp, [
@@ -1175,7 +1179,7 @@ OpenAPI spec). They live in the same codebase and register themselves via
 | Concern | Convention |
 |---------|-----------|
 | Function injection | FastMCP auto-injects ``ctx: Context`` via type annotation — declare it in the handler signature |
-| Observability | Use ``ctx.info()`` before/after work and ``ctx.report_progress()`` for long ops — agents rely on this |
+| Observability | Use ``ctx.info()`` before/after work — agents rely on this. Do **not** emit progress in an impl: the spine owns the MCP progress lifecycle (start + terminal) for every wrapped call (#825) |
 | Registration | Use ``register_all_synthetic_tools(mcp, [SyntheticToolSpec(...), ...])`` — one declarative spec per tool (impl, name/description/tags/annotations/output_schema, paginated, limit_max, virtual_params, wrap). The loop builds the executor, stores the registration record, and registers |
 | Virtual params | Declare ``format``/``detail``/``fetch_all`` in the impl signature as usual; the registry supplies the agent-facing schema (descriptions/enums/defaults) via the tool's ``virtual_params`` allowlist (default ``{"format","detail","fetch_all"}`` for paginated tools, ``{"format","detail"}`` otherwise; pass a custom set e.g. ``read_doc`` → ``{"format"}`` to reject ``detail``/``fetch_all`` entirely, or ``tool_info``/``resolve_type`` → ``{"format"}`` so the impl's own ``detail`` default (``"concise"``) is the single source; ``sudo`` is opt-in). Only allowlisted params are popped from kwargs — an off-profile registry-name key stays in kwargs and is rejected with "Unknown parameter(s)" rather than silently dropped. The executor re-supplies the popped values to the impl. ``format``/``detail``/``fetch_all`` are hook-less pipeline options read by the result pipeline — no display logic lives in the registry |
 | Impl return | Return raw data only — an ``ExecutionResult(data, total_count, shape)``. The single result pipeline slices (``list``), envelopes, and formats — and owns out-of-range handling for every shape: return the full item set (``shape="list"``) or the pre-sliced object (``shape="object"``, e.g. ``read_doc``/``tool_info``) and the pipeline emits the message envelope on out-of-range pages. Set ``message`` only for custom empty-result messages (e.g. cross-link hints). For bespoke markdown (e.g. ``tool_info``, ``read_doc``) set ``markdown_formatter`` / ``markdown_extras`` on the result |
@@ -1294,7 +1298,7 @@ happens at spec-prep time via `route_map_fn` (see `docs/SCOPE_MODEL.md` and
 chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup order:
 
 1. Spec-prep filtering (`spec_loader.py`) — computes excluded routes (deprecated + scope + config-excluded) applied via `route_map_fn`
-2. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, progress reporting
+2. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, and the spine-owned progress lifecycle
 
 ---
 

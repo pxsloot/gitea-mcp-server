@@ -26,7 +26,7 @@ from gitea_mcp_server.constants import (
     DETAIL_PARAM_SCHEMA_CONCISE,
     DetailLiteral,
 )
-from gitea_mcp_server.context_utils import safe_ctx_info, safe_ctx_report_progress
+from gitea_mcp_server.context_utils import safe_ctx_info
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.resources.meta import ResourceMeta
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
@@ -397,7 +397,6 @@ def register_type_tools(  # noqa: PLR0915 - registration function: builds the ty
 
         info = _prefix_cross_refs(info)
 
-        await safe_ctx_report_progress(ctx, progress=1.0)
         logger.debug(
             "Resolved type '%s' (%d cross-refs)", name, len(info.get("cross_references", {}))
         )

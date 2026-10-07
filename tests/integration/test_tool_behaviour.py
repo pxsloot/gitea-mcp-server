@@ -1177,6 +1177,30 @@ class TestNonJsonEndpoint:
         )
         assert result is not None
 
+    async def test_text_response_emits_start_and_terminal(
+        self,
+        mcp_server: FastMCP,
+    ) -> None:
+        """The text/plain early return still gets the spine's terminal signal.
+
+        Regression for #825: before the lifecycle moved into the spine, the
+        text-response branch in ``_pipeline_with_context`` returned before the
+        terminal progress call.
+        """
+        from tests.helpers.progress import RecordingContext, current_context
+
+        respx.get(f"{BASE_TEST_URL}/api/v1/repos/owner/repo/pulls/1.diff").respond(
+            200,
+            text="diff --git a/f b/f\n",
+        )
+        ctx = RecordingContext()
+        with current_context(ctx):
+            await mcp_server.call_tool(
+                "gitea_repo_download_pull_diff_or_patch",
+                {"owner": "owner", "repo": "repo", "index": 1, "diff_type": "diff"},
+            )
+        assert ctx.progress == [(0.0, 1.0), (1.0, 1.0)]
+
     async def test_text_response_wrapped_in_result_key(
         self,
         mcp_server: FastMCP,

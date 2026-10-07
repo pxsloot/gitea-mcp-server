@@ -1815,12 +1815,10 @@ class TestWrappingPipelineEdgeCases:
     """Tests for edge cases in the tool wrapping pipeline.
 
     These tests exercise the runtime wrapping transform (validation, error
-    handling, formatting, ctx.report_progress).  The existing integration
-    test specs deliberately omit response schemas to test the fallback
-    wrapping path; these tests ADD a schema so the wrapping transform's
-    full pipeline is exercised — including 204 No Content wrapping
-    (lines 571-575 in mcp_builder.py), raw format early return (line 306),
-    and ctx.report_progress (lines 597, 608).
+    handling, formatting, and the spine-owned progress lifecycle).  The
+    existing integration test specs deliberately omit response schemas to test
+    the fallback wrapping path; these tests ADD a schema so the wrapping
+    transform's full pipeline is exercised.
     """
 
     @pytest.fixture
@@ -1861,47 +1859,29 @@ class TestWrappingPipelineEdgeCases:
         assert result.structured_content["result"]["version"] == "1.0.0"
 
     @pytest.mark.asyncio
-    async def test_non_empty_result_triggers_progress(self, mcp_server: Any) -> None:
-        """Tool calls with dict results trigger ctx.report_progress."""
-        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
-        result = await mcp_server.call_tool("gitea_get_version", {})
-        assert result.structured_content is not None
-        assert result.structured_content["result"]["version"] == "1.0.0"
+    async def test_autogen_and_synthetic_emit_identical_lifecycle(self, mcp_server: Any) -> None:
+        """Autogen and synthetic tools emit the same spine-owned lifecycle (#825).
 
-    @pytest.mark.asyncio
-    async def test_ctx_report_progress_called(self, mcp_server: Any) -> None:
-        """ctx.report_progress and ctx.info are called during a tool call.
-
-        Verifies that the context resolution in transform_fn wires progress
-        reporting and structured logging through the pipeline.  Uses a mock
-        context to avoid depending on an active MCP session.
+        The spine is the only emitter: both families report a start signal
+        (``progress=0.0, total=1.0``) before the executor and a terminal signal
+        (``progress=1.0, total=1.0``) after rendering.
         """
-        from unittest.mock import AsyncMock, patch
-
-        mock_ctx = AsyncMock()
-        mock_ctx.info = AsyncMock()
-        mock_ctx.report_progress = AsyncMock()
-
-        class _MockCurrentContext:
-            """Context manager that returns mock_ctx on enter."""
-
-            async def __aenter__(self) -> AsyncMock:
-                return mock_ctx
-
-            async def __aexit__(self, *args: object) -> None:
-                pass
+        from tests.helpers.progress import RecordingContext, current_context
 
         respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
-        with patch(
-            "gitea_mcp_server.context_utils.CurrentContext",
-            return_value=_MockCurrentContext(),
-        ):
-            result = await mcp_server.call_tool("gitea_get_version", {})
 
-        assert result.structured_content is not None
-        assert result.structured_content["result"]["version"] == "1.0.0"
-        mock_ctx.info.assert_awaited()
-        mock_ctx.report_progress.assert_awaited()
+        autogen_ctx = RecordingContext()
+        with current_context(autogen_ctx):
+            autogen = await mcp_server.call_tool("gitea_get_version", {})
+        synthetic_ctx = RecordingContext()
+        with current_context(synthetic_ctx):
+            synthetic = await mcp_server.call_tool("gitea_search_docs", {"query": "labels"})
+
+        assert autogen.structured_content is not None
+        assert synthetic.structured_content is not None
+        expected = [(0.0, 1.0), (1.0, 1.0)]
+        assert autogen_ctx.progress == expected
+        assert synthetic_ctx.progress == expected
 
 
 class Test204NoContentWrapping:
@@ -1949,6 +1929,26 @@ class Test204NoContentWrapping:
         result = await mcp_server.call_tool("gitea_repo_delete", {"owner": "owner", "repo": "repo"})
         assert result.structured_content is not None
         assert result.structured_content.get("result") is None
+
+    @pytest.mark.asyncio
+    async def test_204_response_emits_start_and_terminal(self, mcp_server: Any) -> None:
+        """The empty-body early return still gets the spine's terminal signal.
+
+        Regression for #825: before the lifecycle moved into the spine, the
+        empty-body branch in ``_pipeline_with_context`` returned before the
+        terminal progress call.
+        """
+        from tests.helpers.progress import RecordingContext, current_context
+
+        respx.delete(f"{BASE_TEST_URL}/api/v1/repos/owner/repo").respond(204)
+        ctx = RecordingContext()
+        with current_context(ctx):
+            result = await mcp_server.call_tool(
+                "gitea_repo_delete", {"owner": "owner", "repo": "repo"}
+            )
+        assert result.structured_content is not None
+        assert result.structured_content.get("result") is None
+        assert ctx.progress == [(0.0, 1.0), (1.0, 1.0)]
 
 
 class TestServerLifecycle:

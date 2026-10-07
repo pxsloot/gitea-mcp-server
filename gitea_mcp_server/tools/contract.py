@@ -143,7 +143,8 @@ def _derive_display_extra(kwargs: dict[str, Any]) -> dict[str, Any] | None:
 # before the executor and a terminal signal after a successful render, identical
 # for autogen and synthetic tools.  ``total`` is always 1.0 so clients can render
 # a 0→100% bar.  The lifecycle claims start + completion only — it does not
-# measure work done.
+# measure work done.  Public contract constants: the guard and behaviour tests
+# assert against these names rather than literals.
 PROGRESS_START: float = 0.0
 PROGRESS_COMPLETE: float = 1.0
 PROGRESS_TOTAL: float = 1.0

@@ -1859,14 +1859,6 @@ class TestWrappingPipelineEdgeCases:
         assert result.structured_content["result"]["version"] == "1.0.0"
 
     @pytest.mark.asyncio
-    async def test_non_empty_result_triggers_progress(self, mcp_server: Any) -> None:
-        """Tool calls with dict results trigger ctx.report_progress."""
-        respx.get(f"{BASE_TEST_URL}/api/v1/version").respond(200, json={"version": "1.0.0"})
-        result = await mcp_server.call_tool("gitea_get_version", {})
-        assert result.structured_content is not None
-        assert result.structured_content["result"]["version"] == "1.0.0"
-
-    @pytest.mark.asyncio
     async def test_autogen_and_synthetic_emit_identical_lifecycle(self, mcp_server: Any) -> None:
         """Autogen and synthetic tools emit the same spine-owned lifecycle (#825).
 

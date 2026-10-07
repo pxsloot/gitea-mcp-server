@@ -24,6 +24,7 @@ from gitea_mcp_server.tools.contract import (
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.virtual_params import INERT_KEY
+from tests.helpers.progress import RecordingContext
 from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -568,19 +569,6 @@ class TestDisplayExtraDerivation:
         assert _derive_display_extra({}) is None
 
 
-class _RecordingContext:
-    """Minimal MCP context recording progress notifications in call order."""
-
-    def __init__(self) -> None:
-        self.events: list[Any] = []
-
-    async def report_progress(self, progress: float, total: float | None = None) -> None:
-        self.events.append(("progress", progress, total))
-
-    async def info(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-
 def _result_for_shape(shape: str) -> ExecutionResult:
     """Return a render-valid ``ExecutionResult`` for one of the six shapes.
 
@@ -616,10 +604,10 @@ class TestProgressLifecycle:
     @pytest.mark.asyncio
     async def test_start_executor_terminal_in_order(self) -> None:
         """The spine emits start, runs the executor, then emits terminal."""
-        ctx = _RecordingContext()
+        ctx = RecordingContext()
 
         async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
-            ctx.events.append("executor")
+            ctx.mark("executor")
             return ExecutionResult(data="ok", shape="scalar")
 
         transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
@@ -630,9 +618,9 @@ class TestProgressLifecycle:
             result = await transform_fn(query="q")
 
         assert result.structured_content == {"result": "ok"}
-        assert ctx.events == [
+        assert ctx.calls == [
             ("progress", PROGRESS_START, PROGRESS_TOTAL),
-            "executor",
+            ("mark", "executor"),
             ("progress", PROGRESS_COMPLETE, PROGRESS_TOTAL),
         ]
 
@@ -644,10 +632,10 @@ class TestProgressLifecycle:
         The historical bug was the autogen executor skipping the terminal on
         its early-return response classes; the spine must not branch on shape.
         """
-        ctx = _RecordingContext()
+        ctx = RecordingContext()
 
         async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
-            ctx.events.append("executor")
+            ctx.mark("executor")
             return _result_for_shape(shape)
 
         transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
@@ -657,17 +645,17 @@ class TestProgressLifecycle:
         ):
             await transform_fn(query="q")
 
-        assert ctx.events[0] == ("progress", PROGRESS_START, PROGRESS_TOTAL)
-        assert ctx.events[-1] == ("progress", PROGRESS_COMPLETE, PROGRESS_TOTAL)
-        assert "executor" in ctx.events
+        assert ctx.calls[0] == ("progress", PROGRESS_START, PROGRESS_TOTAL)
+        assert ctx.calls[-1] == ("progress", PROGRESS_COMPLETE, PROGRESS_TOTAL)
+        assert ("mark", "executor") in ctx.calls
 
     @pytest.mark.asyncio
     async def test_no_terminal_when_executor_raises(self) -> None:
         """An errored executor emits the start but never claims completion."""
-        ctx = _RecordingContext()
+        ctx = RecordingContext()
 
         async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
-            ctx.events.append("executor")
+            ctx.mark("executor")
             msg = "boom"
             raise ValueError(msg)
 
@@ -681,18 +669,18 @@ class TestProgressLifecycle:
         ):
             await transform_fn(query="q")
 
-        assert ctx.events == [
+        assert ctx.calls == [
             ("progress", PROGRESS_START, PROGRESS_TOTAL),
-            "executor",
+            ("mark", "executor"),
         ]
 
     @pytest.mark.asyncio
     async def test_no_terminal_when_render_raises(self) -> None:
         """A failed render emits the start but never claims completion."""
-        ctx = _RecordingContext()
+        ctx = RecordingContext()
 
         async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
-            ctx.events.append("executor")
+            ctx.mark("executor")
             return ExecutionResult(data="ok", shape="scalar")
 
         transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
@@ -709,9 +697,9 @@ class TestProgressLifecycle:
         ):
             await transform_fn(query="q")
 
-        assert ctx.events == [
+        assert ctx.calls == [
             ("progress", PROGRESS_START, PROGRESS_TOTAL),
-            "executor",
+            ("mark", "executor"),
         ]
 
     @pytest.mark.asyncio

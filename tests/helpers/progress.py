@@ -17,16 +17,31 @@ if TYPE_CHECKING:
 
 
 class RecordingContext:
-    """MCP context stand-in that records ``report_progress`` calls in order."""
+    """MCP context stand-in recording progress and test markers in call order.
+
+    ``calls`` is the ordered log.  ``progress`` extracts the progress
+    notifications (integration tests assert on that); ``mark`` lets a unit test
+    interleave its own events — e.g. "executor ran" — so it can pin the
+    start-before / terminal-after ordering, not just the set of signals.
+    """
 
     def __init__(self) -> None:
-        self.progress: list[tuple[float, float | None]] = []
+        self.calls: list[tuple[Any, ...]] = []
 
     async def report_progress(self, progress: float, total: float | None = None) -> None:
-        self.progress.append((progress, total))
+        self.calls.append(("progress", progress, total))
 
     async def info(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+    def mark(self, label: str) -> None:
+        """Append an arbitrary marker to the ordered call log (test-only)."""
+        self.calls.append(("mark", label))
+
+    @property
+    def progress(self) -> list[tuple[float, float | None]]:
+        """The progress notifications, in call order."""
+        return [(call[1], call[2]) for call in self.calls if call[0] == "progress"]
 
 
 @contextmanager

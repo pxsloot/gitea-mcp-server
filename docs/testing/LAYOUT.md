@@ -14,9 +14,11 @@ tests/
 ├── conftest.py                             # Infrastructure: SimpleConfig, event_loop
 ├── helpers/
 │   ├── __init__.py
+│   ├── ast_guards.py                       # iter_call_sites — shared AST call-site scanner (structural guards)
 │   ├── import_graph.py                     # Filesystem module discovery + import graph (layer contract)
 │   ├── mcp_results.py                      # dual-channel MCP result helpers
 │   ├── mock_tool.py                        # make_mock_tool, make_mock_route
+│   ├── progress.py                         # RecordingContext, current_context — MCP progress observation
 │   ├── registration.py                     # registration-record builders for tests
 │   ├── tool_names.py                       # extract_tool_names
 │   └── spec_fixtures.py                    # base_spec, minimal_spec, make_openapi_spec
@@ -173,6 +175,7 @@ across the entire module tree:
 | `tests/unit/test_architecture_doc.py` | Every production module appears in `docs/ARCHITECTURE.md`'s Module Map, every file the map names exists, and every named package exists. | #800 |
 | `tests/unit/test_layer_contract.py` | The package's dependency direction: no import points to a higher layer, explicitly forbidden edges are absent, and every module is placed in a layer (see `docs/ARCHITECTURE.md` → Contracts & Invariants, "The dependency direction is enforced"). | #800 |
 | `tests/unit/test_spec_fixture_convention.py` | No test builds a spec as an inline dict literal — annotated or passed as `openapi_spec=`; the typed-spec factory convention (`tests/helpers/spec_fixtures.py`) cannot silently re-drift. See `testing/FIXTURES.md`. | #762 |
+| `tests/unit/test_progress_contract.py` | The contract spine is the sole MCP-progress emitter: only `tools/contract.py` (via the safe helper) and `context_utils.py` (the helper's definition) contain progress emissions. Set-equality both ways plus a planted-violation control; the shared scanner is `tests/helpers/ast_guards.py`. See `docs/ARCHITECTURE.md` → Contracts & Invariants, "The spine owns the MCP progress lifecycle". | #825 |
 | `tests/unit/test_config_docs.py` | Every `Config` field is documented in `README.md` and `.env.example`; `ConfigProtocol` mirrors `Config`. | #785 |
 
 ## Test Data and Fixtures

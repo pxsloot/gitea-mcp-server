@@ -47,7 +47,10 @@ def _progress_emitters(source: str) -> list[tuple[int, str]]:
         for line, name in iter_call_sites(
             source,
             names=frozenset({_SAFE_HELPER}),
-            attrs=frozenset({_DIRECT}),
+            # ``attrs`` includes the helper name too, so a module-qualified call
+            # (``context_utils.safe_ctx_report_progress(...)``) is caught, not
+            # only the bare-name form.
+            attrs=frozenset({_SAFE_HELPER, _DIRECT}),
         )
     ]
 
@@ -83,8 +86,10 @@ def test_scanner_detects_planted_violation() -> None:
         "async def executor(ctx):\n"
         "    ctx.report_progress(progress=1.0)\n"
         "    await safe_ctx_report_progress(ctx, progress=1.0)\n"
+        "    await context_utils.safe_ctx_report_progress(ctx, progress=1.0)\n"
     )
     assert _progress_emitters(source) == [
         (2, "direct call"),
         (3, "safe helper call"),
+        (4, "safe helper call"),
     ]

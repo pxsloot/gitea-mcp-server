@@ -472,7 +472,7 @@ async def _maybe_decode_base64(raw: str) -> str:
 
     Detection is at runtime via JSON parse — no spec dependency needed.
     Mirrors the spec-driven detection in autogen tools
-    (``_ToolWrappingTransform._try_handle_text_response``).
+    (``ToolWrappingTransform._try_handle_text_response``).
 
     Args:
         raw: Raw resource content string from the resource handler.

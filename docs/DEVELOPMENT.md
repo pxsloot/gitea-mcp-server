@@ -99,9 +99,10 @@ See `docs/TESTING_STANDARDS.md` for full details.
 
 - Functions that are **implementation details** should be prefixed with `_`.
   This boundary is executable: production code may not import (or `getattr`) an
-  underscore-private name across a boundary — external or first-party —
-  and `tests/unit/test_private_imports.py` fails the build when one is
-  introduced (documented allowlist entries until #830's PR2 lands).
+  underscore-private name across a boundary — external or first-party — and
+  `tests/unit/test_private_imports.py` fails the build when one is introduced.
+  The rule holds at every boundary; direct attribute access (`obj._x`) is a
+  tracked residual (#834).
 - The module's `__all__` documents the intended public API.
 - Tests may import private functions (they test internals), but production
   code should only import from `__all__`.  That `__all__` rule is **not yet
@@ -168,7 +169,7 @@ The customization pipeline has two phases:
 
    - ``_apply_tool_identity()`` — title, annotations, hints, category,
      cache-invalidation write-tool recording
-   - ``_detect_has_labels()`` (in `tools/customize.py`) — detect
+   - ``detect_has_labels()`` (in `tools/customize.py`) — detect
      array-typed labels parameter (drives schema augmentation)
    - ``_compute_tool_schema()`` — pure: bundles six spec queries
      (schema derivation, text/binary/ContentsResponse classification,
@@ -187,7 +188,7 @@ The customization pipeline has two phases:
      ``ToolCustomization`` execution metadata) under the single
      ``meta["registration"]`` key consumed by runtime transforms
 
-2. **``_ToolWrappingTransform``** (registered **server-level** via
+2. **``ToolWrappingTransform``** (registered **server-level** via
    ``mcp.add_transform()`` in ``server.py`` — the first transform in the
    chain, so it wraps tools from every provider before the lazy-loading,
    namespace, and extension-metadata transforms see them).  ``_wrap()`` in
@@ -268,7 +269,7 @@ length/type checks that the spec doesn't define):
 
 1. Add validator in ``validation.py``
 2. Add to ``SINGLE_VALIDATORS`` dict keyed by parameter name
-3. The runtime pipeline ``_ToolWrappingTransform`` in
+3. The runtime pipeline ``ToolWrappingTransform`` in
    ``server_setup/mcp_builder.py`` calls it **automatically** when the
    parameter has no schema-level ``enum`` (schema-driven validation
    takes priority over hardcoded validators).
@@ -490,7 +491,7 @@ display path never falls back to a literal:
 
 .. code-block:: python
 
-    # In _ToolWrappingTransform._inject_params()
+    # In ToolWrappingTransform._inject_params()
     inject_into(
         tool.parameters,
         tool=tool,
@@ -498,7 +499,7 @@ display path never falls back to a literal:
         only=registration.virtual_param_allowlist,
     )
 
-    # In _ToolWrappingTransform._make_transform_fn()
+    # In ToolWrappingTransform._make_transform_fn()
     build_transform_fn(
         tool, executor, registration=registration,
         default_format=self._response_format,
@@ -1304,7 +1305,7 @@ happens at spec-prep time via `route_map_fn` (see `docs/SCOPE_MODEL.md` and
 chain (TolerantSearch → GiteaNamespace → ExtensionMetadata). The startup order:
 
 1. Spec-prep filtering (`spec_loader.py`) — computes excluded routes (deprecated + scope + config-excluded) applied via `route_map_fn`
-2. Runtime wrapping (`_ToolWrappingTransform`) — validation, labels, error handling, context logging, and the spine-owned progress lifecycle
+2. Runtime wrapping (`ToolWrappingTransform`) — validation, labels, error handling, context logging, and the spine-owned progress lifecycle
 
 ---
 

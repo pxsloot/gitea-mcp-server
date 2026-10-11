@@ -60,6 +60,7 @@ truth. Other mentions point here.
 | Registration record (tool/resource metadata contract) | `gitea_mcp_server/registration.py` (source, canonical) + `ARCHITECTURE.md` (contracts & invariants → registration metadata) |
 | Module map | `ARCHITECTURE.md` |
 | Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (contracts & invariants → dependency direction) |
+| Underscore-private boundary / declared dependencies | `docs/ARCHITECTURE.md` (contracts & invariants → no underscore-private coupling; every third-party import declared) + `tests/unit/test_private_imports.py` / `tests/unit/test_dependency_declarations.py` (source) |
 | Transform execution order | `ARCHITECTURE.md` |
 | Scope / permissions / `sudo` gating | `SCOPE_MODEL.md` |
 | Pagination / `fetch_all` | `agent_instructions.md` (usage) + `ARCHITECTURE.md` (pipeline, data flow) + `DEVELOPMENT.md` (virtual params how-to) |

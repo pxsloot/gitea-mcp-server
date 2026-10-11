@@ -8,7 +8,7 @@ Startup-time customization is orchestrated by :func:`_customize_metadata`
 phases:
 - :func:`_apply_tool_identity` — title, annotations, hints, category,
   cache invalidation
-- :func:`_detect_has_labels` — detect array-typed labels parameter
+- :func:`detect_has_labels` — detect array-typed labels parameter
 - :func:`_compute_tool_schema` (pure) — schema derivation, response
   classification, route identity; followed by
   :func:`_apply_schema_postprocessing`,
@@ -17,7 +17,7 @@ phases:
 - :func:`_build_customization_meta` — the tool's registration record
 
 Runtime wrapping (validation, labels, error handling, text/binary response
-wrapping, pagination) is handled by :class:`_ToolWrappingTransform` via
+wrapping, pagination) is handled by :class:`ToolWrappingTransform` via
 ``provider.add_transform()`` — no private FastMCP APIs are used.  The
 per-call spine (virtual-param extraction, pre-hooks, context resolution,
 post-hoc formatting) is shared with synthetic tools via
@@ -60,12 +60,11 @@ from gitea_mcp_server.registration import (
 )
 from gitea_mcp_server.tools.contract import build_transform_fn
 from gitea_mcp_server.tools.customize import (
-    _detect_has_labels,
-    _is_array_response,
-    _prepare_annotations,
     add_inferred_hints,
     categorize_tool,
+    detect_has_labels,
     generate_tool_title,
+    prepare_annotations,
 )
 from gitea_mcp_server.tools.errors import run_validation, run_with_error_handling
 from gitea_mcp_server.tools.label_transform import LabelTransform
@@ -75,6 +74,7 @@ from gitea_mcp_server.tools.schemas import (
     derive_output_schema,
     get_response_type,
     get_success_schema,
+    is_array_response,
     is_text_response,
     response_has_no_content,
     unwrap_result_schema,
@@ -349,7 +349,7 @@ def _inject_response_metadata(
     if component.output_schema is not None:
         component.output_schema["x-fastmcp-wrap-result"] = True
 
-    if component.output_schema is not None and _is_array_response(component.output_schema):
+    if component.output_schema is not None and is_array_response(component.output_schema):
         props = component.output_schema.setdefault("properties", {})
         # Declare the pagination envelope next to ``result`` so agents can
         # discover pagination fields from the schema.  The shared constant
@@ -409,7 +409,7 @@ def _apply_tool_identity(
     declared here.
     """
     title = generate_tool_title(route)
-    annotations = _prepare_annotations(component, title)
+    annotations = prepare_annotations(component, title)
     add_inferred_hints(route, annotations)
     component.annotations = annotations
 
@@ -440,7 +440,7 @@ def _build_customization_meta(
     ``route`` or ``openapi_spec`` access needed.
 
     ``virtual_params`` is resolved by injection at the exposure seam
-    (``_ToolWrappingTransform._wrap``).
+    (``ToolWrappingTransform._wrap``).
     """
     component_meta = dict(component.meta) if component.meta else {}
 
@@ -593,7 +593,7 @@ def _customize_metadata(
     2. ``_apply_param_rename`` — fix ``parameter_map`` for renamed body
        properties (collision resolution) and renamed path/query/header/cookie
        parameters (snake_case normalization)
-    3. ``_detect_has_labels`` — detect array-typed labels parameter
+    3. ``detect_has_labels`` — detect array-typed labels parameter
        (drives schema augmentation and metadata)
     4. ``_compute_tool_schema`` + ``_apply_schema_postprocessing`` —
        schema derivation, classification, and mutations
@@ -612,7 +612,7 @@ def _customize_metadata(
     # names.
     _apply_param_rename(route, openapi_spec)
 
-    has_labels = _detect_has_labels(component)
+    has_labels = detect_has_labels(component)
     description = getattr(component, "description", "") or ""
     component.description = description
 
@@ -637,7 +637,7 @@ def _customize_metadata(
 # ---------------------------------------------------------------------------
 
 
-class _ToolWrappingTransform(Transform):
+class ToolWrappingTransform(Transform):
     """Server-level transform that wraps marked tools with runtime behaviour.
 
     Registered via ``mcp.add_transform()`` — a FastMCP public API.  Because
@@ -1365,7 +1365,7 @@ class _ToolWrappingTransform(Transform):
         # Array responses are paginated: the pipeline slices by page/limit
         # and emits the envelope.  The total comes from the X-Total-Count
         # header captured by the httpx event hook (pagination_ctx).
-        if _is_array_response(output_schema) and isinstance(result_data, list):
+        if is_array_response(output_schema) and isinstance(result_data, list):
             return ExecutionResult(
                 data=result_data,
                 total_count=pagination_ctx.get().get("total_count"),
@@ -1398,7 +1398,7 @@ def create_openapi_provider(
       registration record).
     * ``provider.add_transform(…)`` -- label conversion (innermost).
 
-    The contract wrapping transform (``_ToolWrappingTransform``) is *not*
+    The contract wrapping transform (``ToolWrappingTransform``) is *not*
     registered here — it is registered server-level via
     ``mcp.add_transform()`` so it can wrap tools from all providers
     (autogenerated and synthetic alike).

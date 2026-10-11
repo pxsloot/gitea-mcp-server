@@ -1,4 +1,4 @@
-"""Unit tests for server_setup/mcp_builder.py (_customize_metadata, _ToolWrappingTransform)."""
+"""Unit tests for server_setup/mcp_builder.py (_customize_metadata, ToolWrappingTransform)."""
 
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,6 +21,7 @@ from gitea_mcp_server.registration import (
     set_registration,
 )
 from gitea_mcp_server.server_setup.mcp_builder import (
+    ToolWrappingTransform,
     _apply_fallback_schemas,
     _apply_schema_postprocessing,
     _apply_tool_identity,
@@ -34,7 +35,6 @@ from gitea_mcp_server.server_setup.mcp_builder import (
     _read_response_transform,
     _resource_error_code,
     _response_is_binary,
-    _ToolWrappingTransform,
     create_openapi_provider,
 )
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
@@ -403,7 +403,7 @@ class TestCustomizeMetadata:
                 return_value=output_schema,
             ),
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response",
+                "gitea_mcp_server.server_setup.mcp_builder.is_array_response",
                 return_value=True,
             ),
         ):
@@ -760,7 +760,7 @@ class TestCreateOpenapiProvider:
 
         # The wrapping transform now lives server-level; exercise it
         # directly to verify response_format reaches the format default.
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=spec,
             response_format="json",
         )
@@ -825,17 +825,17 @@ class TestProviderTransformRegistration:
 
 
 # ---------------------------------------------------------------------------
-# _ToolWrappingTransform
+# ToolWrappingTransform
 # ---------------------------------------------------------------------------
 
 
 class TestToolWrappingTransform:
-    """Tests for _ToolWrappingTransform."""
+    """Tests for ToolWrappingTransform."""
 
     def make_transform(
         self, openapi_spec: OpenAPISpec | None = None, response_format: str = "markdown"
-    ) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    ) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=openapi_spec if openapi_spec is not None else make_openapi_spec(),
             response_format=response_format,
         )
@@ -1204,7 +1204,7 @@ class TestToolWrappingTransform:
                 new_callable=AsyncMock,
             ) as mock_run,
             patch(
-                "gitea_mcp_server.server_setup.mcp_builder._is_array_response", return_value=False
+                "gitea_mcp_server.server_setup.mcp_builder.is_array_response", return_value=False
             ),
         ):
             from fastmcp.tools.base import ToolResult
@@ -1237,7 +1237,7 @@ class TestToolWrappingTransform:
         async def fake_pipeline(*_args: Any, **_kwargs: Any) -> ExecutionResult:
             return ExecutionResult(data={"a": 1}, shape="object")
 
-        with patch.object(_ToolWrappingTransform, "_pipeline_with_context", new=fake_pipeline):
+        with patch.object(ToolWrappingTransform, "_pipeline_with_context", new=fake_pipeline):
             [wrapped] = await transform.list_tools([tool])
             output = await wrapped.run(arguments={})
 
@@ -1756,15 +1756,15 @@ class TestCustomizeMetadataContentsResponse:
 
 
 # ---------------------------------------------------------------------------
-# _ToolWrappingTransform: base64-decode pipeline branch
+# ToolWrappingTransform: base64-decode pipeline branch
 # ---------------------------------------------------------------------------
 
 
 class TestPipelineBase64Decode:
     """Tests for the base64-decode branch in _pipeline_with_context."""
 
-    def make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def make_transform(self) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
             response_format="markdown",
         )
@@ -1913,15 +1913,15 @@ class TestPipelineBase64Decode:
 
 
 # ---------------------------------------------------------------------------
-# _ToolWrappingTransform: binary response pipeline branch
+# ToolWrappingTransform: binary response pipeline branch
 # ---------------------------------------------------------------------------
 
 
 class TestPipelineBinaryResponse:
     """Tests for the binary response branch in _pipeline_with_context."""
 
-    def make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def make_transform(self) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
             response_format="markdown",
         )
@@ -2035,8 +2035,8 @@ class TestResponseIsBinaryEdgeCases:
 class TestTryHandleBinaryResponseEdgeCases:
     """Cover defensive guard paths in ``_try_handle_binary_response``."""
 
-    def make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def make_transform(self) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
             response_format="markdown",
         )
@@ -2057,8 +2057,8 @@ class TestTryHandleBinaryResponseEdgeCases:
 class TestPipelineUnicodeDecodeError:
     """Cover UnicodeDecodeError handling in ``_pipeline_with_context``."""
 
-    def make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def make_transform(self) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=make_openapi_spec(),
             response_format="markdown",
         )
@@ -2617,8 +2617,8 @@ class TestBooleanCheckResourceUri:
             ]
         return make_openapi_spec(paths={path: {"get": operation}})
 
-    def make_transform(self, spec: OpenAPISpec) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(openapi_spec=spec, response_format="markdown")
+    def make_transform(self, spec: OpenAPISpec) -> ToolWrappingTransform:
+        return ToolWrappingTransform(openapi_spec=spec, response_format="markdown")
 
     def test_merge_path_uses_pr_resource(self) -> None:
         """The PR fetch prefix is the resource for the merge check."""
@@ -2817,8 +2817,8 @@ class TestBooleanCheckHandlers:
     found, unexpected existence-check error).
     """
 
-    def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def make_transform(self, openapi_spec: OpenAPISpec | None = None) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=openapi_spec or make_openapi_spec(), response_format="markdown"
         )
 

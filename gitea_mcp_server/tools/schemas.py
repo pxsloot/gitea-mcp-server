@@ -360,6 +360,28 @@ def schema_type_is_array(schema: dict[str, Any]) -> bool:
     return schema_type_matches(schema, "array")
 
 
+def is_array_response(output_schema: dict[str, Any] | None) -> bool:
+    """Whether a wrapped ``{"result": ...}`` output schema's result is an array.
+
+    The OpenAPI converter wraps every JSON response schema as
+    ``{"result": <inner>}`` to satisfy FastMCP's ``type: object`` requirement;
+    this reads that envelope and reports whether the inner schema is array-typed.
+    Returns ``False`` for a missing, non-object, or unwrapped schema.
+    """
+    if not output_schema or not isinstance(output_schema, dict):
+        return False
+
+    properties = output_schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return False
+
+    result_schema = properties.get("result")
+    if not isinstance(result_schema, dict):
+        return False
+
+    return schema_type_is_array(result_schema)
+
+
 def is_object_type(schema: dict[str, Any]) -> bool:
     """Check whether a schema dict has type 'object', handling both string and list forms.
 
@@ -410,6 +432,7 @@ __all__ = [
     "derive_output_schema",
     "get_response_type",
     "get_success_schema",
+    "is_array_response",
     "is_object_type",
     "is_text_response",
     "resolve_ref",

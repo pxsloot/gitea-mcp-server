@@ -54,7 +54,7 @@ for both tool families:
 The executor contract is deliberately narrow: ``(kwargs, extracted, ctx) →
 ExecutionResult`` with the ``Tool`` bound by closure at wrap time.  Autogen
 tools pass the OpenAPI HTTP pipeline
-(``_ToolWrappingTransform`` in ``server_setup/mcp_builder.py``); synthetic
+(``ToolWrappingTransform`` in ``server_setup/mcp_builder.py``); synthetic
 tools pass their local implementation (see ``tools/synthetic_contract.py``).
 API-specific concerns (route-aware HTTP execution, error translation,
 response-class wrapping) stay inside the executor — never in this module.
@@ -180,7 +180,7 @@ def build_transform_fn(
     captured by the closure.  It is required — not defaulted to a literal —
     so the configured value is the single source of the ``format`` default:
     the same value is injected into every tool schema by
-    ``_ToolWrappingTransform`` and used here as the spine's fallback when the
+    ``ToolWrappingTransform`` and used here as the spine's fallback when the
     extracted ``format`` is absent.  ``detail`` is static and comes from
     :data:`~gitea_mcp_server.constants.DEFAULT_DETAIL`.
 
@@ -191,7 +191,7 @@ def build_transform_fn(
             Autogen tools pass the HTTP pipeline; synthetic tools pass their
             local implementation.
         registration: The tool's finalised :class:`ToolRegistration`.  The
-            exposure seam (``_ToolWrappingTransform._wrap``) reads it once and
+            exposure seam (``ToolWrappingTransform._wrap``) reads it once and
             threads it here, so the per-call path holds no meta lookups.
             ``virtual_params`` is the extraction allowlist — only those
             registry params are popped; off-profile registry-name keys remain

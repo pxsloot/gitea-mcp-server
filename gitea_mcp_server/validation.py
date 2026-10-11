@@ -278,7 +278,7 @@ def validate_pagination_from_schema(
 # ---------------------------------------------------------------------------
 
 
-def _collect_enum_values(schema: dict[str, Any]) -> list[Any] | None:
+def collect_enum_values(schema: dict[str, Any]) -> list[Any] | None:
     """Collect enum values from a schema, walking anyOf/oneOf if needed.
 
     The resolved OpenAPI schema may place enum on the top-level object or
@@ -346,7 +346,7 @@ def validate_enum(value: Any, *, field: str, schema: dict[str, Any]) -> bool:
     shared by real-parameter validation (:func:`~tools.errors.run_validation`)
     and virtual-parameter validation
     (:func:`~tools.virtual_params.validate_extracted`).  It walks
-    ``anyOf``/``oneOf`` for the enum (see :func:`_collect_enum_values`).
+    ``anyOf``/``oneOf`` for the enum (see :func:`collect_enum_values`).
 
     Args:
         value: The value to validate.
@@ -363,7 +363,7 @@ def validate_enum(value: Any, *, field: str, schema: dict[str, Any]) -> bool:
         ValidationError: If *schema* declares an enum and *value* is not one
             of its allowed values.
     """
-    enum_values = _collect_enum_values(schema)
+    enum_values = collect_enum_values(schema)
     if enum_values is None:
         return False
     _validate_enum_from_schema(value, field=field, enum_values=enum_values)
@@ -632,10 +632,10 @@ def _inject_enum_into_defs(
         resolved: The ``$ref``-resolved copy (modified by inference).
         defs: The ``$defs`` dict, or ``None``.
     """
-    source_enum = _collect_enum_values(resolved)
+    source_enum = collect_enum_values(resolved)
     if source_enum is None:
         return
-    # No guard for _collect_enum_values(existing_schema) — the caller
+    # No guard for collect_enum_values(existing_schema) — the caller
     # (augment_schema_with_validation) already checked resolved and
     # skipped if it had an enum, so existing_schema cannot have a
     # non-$ref enum at this point.  The injection passes below are
@@ -722,10 +722,10 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
     for existing_schema in props.values():
         if not isinstance(existing_schema, dict):
             continue
-        # Resolve $ref so _collect_enum_values and _find_string_schema
+        # Resolve $ref so collect_enum_values and _find_string_schema
         # can see through to the actual type definition.
         resolved = _resolve_local_refs(existing_schema, defs)
-        if _collect_enum_values(resolved) is not None:
+        if collect_enum_values(resolved) is not None:
             # Spec already has an enum on the resolved type — skip.
             continue
         if _infer_enum_from_description(resolved):

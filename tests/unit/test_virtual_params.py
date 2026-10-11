@@ -1,7 +1,7 @@
 """Unit tests for gitea_mcp_server/tools/virtual_params.py.
 
 Tests cover the three lifecycle functions (inject_into, extract_from, apply_to)
-and integration with _ToolWrappingTransform._wrap().
+and integration with ToolWrappingTransform._wrap().
 """
 
 from __future__ import annotations
@@ -691,7 +691,7 @@ class TestApplyTo:
 
 
 class TestWrapIntegration:
-    """Tests that _ToolWrappingTransform._wrap() integrates with the VirtualParam lifecycle."""
+    """Tests that ToolWrappingTransform._wrap() integrates with the VirtualParam lifecycle."""
 
     def _make_tool(self) -> Tool:
         """Minimal Tool carrying a wrapping registration record."""
@@ -712,9 +712,9 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_injects_format_into_parameters(self) -> None:
         """_wrap() adds the format parameter via the VirtualParam registry (delegates to inject_into)."""
-        from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+        from gitea_mcp_server.server_setup.mcp_builder import ToolWrappingTransform
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )
@@ -730,9 +730,9 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_format_extracted_before_execution(self) -> None:
         """Format is stripped from kwargs before the HTTP execution path."""
-        from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+        from gitea_mcp_server.server_setup.mcp_builder import ToolWrappingTransform
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )
@@ -762,9 +762,9 @@ class TestWrapIntegration:
     @pytest.mark.asyncio
     async def test_default_markdown_no_format_supplied(self) -> None:
         """Default markdown when format is not supplied."""
-        from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+        from gitea_mcp_server.server_setup.mcp_builder import ToolWrappingTransform
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )
@@ -792,9 +792,9 @@ class TestWrapIntegration:
         Guards the regression where an invalid ``format`` reached ``render``
         only after the API call (and, for a write, after the side effect).
         """
-        from gitea_mcp_server.server_setup.mcp_builder import _ToolWrappingTransform
+        from gitea_mcp_server.server_setup.mcp_builder import ToolWrappingTransform
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )

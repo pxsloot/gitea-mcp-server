@@ -10,13 +10,12 @@ from mcp.types import ToolAnnotations
 from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.pagination import pagination_ctx
 from gitea_mcp_server.server_setup.mcp_builder import (
+    ToolWrappingTransform,
     _customize_metadata,
-    _ToolWrappingTransform,
 )
 from gitea_mcp_server.tools.customize import (
-    _detect_has_labels,
-    _is_array_response,
     _snake_to_title,
+    detect_has_labels,
 )
 from gitea_mcp_server.tools.customize import (
     add_inferred_hints as _add_inferred_hints,
@@ -372,62 +371,8 @@ class TestInferredHints:
         assert tool.annotations.title == "Test Post"
 
 
-class TestIsArrayResponse:
-    """Tests for _is_array_response function."""
-
-    def test_detects_array_result(self) -> None:
-        schema = {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "array",
-                    "items": {"type": "object"},
-                },
-            },
-        }
-        assert _is_array_response(schema) is True
-
-    def test_detects_nullable_array_result(self) -> None:
-        schema = {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": ["array", "null"],
-                    "items": {"type": "object"},
-                },
-            },
-        }
-        assert _is_array_response(schema) is True
-
-    def test_rejects_object_result(self) -> None:
-        schema = {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "object",
-                    "properties": {"id": {"type": "integer"}},
-                },
-            },
-        }
-        assert _is_array_response(schema) is False
-
-    def test_missing_result_key(self) -> None:
-        schema = {"type": "object", "properties": {}}
-        assert _is_array_response(schema) is False
-
-    def test_none_input(self) -> None:
-        assert _is_array_response(None) is False
-
-    def test_empty_dict(self) -> None:
-        assert _is_array_response({}) is False
-
-    def test_properties_not_a_dict(self) -> None:
-        schema = {"type": "object", "properties": "not_a_dict"}
-        assert _is_array_response(schema) is False
-
-
 class TestDetectHasLabels:
-    """Tests for _detect_has_labels function."""
+    """Tests for detect_has_labels function."""
 
     @staticmethod
     def _make_component(
@@ -455,47 +400,47 @@ class TestDetectHasLabels:
         component = self._make_component(
             labels_schema={"type": "array", "items": {"type": "integer"}},
         )
-        assert _detect_has_labels(component) is True
+        assert detect_has_labels(component) is True
 
     def test_detects_nullable_array_labels(self) -> None:
         """Returns True when labels parameter has nullable array type."""
         component = self._make_component(
             labels_schema={"type": ["array", "null"], "items": {"type": "integer"}},
         )
-        assert _detect_has_labels(component) is True
+        assert detect_has_labels(component) is True
 
     def test_rejects_string_labels(self) -> None:
         """Returns False when labels parameter is not array-typed."""
         component = self._make_component(
             labels_schema={"type": "string"},
         )
-        assert _detect_has_labels(component) is False
+        assert detect_has_labels(component) is False
 
     def test_returns_false_when_no_labels_parameter(self) -> None:
         """Returns False when component has no labels parameter."""
         component = self._make_component()
-        assert _detect_has_labels(component) is False
+        assert detect_has_labels(component) is False
 
     def test_returns_false_when_no_parameters_attribute(self) -> None:
         """Returns False when component has no parameters attribute at all."""
         component = self._make_component(has_parameters=False)
-        assert _detect_has_labels(component) is False
+        assert detect_has_labels(component) is False
 
     def test_returns_false_when_parameters_is_none(self) -> None:
         """Returns False when component.parameters is None."""
         component = self._make_component(params_are_none=True)
-        assert _detect_has_labels(component) is False
+        assert detect_has_labels(component) is False
 
     def test_labels_in_other_props_not_an_array(self) -> None:
         """Returns False when labels key exists but is not an array."""
         component = self._make_component(
             labels_schema={"type": "object", "properties": {}},
         )
-        assert _detect_has_labels(component) is False
+        assert detect_has_labels(component) is False
 
 
 class TestPaginationMetadata:
-    """Tests for pagination metadata injection via _ToolWrappingTransform."""
+    """Tests for pagination metadata injection via ToolWrappingTransform."""
 
     ARRAY_OUTPUT_SCHEMA: dict = {
         "type": "object",
@@ -517,8 +462,8 @@ class TestPaginationMetadata:
         },
     }
 
-    def _make_transform(self) -> _ToolWrappingTransform:
-        return _ToolWrappingTransform(
+    def _make_transform(self) -> ToolWrappingTransform:
+        return ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )
@@ -785,29 +730,29 @@ class TestPaginationMetadata:
 
 
 class TestPrepareAnnotationsEdgeCases:
-    """Tests for _prepare_annotations edge cases."""
+    """Tests for prepare_annotations edge cases."""
 
     def test_non_standard_annotations_uses_fallback(self) -> None:
         """Non-standard annotations that can't construct ToolAnnotations use fallback."""
-        from gitea_mcp_server.tools.customize import _prepare_annotations
+        from gitea_mcp_server.tools.customize import prepare_annotations
 
         component = MagicMock()
         component.annotations = "string_annotations"
 
-        result = _prepare_annotations(component, "Test Title")
+        result = prepare_annotations(component, "Test Title")
         assert result.title == "Test Title"
         assert isinstance(result, ToolAnnotations)
 
 
 class TestCustomizeComponentTextResponse:
-    """Tests for text response wrapping via _ToolWrappingTransform."""
+    """Tests for text response wrapping via ToolWrappingTransform."""
 
     @pytest.mark.asyncio
     async def test_text_response_strips_structured_content(self) -> None:
         """Text response transforms content and structured_content."""
         from mcp.types import TextContent
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )
@@ -856,7 +801,7 @@ class TestCustomizeComponentTextResponse:
         """
         from mcp.types import TextContent
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(include_defaults=False),
             response_format="markdown",
         )

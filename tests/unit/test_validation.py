@@ -13,13 +13,13 @@ from gitea_mcp_server.validation import (
     REF_PATTERN,
     SHA_PATTERN,
     USERNAME_PATTERN,
-    _collect_enum_values,
     _find_string_schema,
     _infer_enum_from_description,
     _inject_enum_into_defs,
     _resolve_local_refs,
     _validate_enum_from_schema,
     augment_schema_with_validation,
+    collect_enum_values,
     validate_enum,
     validate_filepath,
     validate_labels,
@@ -583,11 +583,11 @@ class TestValidatePagination:
 
 
 class TestCollectEnumValues:
-    """Tests for _collect_enum_values."""
+    """Tests for collect_enum_values."""
 
     def test_top_level_enum(self) -> None:
         schema = {"type": "string", "enum": ["a", "b"]}
-        assert _collect_enum_values(schema) == ["a", "b"]
+        assert collect_enum_values(schema) == ["a", "b"]
 
     def test_enum_in_anyof(self) -> None:
         schema = {
@@ -596,7 +596,7 @@ class TestCollectEnumValues:
                 {"type": "null"},
             ]
         }
-        assert _collect_enum_values(schema) == ["pending", "success"]
+        assert collect_enum_values(schema) == ["pending", "success"]
 
     def test_enum_in_oneof(self) -> None:
         schema = {
@@ -605,18 +605,18 @@ class TestCollectEnumValues:
                 {"type": "integer"},
             ]
         }
-        assert _collect_enum_values(schema) == ["x", "y"]
+        assert collect_enum_values(schema) == ["x", "y"]
 
     def test_no_enum(self) -> None:
         schema = {"type": "string"}
-        assert _collect_enum_values(schema) is None
+        assert collect_enum_values(schema) is None
 
     def test_empty_schema(self) -> None:
-        assert _collect_enum_values({}) is None
+        assert collect_enum_values({}) is None
 
     def test_top_level_enum_non_list_returns_none(self) -> None:
         """Defensive: if enum exists but is not a list, return None."""
-        assert _collect_enum_values({"enum": "not_a_list"}) is None
+        assert collect_enum_values({"enum": "not_a_list"}) is None
 
     def test_anyof_enum_non_list_returns_none(self) -> None:
         """Defensive: if anyOf branch has enum but it's not a list, return None."""
@@ -626,20 +626,20 @@ class TestCollectEnumValues:
                 {"type": "null"},
             ]
         }
-        assert _collect_enum_values(schema) is None
+        assert collect_enum_values(schema) is None
 
     def test_enum_through_unresolved_ref_returns_none(self) -> None:
-        """REGRESSION: _collect_enum_values can't see through unresolved $ref.
+        """REGRESSION: collect_enum_values can't see through unresolved $ref.
 
         When a param schema uses ``anyOf`` with ``$ref`` branches (e.g.
         ``gitea_repo_create_status``'s ``state`` param has ``anyOf`` with
         ``{$ref: CommitStatusState}``), the $ref is unresolved at schema-
-        augmentation time.  _collect_enum_values cannot follow $ref to
+        augmentation time.  collect_enum_values cannot follow $ref to
         find the enum on the referenced type.
 
         This regression means the description-to-enum inference in
         ``augment_schema_with_validation`` skips these params because
-        ``_collect_enum_values`` returns ``None`` (no enum found), but
+        ``collect_enum_values`` returns ``None`` (no enum found), but
         ``_infer_enum_from_description`` also fails because
         ``_find_string_schema`` can't follow $ref either.
 
@@ -653,7 +653,7 @@ class TestCollectEnumValues:
                 {"type": "null"},
             ]
         }
-        assert _collect_enum_values(schema) is None
+        assert collect_enum_values(schema) is None
 
 
 class TestValidateEnumFromSchema:
@@ -1012,7 +1012,7 @@ class TestInferEnumFromDescription:
         # Fails: _find_string_schema returns None, inference returns False
         assert _infer_enum_from_description(schema) is False
         # No enum injected anywhere in the schema
-        assert _collect_enum_values(schema) is None
+        assert collect_enum_values(schema) is None
 
 
 class TestAugmentSchemaWithValidation:
@@ -1192,7 +1192,7 @@ class TestAugmentSchemaWithValidation:
         }
         augment_schema_with_validation(component)
         state_schema = component.parameters["properties"]["state"]
-        enum_vals = _collect_enum_values(state_schema)
+        enum_vals = collect_enum_values(state_schema)
         assert enum_vals == ["pending", "success", "error", "failure", "warning"], (
             f"Expected commit status states, got {enum_vals}"
         )
@@ -1215,7 +1215,7 @@ class TestAugmentSchemaWithValidation:
         }
         augment_schema_with_validation(component)
         state_schema = component.parameters["properties"]["state"]
-        enum_vals = _collect_enum_values(state_schema)
+        enum_vals = collect_enum_values(state_schema)
         assert enum_vals == ["closed", "open", "all"], (
             f"Issue state enum overwritten! Got {enum_vals}"
         )

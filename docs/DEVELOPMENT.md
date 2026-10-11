@@ -98,9 +98,14 @@ See `docs/TESTING_STANDARDS.md` for full details.
 ### Public vs Private
 
 - Functions that are **implementation details** should be prefixed with `_`.
+  This boundary is executable: production code may not import (or `getattr`) an
+  underscore-private name across a boundary — external or first-party —
+  and `tests/unit/test_private_imports.py` fails the build when one is
+  introduced (documented allowlist entries until #830's PR2 lands).
 - The module's `__all__` documents the intended public API.
 - Tests may import private functions (they test internals), but production
-  code should only import from `__all__`.
+  code should only import from `__all__`.  That `__all__` rule is **not yet
+  enforced** — tracked by #832.
 
 ### File Responsibilities
 

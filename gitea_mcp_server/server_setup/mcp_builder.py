@@ -1434,5 +1434,6 @@ def create_openapi_provider(
 
 
 __all__ = [
+    "ToolWrappingTransform",
     "create_openapi_provider",
 ]

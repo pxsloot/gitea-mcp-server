@@ -253,6 +253,11 @@ def synthetic_annotations(
 
 
 def prepare_annotations(component: Any, title: str) -> ToolAnnotations:
+    """Return a copy of the component's annotations with *title* set.
+
+    Accepts ``None``, a ``ToolAnnotations``, or a mapping; malformed input
+    falls back to empty annotations.
+    """
     if component.annotations is None:
         new_annotations = ToolAnnotations()
     elif isinstance(component.annotations, ToolAnnotations):

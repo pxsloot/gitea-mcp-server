@@ -471,6 +471,25 @@ its own; FastMCP emits all MCP operation spans, no-op unless an SDK is
 configured.  Source: FastMCP native instrumentation; the export how-to is
 `docs/DEVELOPMENT.md` → "OpenTelemetry Observability".
 
+**No production module couples across a boundary to an underscore-private
+name.** At any boundary — external (third-party or stdlib) or first-party —
+production code does not `from … import _x`, `import pkg._x`, or
+`getattr(x, "_…")` on a name it does not own; dunder names (`__future__`,
+`__all__`, ...) are exempt.  The check derives its module set from the
+filesystem and scans both shipped packages; documented allowlist entries are the
+only exceptions (none remain once #830 fully lands).  Source:
+`tests/helpers/ast_guards.py`, `tests/helpers/import_graph.py`; guard:
+`tests/unit/test_private_imports.py`.
+
+**Every third-party import in production is a declared dependency.** The
+external dependency surface is derived from the import graph of both shipped
+packages and checked against `pyproject.toml` `[project].dependencies`; an
+undeclared reach fails the build.  Upgrade verification is executable (`mypy` +
+the suite + the guards), not a stored inventory: dependence on a public surface
+fails loudly, and coupling to a private one is caught by the guard above.
+Source: `tests/helpers/import_graph.py`; guard:
+`tests/unit/test_dependency_declarations.py`.
+
 ---
 
 ## Response Content-Type Handling

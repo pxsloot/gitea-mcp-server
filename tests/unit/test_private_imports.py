@@ -88,6 +88,7 @@ def test_scanner_detects_planted_violations() -> None:
         "from pkg import __version__\n"  # 9 (clean: dunder name)
         "x = getattr(obj, '_thing')\n"  # 10
         "y = getattr(obj, '__dunder__')\n"  # 11 (clean: dunder attr)
+        "from gettext import _\n"  # 12 (clean: bare gettext alias)
     )
     assert iter_private_imports(source, "gitea_mcp_server.tools") == [
         (1, "pkg", "_private"),

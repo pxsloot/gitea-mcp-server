@@ -10,8 +10,11 @@ The scans are deliberately shallow: they match syntax, not dataflow.  Aliasing
 (``rp = ctx.report_progress; rp(...)``), dynamic dispatch
 (``getattr(ctx, "report_progress")(...)``), dynamic imports
 (``importlib.import_module("pkg._x")``) and ``__import__`` are out of scope.
-That is the right trade for a reintroduction deny-list — the goal is to fail a
-copy-paste regression loudly, not to perform taint analysis.
+So is **direct attribute access** (``obj._x``): without an ownership model a
+scan cannot tell a legitimate self-access from a cross-boundary reach, so that
+residual is tracked separately from #830.  That is the right trade for a
+reintroduction deny-list — the goal is to fail a copy-paste regression loudly,
+not to perform taint analysis.
 """
 
 from __future__ import annotations
@@ -24,8 +27,11 @@ from tests.helpers.import_graph import resolve_from_module
 def _is_private(name: str) -> bool:
     """True for an underscore-private name; dunder names are not private.
 
-    ``__future__``, ``__all__``, ``__version__`` are outside the rule.
+    ``__future__``, ``__all__``, ``__version__`` are outside the rule, as is the
+    bare ``_`` — the gettext translation alias, not a private symbol.
     """
+    if name == "_":
+        return False
     return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
 
 

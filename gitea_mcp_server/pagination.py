@@ -20,7 +20,7 @@ Module-level state warning
 --------------------------
 ``pagination_ctx`` is a module-level :class:`~contextvars.ContextVar` by
 design — it bridges httpx event hooks (which have no access to tool kwargs)
-and the ``mcp_builder._ToolWrappingTransform`` pipeline (which has no access
+and the ``mcp_builder.ToolWrappingTransform`` pipeline (which has no access
 to httpx internals).  This is intentional and preferable to coupling to
 FastMCP internals.
 

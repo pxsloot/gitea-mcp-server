@@ -22,18 +22,12 @@ from __future__ import annotations
 from tests.helpers.ast_guards import iter_private_getattr, iter_private_imports
 from tests.helpers.import_graph import PACKAGES, discover_modules, package_of
 
-# Importer module -> the private names it is allowed to import/access.  #830
-# lands in two PRs: PR1 carries the five known first-party crossings so the
-# boundary rule ships green; PR2 resolves them and empties this map, making the
-# rule hold at every boundary.  Every entry is a deliberate, documented
-# exception -- never a silent default (issue DoD #2).
-ALLOWLIST: dict[str, frozenset[str]] = {
-    "gitea_mcp_server.server": frozenset({"_ToolWrappingTransform"}),
-    "gitea_mcp_server.server_setup.mcp_builder": frozenset(
-        {"_detect_has_labels", "_is_array_response", "_prepare_annotations"}
-    ),
-    "gitea_mcp_server.tools.errors": frozenset({"_collect_enum_values"}),
-}
+# Importer module -> the private names it is allowed to import/access.  The rule
+# holds at every boundary, so this is empty: the five first-party crossings #830
+# found are resolved, not excused.  An exception here would have to be a
+# deliberate, documented stand-in for ownership a name-based scan cannot decide
+# -- never a silent default (issue DoD #2).
+ALLOWLIST: dict[str, frozenset[str]] = {}
 
 
 def _violations() -> dict[str, list[tuple[int, str, str]]]:

@@ -31,7 +31,7 @@ def _make_version_spec() -> dict[str, Any]:
 
     Note: There is intentionally **no response schema** on the 200 response.
     This exercises the wrapping transform's fallback path where
-    ``output_schema`` is ``None`` and ``_ToolWrappingTransform._wrap()``
+    ``output_schema`` is ``None`` and ``ToolWrappingTransform._wrap()``
     handles the wrapping.  Adding a schema would change which code path
     the tests exercise (schema-driven vs fallback).
     """
@@ -555,7 +555,7 @@ class TestResultWrapping:
     (since the MCP SDK requires ``output_schema`` to be ``type: object``).
     Object responses that already are dicts are passed through as-is.
     Paginated endpoints with array output get ``has_more`` / ``next_offset``
-    metadata injected by ``_ToolWrappingTransform``.
+    metadata injected by ``ToolWrappingTransform``.
 
     These tests intentionally use a version spec **without** a response schema
     to exercise the wrapping transform's fallback path (where ``output_schema``
@@ -593,7 +593,7 @@ class TestResultWrapping:
         assert result.structured_content is not None
         assert "result" in result.structured_content
         # Pagination metadata (has_more, next_offset) is added by
-        # _ToolWrappingTransform when the output schema is an array type.
+        # ToolWrappingTransform when the output schema is an array type.
         # The test below is optional - it asserts current behaviour.
         if "has_more" in result.structured_content:
             assert isinstance(result.structured_content["has_more"], bool)
@@ -1149,7 +1149,7 @@ class TestNonJsonEndpoint:
     ``x-original-content-types``, which makes ``is_text_response()`` return
     ``True``. The tool then gets a lightweight ``{"result": {"type": "string"}}``
     fallback ``output_schema`` (introduced in #352), and the
-    ``_ToolWrappingTransform`` wraps the raw text in ``{"result": text}``.
+    ``ToolWrappingTransform`` wraps the raw text in ``{"result": text}``.
     """
 
     @pytest.fixture
@@ -1248,7 +1248,7 @@ class TestNonJsonEndpoint:
 
         1. ``OpenAPITool.run()`` - returns ``ToolResult(content=text)`` on a
            text/plain body.
-        2. ``_ToolWrappingTransform._pipeline_with_context()`` - wraps the
+        2. ``ToolWrappingTransform._pipeline_with_context()`` - wraps the
            text into ``{"result": text}`` when ``is_text_response=True``.
         3. The single result pipeline (``tools/result_pipeline.py``) - renders
            data per format/detail.

@@ -5,7 +5,7 @@ Registration metadata lives under a single ``meta[REGISTRATION_KEY]`` record
 preserving the pending/finalised distinction the contract depends on:
 
 - *pending* (``injected=None``) — ``virtual_params`` is ``None``; the exposure
-  seam (``_ToolWrappingTransform._wrap``) resolves it by injection.
+  seam (``ToolWrappingTransform._wrap``) resolves it by injection.
 - *finalised* (``injected`` given) — ``virtual_params`` is the explicit
   extraction allowlist; ``build_transform_fn`` accepts it directly.
 """

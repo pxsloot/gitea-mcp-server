@@ -49,7 +49,7 @@ it. If you need:
 | Server assembly | `server.py` | Mount resources; register the server-level contract transform, namespace, extension-metadata and search transforms, middleware, and the lifespan that opens/closes the httpx client |
 
 **Transform chain** (applied on `list_tools`, in order): the server-level
-contract transform `_ToolWrappingTransform` (registered first, wraps every tool
+contract transform `ToolWrappingTransform` (registered first, wraps every tool
 whose registration record has `wrap=True`) → `TolerantSearchTransform` (hides
 everything except the synthetic discovery tools) → `GiteaNamespace` (prefixes
 tool names `gitea_`; resources pass through) → `ExtensionMetadataTransform`
@@ -120,7 +120,7 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     │     └─▶ on success: invalidate cached resources
     │
     ├─▶ GiteaNamespace            - strip gitea_ prefix
-    ├─▶ _ToolWrappingTransform    — server-level contract transform
+    ├─▶ ToolWrappingTransform    — server-level contract transform
     │     │                         (spine: tools/contract.build_transform_fn)
     │     │                         extract + validate virtual params
     │     │                         (registry schema enum, before executor)
@@ -455,7 +455,7 @@ upward.  A subpackage-local import path is a re-export, not a copy.  Source:
 accessors, and finalised at exposure.** Every exposed tool and registered
 resource carries a complete record under ``meta["registration"]``; runtime code
 reads it via ``get_tool_registration`` / ``get_resource_registration``.  A
-``ToolRegistration`` is finalised once at ``_ToolWrappingTransform._wrap``
+``ToolRegistration`` is finalised once at ``ToolWrappingTransform._wrap``
 (virtual params injected); the contract spine raises on a pending record.  The
 record travels on the wire as the MCP ``_meta.registration``, so the contract is
 checkable over the raw SDK transport.  Source: `registration.py`,
@@ -476,9 +476,10 @@ name.** At any boundary — external (third-party or stdlib) or first-party —
 production code does not `from … import _x`, `import pkg._x`, or
 `getattr(x, "_…")` on a name it does not own; dunder names (`__future__`,
 `__all__`, ...) are exempt.  The check derives its module set from the
-filesystem and scans both shipped packages; documented allowlist entries are the
-only exceptions (none remain once #830 fully lands).  Source:
-`tests/helpers/ast_guards.py`, `tests/helpers/import_graph.py`; guard:
+filesystem and scans both shipped packages; its allowlist is empty, so the rule
+holds at every boundary a name-based scan can decide.  Direct attribute access
+(`obj._x`) is a tracked residual (#834); public-looking attributes are #831.
+Source: `tests/helpers/ast_guards.py`, `tests/helpers/import_graph.py`; guard:
 `tests/unit/test_private_imports.py`.
 
 **Every third-party import in production is a declared dependency.** The

@@ -24,7 +24,7 @@ registry, referenced by the serializable ``executor_id``).
 ``ToolRegistration.virtual_params`` is ``None`` until virtual-param injection
 has run; :meth:`ToolRegistration.with_injected` produces the finalised record.
 The finalisation happens once per tool at the exposure seam
-(``_ToolWrappingTransform._wrap``), before any tool is listed or called.
+(``ToolWrappingTransform._wrap``), before any tool is listed or called.
 """
 
 from __future__ import annotations

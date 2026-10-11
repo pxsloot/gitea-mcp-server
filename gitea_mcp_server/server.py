@@ -40,7 +40,7 @@ from gitea_mcp_server.tools.filter_info import FilteredToolMiddleware
 if TYPE_CHECKING:
     from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.server_setup.mcp_builder import (
-    _ToolWrappingTransform,
+    ToolWrappingTransform,
     create_openapi_provider,
 )
 from gitea_mcp_server.server_setup.resource_setup import register_all_resources
@@ -168,7 +168,7 @@ def _setup_tool_discovery(  # noqa: PLR0913 - six params are acceptable for this
 ) -> None:
     """Setup lazy loading search transform, unified search, namespace, and extensions.
 
-    The contract wrapping transform (``_ToolWrappingTransform``) is already
+    The contract wrapping transform (``ToolWrappingTransform``) is already
     registered by the caller *before* this function runs, so it is the first
     server-level transform — tools it wraps then pass through the
     lazy-loading and namespace transforms here, matching the former
@@ -397,7 +397,7 @@ async def create_mcp_server(  # noqa: PLR0912, PLR0915 — server assembly inher
     # (see ``tools.synthetic_contract.get_executor_registry``), which the
     # transform shares with the registration functions and which dies with
     # the server.
-    contract_transform = _ToolWrappingTransform(
+    contract_transform = ToolWrappingTransform(
         openapi_spec=openapi_spec,
         response_format=config.response_format,
         synthetic_executors=get_executor_registry(mcp),

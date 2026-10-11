@@ -17,7 +17,7 @@ from gitea_mcp_server.tools.schemas import resolve_ref
 from gitea_mcp_server.validation import (
     SINGLE_VALIDATORS,
     ValidationError,
-    _collect_enum_values,
+    collect_enum_values,
     validate_enum,
 )
 
@@ -122,7 +122,7 @@ def _format_missing_params(
     parts: list[str] = []
     for p in missing:
         if param_properties and isinstance(param_properties.get(p), dict):
-            enum_vals = _collect_enum_values(param_properties[p])
+            enum_vals = collect_enum_values(param_properties[p])
             if enum_vals:
                 parts.append(f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})")
             else:
@@ -179,7 +179,7 @@ def run_validation(
         _raise_validation_error(msg, missing[0], ValueError(msg))
     # Reject unknown parameters when the parameter schema is available.
     # Virtual params (format, detail, sudo, etc.) have already been
-    # extracted by _ToolWrappingTransform.transform_fn via extract_from()
+    # extracted by ToolWrappingTransform.transform_fn via extract_from()
     # before run_validation is called, so any remaining key not in the
     # schema is an agent typo that must be rejected rather than silently
     # ignored (which would succeed on the wire: Gitea drops unknown query

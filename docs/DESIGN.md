@@ -133,12 +133,15 @@ narrow rule with a named trigger, never a broad rewrite.
 thin conversion or transform layer *beside* it -- never a hack into its
 internals, never a fork. The delta stays visible so it can be lifted out.
 
-- Embodied: the transform chain (`_ToolWrappingTransform`, `TolerantSearchTransform`,
+- Embodied: the transform chain (`ToolWrappingTransform`, `TolerantSearchTransform`,
   `GiteaNamespace`, `ExtensionMetadataTransform`), the OpenAPI conversion layer,
   and the `x-*` anomalies we stamp on the spec all live outside FastMCP and can
   be deleted without touching it.
-- This is judgement, not a check: the proof is that the layer is one removable
-  seam, not a scatter of special cases.
+- The "never a hack into its internals" half is now executable:
+  `tests/unit/test_private_imports.py` fails the build on any
+  underscore-private coupling across a boundary (#830).
+- The "one removable seam" half stays judgement, not a check: no test can prove
+  a delta is a single seam rather than a scatter of special cases.
 
 ### 5. Many producers, one spine
 

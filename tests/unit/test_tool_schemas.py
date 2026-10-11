@@ -13,14 +13,15 @@ from gitea_mcp_server.models import ToolCustomization
 from gitea_mcp_server.openapi_types import OpenAPISpec
 from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.server_setup.mcp_builder import (
+    ToolWrappingTransform,
     _customize_metadata,
-    _ToolWrappingTransform,
 )
 from gitea_mcp_server.tools.schemas import (
     deep_resolve_schema,
     derive_output_schema,
     get_response_type,
     get_success_schema,
+    is_array_response,
     is_object_type,
     is_text_response,
     schema_type_is_array,
@@ -28,6 +29,60 @@ from gitea_mcp_server.tools.schemas import (
 from tests.helpers.mcp_results import get_structured
 from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
+
+
+class TestIsArrayResponse:
+    """Tests for is_array_response (moved from test_tool_customize with the function)."""
+
+    def test_detects_array_result(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                },
+            },
+        }
+        assert is_array_response(schema) is True
+
+    def test_detects_nullable_array_result(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": ["array", "null"],
+                    "items": {"type": "object"},
+                },
+            },
+        }
+        assert is_array_response(schema) is True
+
+    def test_rejects_object_result(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            },
+        }
+        assert is_array_response(schema) is False
+
+    def test_missing_result_key(self) -> None:
+        schema = {"type": "object", "properties": {}}
+        assert is_array_response(schema) is False
+
+    def test_none_input(self) -> None:
+        assert is_array_response(None) is False
+
+    def test_empty_dict(self) -> None:
+        assert is_array_response({}) is False
+
+    def test_properties_not_a_dict(self) -> None:
+        schema = {"type": "object", "properties": "not_a_dict"}
+        assert is_array_response(schema) is False
 
 
 class TestSchemaTypeIsArray:
@@ -450,7 +505,7 @@ class TestDeriveOutputSchema:
 
     @pytest.mark.asyncio
     async def test_transform_pipeline_passes_results_through(self) -> None:
-        """_ToolWrappingTransform should pass ToolResult through unchanged for JSON object endpoints."""
+        """ToolWrappingTransform should pass ToolResult through unchanged for JSON object endpoints."""
         route = self._make_route("/repos/{owner}/{repo}/issues/{index}", "GET")
         tool = MagicMock(spec=OpenAPITool)
         tool.name = "issue_get_issue"
@@ -480,7 +535,7 @@ class TestDeriveOutputSchema:
                 structured_content={"result": [{"id": 1}, {"id": 2}]},
             )
 
-            transform = _ToolWrappingTransform(
+            transform = ToolWrappingTransform(
                 openapi_spec=self.MINIMAL_SPEC,
                 response_format="markdown",
             )
@@ -525,7 +580,7 @@ class TestDeriveOutputSchema:
                 structured_content={"result": {"id": 1}},
             )
 
-            transform = _ToolWrappingTransform(
+            transform = ToolWrappingTransform(
                 openapi_spec=self.MINIMAL_SPEC,
                 response_format="markdown",
             )
@@ -571,7 +626,7 @@ class TestDeriveOutputSchema:
                 structured_content={"result": [{"id": 1}]},
             )
 
-            transform = _ToolWrappingTransform(
+            transform = ToolWrappingTransform(
                 openapi_spec=spec,
                 response_format="markdown",
             )
@@ -1866,7 +1921,7 @@ class TestContentTypeVirtualParam:
 
     @pytest.mark.asyncio
     async def test_content_type_injected_into_repo_create_file(self) -> None:
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(), response_format="markdown"
         )
         tool = Tool(
@@ -1897,7 +1952,7 @@ class TestContentTypeVirtualParam:
 
     @pytest.mark.asyncio
     async def test_content_type_injected_into_repo_update_file(self) -> None:
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(), response_format="markdown"
         )
         tool = Tool(
@@ -1957,7 +2012,7 @@ class TestContentTypeVirtualParam:
         """When content_type='text', the content kwarg is base64-encoded."""
         import base64
 
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(), response_format="markdown"
         )
         tool = Tool(
@@ -2021,7 +2076,7 @@ class TestContentTypeVirtualParam:
     @pytest.mark.asyncio
     async def test_content_type_base64_passes_through(self) -> None:
         """When content_type='base64' (default), content is passed as-is."""
-        transform = _ToolWrappingTransform(
+        transform = ToolWrappingTransform(
             openapi_spec=make_openapi_spec(), response_format="markdown"
         )
         tool = Tool(

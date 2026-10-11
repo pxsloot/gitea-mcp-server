@@ -288,7 +288,7 @@ class TestPaginationMetadata:
     """Scenario 2: A tool returning a list includes ``has_more``,
     ``next_offset``, and ``total_count`` in the structured result.
 
-    Pagination metadata is injected by ``_ToolWrappingTransform`` when the
+    Pagination metadata is injected by ``ToolWrappingTransform`` when the
     ``output_schema`` is an array type and the result contains a list.
     """
 

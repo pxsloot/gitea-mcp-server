@@ -1,6 +1,6 @@
 """FastMCP Transform for label validation and conversion.
 
-Extracts label handling from the monolithic ``_ToolWrappingTransform``
+Extracts label handling from the monolithic ``ToolWrappingTransform``
 into its own FastMCP ``Transform``, working *with* the framework.
 
 The transform is registered on the OpenAPI provider via

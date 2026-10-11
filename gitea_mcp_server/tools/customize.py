@@ -252,7 +252,12 @@ def synthetic_annotations(
     )
 
 
-def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
+def prepare_annotations(component: Any, title: str) -> ToolAnnotations:
+    """Return a copy of the component's annotations with *title* set.
+
+    Accepts ``None``, a ``ToolAnnotations``, or a mapping; malformed input
+    falls back to empty annotations.
+    """
     if component.annotations is None:
         new_annotations = ToolAnnotations()
     elif isinstance(component.annotations, ToolAnnotations):
@@ -266,22 +271,7 @@ def _prepare_annotations(component: Any, title: str) -> ToolAnnotations:
     return new_annotations
 
 
-def _is_array_response(output_schema: dict[str, Any] | None) -> bool:
-    if not output_schema or not isinstance(output_schema, dict):
-        return False
-
-    properties = output_schema.get("properties", {})
-    if not isinstance(properties, dict):
-        return False
-
-    result_schema = properties.get("result")
-    if not isinstance(result_schema, dict):
-        return False
-
-    return schema_type_is_array(result_schema)
-
-
-def _detect_has_labels(component: Any) -> bool:
+def detect_has_labels(component: Any) -> bool:
     """Check whether the component's schema has an array-typed ``labels`` parameter."""
     params = getattr(component, "parameters", None) or {}
     props = params.get("properties", {})
@@ -291,6 +281,8 @@ def _detect_has_labels(component: Any) -> bool:
 __all__ = [
     "add_inferred_hints",
     "categorize_tool",
+    "detect_has_labels",
     "generate_tool_title",
+    "prepare_annotations",
     "synthetic_annotations",
 ]

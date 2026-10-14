@@ -56,8 +56,10 @@ symptom's wording still lands here.
 | Attach read-time display metadata or formatter context | Resource content meta (`ResourceContent.meta`) | `registration.py`, `resources/factory.py` |
 | Expose a per-call agent input stripped before the HTTP call | Virtual parameter | `tools/virtual_params.py` |
 | Shape, paginate, or format a result | Single result pipeline | `tools/result_pipeline.py` |
+| Validate an argument, or augment a tool schema with constraints/enums | Argument validation + schema augmentation | `validation.py` |
 | Render a markdown reading view | Formatters + schema-anchored view + display hints | `format.py`, `tools/display.py`, `openapi_converter/display_hints.py` |
 | Invalidate cached resources after a write | Derived invalidation (resource surface + type refs) | `cache_invalidation.py`, `resources/surface.py` |
+| Cache a resource read, or serve a cached read (TTL) | Response cache + resource surface | `response_cache.py`, `resources/surface.py` |
 | Decide who can see a tool/resource (token scope) | Scope model | `scope.py` |
 | Map a renamed parameter back to its wire name | `x-param-rename` contract | `param_rename.py` |
 | Derive a resource URI, name, or description | Resource factory + auto derivation | `resources/factory.py`, `resources/auto.py` |
@@ -76,7 +78,7 @@ and choosing the wrong one is how a fact ends up invisible where it is needed.
 
 | Channel | Attached to | Produced by | Read by | On the wire? | Use for |
 |---|---|---|---|---|---|
-| Operation/schema `x-*` (`x-param-rename`, `x-response-type`, `x-resource-types`, `x-modifies-type`, `x-response-transform`, `x-original-content-types`, `x-wildcard-path-param`, `x-mcp-filtered-tools`) | a spec node | converter (`openapi_converter/`) | registration + runtime | no (in-memory spec) | a fact derived at conversion, read later |
+| Operation/schema `x-*` (`x-param-rename`, `x-response-type`, `x-resource-types`, `x-modifies-type`, `x-response-transform`, `x-original-content-types`, `x-wildcard-path-param`) | a spec node | converter (`openapi_converter/`) | registration + runtime | no (in-memory spec) | a fact derived at conversion, read later |
 | Tool registration record | `tool.meta["registration"]` | `_customize_metadata`, synthetic registration | transforms, executors, serializers | yes (`_meta.registration`) | per-tool exposure/runtime metadata |
 | Resource registration record | `resource.meta["registration"]` | resource registration | `list_resources`, resource surface | yes | per-resource exposure metadata |
 | Resource content meta | `ResourceContent.meta` | `resources/factory.py`, handlers | `read_resource` executor, formatters | read-time | display metadata + formatter context |

@@ -1,20 +1,23 @@
 """docs/CAPABILITIES.md is the planning-facing index of cross-cutting facilities.
 
 It exists to stop a planner building a second facility for a solved concern, so
-a stale pointer is worse than no pointer — it sends the next design down the
+a stale pointer is worse than no pointer -- it sends the next design down the
 wrong path.  These tests make the map executable, mirroring
 ``tests/unit/test_architecture_doc.py`` for the Module Map: every canonical home
-the index names must resolve to a real production module.
+the index names -- module or package -- must resolve to a real production file.
 """
 
 from __future__ import annotations
 
-import re
-
-from tests.helpers.import_graph import production_modules, project_root, source_dir
+from tests.helpers.doc_guards import (
+    dangling_modules,
+    dangling_packages,
+    module_tokens,
+    package_tokens,
+)
+from tests.helpers.import_graph import project_root
 
 _DOC = project_root() / "docs" / "CAPABILITIES.md"
-_MODULE_TOKEN_RE = re.compile(r"`([A-Za-z0-9_./-]+\.py)`")
 _REQUIRED_HEADINGS = ("## Capability index", "## Metadata channels")
 _INDEX_END = "## Relationship to other docs"
 
@@ -32,28 +35,6 @@ def _index_section() -> str:
     return text[start:end]
 
 
-def _module_tokens() -> set[str]:
-    """The module paths named as canonical homes in the index."""
-    return set(_MODULE_TOKEN_RE.findall(_index_section()))
-
-
-def _production_rel_paths() -> set[str]:
-    """Package-relative paths of every production module (``tools/filter_info.py``)."""
-    return {
-        "/".join(path.relative_to(source_dir()).parts) for path in production_modules().values()
-    }
-
-
-def _production_basenames() -> set[str]:
-    """Basenames of every production module (``filter_info.py``)."""
-    return {path.name for path in production_modules().values()}
-
-
-def _dangling(tokens: set[str], rel_paths: set[str], basenames: set[str]) -> list[str]:
-    """Return tokens that resolve to no production module."""
-    return [token for token in sorted(tokens) if token not in rel_paths and token not in basenames]
-
-
 def test_required_sections_present() -> None:
     """The capability index and metadata-channel sections exist."""
     text = _DOC.read_text()
@@ -62,9 +43,10 @@ def test_required_sections_present() -> None:
 
 
 def test_named_canonical_homes_exist() -> None:
-    """Every module named as a canonical home resolves to a real file."""
-    dangling = _dangling(_module_tokens(), _production_rel_paths(), _production_basenames())
-    assert not dangling, f"Capability map names modules that do not exist: {dangling}"
+    """Every module and package named as a canonical home resolves to a real file."""
+    section = _index_section()
+    dangling = dangling_modules(module_tokens(section)) + dangling_packages(package_tokens(section))
+    assert not dangling, f"Capability map names homes that do not exist: {dangling}"
 
 
 def test_sweep_is_not_vacuous() -> None:
@@ -72,15 +54,15 @@ def test_sweep_is_not_vacuous() -> None:
 
     Guards against a pattern edit that silently matches nothing.
     """
-    rel_paths = _production_rel_paths()
-    basenames = _production_basenames()
-    assert _dangling({"tools/does_not_exist.py"}, rel_paths, basenames)
-    assert _dangling({"tools/filter_info.py"}, rel_paths, basenames) == []
+    assert dangling_modules({"tools/does_not_exist.py"}) == ["tools/does_not_exist.py"]
+    assert dangling_modules({"tools/filter_info.py"}) == []
+    assert dangling_packages({"no_such_package/"}) == ["no_such_package/"]
+    assert dangling_packages({"tools/"}) == []
 
 
 def test_index_is_populated() -> None:
     """The index names a non-trivial set of homes (guard against an emptied map)."""
-    assert len(_module_tokens()) >= 10
+    assert len(module_tokens(_index_section())) >= 10
 
 
 def test_doc_is_linked_from_the_doc_index() -> None:

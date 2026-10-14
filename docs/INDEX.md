@@ -35,6 +35,7 @@ mention is a one-line pointer, not a copy.
 | `README.md` | enduser | reference | Install, config env vars, transports (stdio/http/docker), quick start | You are installing or running the server |
 | `AGENTS.md` | developer | explanation | Agent onboarding — welcome, project overview, pointers to docs/SKILL.md and docs/INDEX.md, FastMCP docs | You are an agent starting work on this repo |
 | `docs/ARCHITECTURE.md` | developer | explanation | Pipeline (Swagger 2.0 -> FastMCP), module map, contracts & invariants, content-type handling, runtime flows | You need to understand how the server is built |
+| `docs/CAPABILITIES.md` | developer | reference | The capability view -- cross-cutting facilities indexed by intent, the metadata channels, and where a new fact belongs | You are about to add a mechanism and need to know which existing facility owns the concern |
 | `docs/DESIGN.md` | developer | explanation | The design stance -- the north star, the build/buy/adapt ladder, the recurring patterns behind the codebase, and the anti-patterns the project refuses | You are designing a change or choosing a mechanism |
 | `docs/DEVELOPMENT.md` | developer | how-to | Env setup, running, adding customizations/resources, MCP extensions, exclusion config, OTEL | You are adding a feature or changing behavior |
 | `docs/TESTING_STANDARDS.md` | developer | reference | Testing principles, quality gates, coverage policy; see its sub-doc index for specific topics | You are writing or reviewing tests |
@@ -58,6 +59,9 @@ truth. Other mentions point here.
 | Tool annotations | `TOOL_ANNOTATIONS.md` |
 | Resource description mechanism | `DEVELOPMENT.md` (how-to) + `ARCHITECTURE.md` (resource derivation, under Pipeline) |
 | Registration record (tool/resource metadata contract) | `gitea_mcp_server/registration.py` (source, canonical) + `ARCHITECTURE.md` (contracts & invariants → registration metadata) |
+| Capability / facility inventory (intent → facility) | `docs/CAPABILITIES.md` |
+| Availability / why a tool is hidden or a call is blocked | `docs/CAPABILITIES.md` (index) + `ARCHITECTURE.md` (spec-level filtering) + `SCOPE_MODEL.md` (scope) |
+| Metadata channels (spec `x-*`, registration records, content meta) | `docs/CAPABILITIES.md` + `gitea_mcp_server/registration.py` (records, source) |
 | Module map | `ARCHITECTURE.md` |
 | Layering contract / module surface | `tests/unit/test_layer_contract.py` + `tests/unit/test_architecture_doc.py` (source) + `ARCHITECTURE.md` (contracts & invariants → dependency direction) |
 | Underscore-private boundary / declared dependencies | `docs/ARCHITECTURE.md` (contracts & invariants → no underscore-private coupling; every third-party import declared) + `tests/unit/test_private_imports.py` / `tests/unit/test_dependency_declarations.py` (source) |

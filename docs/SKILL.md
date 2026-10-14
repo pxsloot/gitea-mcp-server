@@ -120,10 +120,13 @@ One of two things should then happen:
 1. **Read `docs/INDEX.md` first** — do not skip this step. It navigates you
    to the right doc for your task.
 2. Read the doc for your task (see the "Start here if…" column in INDEX.md)
-3. Create a feature branch from `main`
-4. Make your changes — test, update docs, update the skill if needed
-5. Run `make test` — all tests must pass
-6. Create a PR with `Fixes #<issue>` in the body
+3. **Name the facility** — find your concern in `docs/CAPABILITIES.md` (the
+   capability view) and use the facility it names. If none fits, say so in the
+   plan.
+4. Create a feature branch from `main`
+5. Make your changes — test, update docs, update the skill if needed
+6. Run `make test` — all tests must pass
+7. Create a PR with `Fixes #<issue>` in the body
 
 ### How to update documentation
 
@@ -159,7 +162,10 @@ One of two things should then happen:
 2. Check that all changes are on a branch, not `main`
 3. Confirm `make test` passes
 4. Check for stale documentation references
-5. Verify the PR body includes `Fixes #<issue>`
+5. Verify the plan's **Existing facilities considered** section — where the
+   change touches a cross-cutting concern, the facility in `docs/CAPABILITIES.md`
+   is used or its rejection is justified
+6. Verify the PR body includes `Fixes #<issue>`
 
 ---
 

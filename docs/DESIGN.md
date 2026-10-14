@@ -65,9 +65,13 @@ delete.
 One rule keeps the ladder honest:
 
 - **Reuse before you grow.** The project already has facilities for validation,
-  pagination, caching, search, formatting, scope, and registration. `ARCHITECTURE.md`'s
-  Module Map is the inventory; scan it before you add a parallel mechanism. A
-  second facility for a solved concern is the most expensive kind of new code.
+  pagination, caching, search, formatting, scope, registration, filtering /
+  availability, and the metadata channels. There are two inventories: the
+  **capability view** (`docs/CAPABILITIES.md`) indexes facilities by *concern* —
+  scan it first, because it names the one facility that owns the concern — and
+  `ARCHITECTURE.md`'s Module Map indexes them by *module*. A second facility for
+  a solved concern is the most expensive kind of new code. If no facility fits,
+  the plan says so explicitly.
 
 Preferring the *seam that can be removed* -- the other half of the ladder -- is
 Pattern 4.

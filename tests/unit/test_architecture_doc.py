@@ -15,11 +15,16 @@ from gitea_mcp_server.registration import (
     RETIRED_RESOURCE_META_KEYS,
     RETIRED_TOOL_META_KEYS,
 )
-from tests.helpers.import_graph import PROJECT_PACKAGE, production_modules, project_root, source_dir
+from tests.helpers.doc_guards import (
+    dangling_modules,
+    dangling_packages,
+    module_tokens,
+    package_tokens,
+    production_rel_to_basename,
+)
+from tests.helpers.import_graph import PROJECT_PACKAGE, project_root
 
 _DOC = project_root() / "docs" / "ARCHITECTURE.md"
-_MODULE_TOKEN_RE = re.compile(r"`([A-Za-z0-9_./-]+\.py)`")
-_PACKAGE_TOKEN_RE = re.compile(r"`([A-Za-z0-9_]+/)`")
 
 
 def _module_map_section() -> str:
@@ -30,32 +35,18 @@ def _module_map_section() -> str:
 
 
 def _module_tokens() -> set[str]:
-    return set(_MODULE_TOKEN_RE.findall(_module_map_section()))
-
-
-def _production_rel_paths() -> dict[str, str]:
-    """Map each production module's package-relative path to its basename."""
-    return {
-        "/".join(path.relative_to(source_dir()).parts): path.name
-        for path in production_modules().values()
-    }
+    return module_tokens(_module_map_section())
 
 
 def test_named_modules_exist() -> None:
     """Every module named in the Module Map resolves to a real file."""
-    rel_paths = set(_production_rel_paths())
-    basenames = set(_production_rel_paths().values())
-    dangling = [
-        token
-        for token in sorted(_module_tokens())
-        if token not in rel_paths and token not in basenames
-    ]
+    dangling = dangling_modules(_module_tokens())
     assert not dangling, f"Module Map names files that do not exist: {dangling}"
 
 
 def test_every_production_module_is_named() -> None:
     """Every production module appears in the Module Map."""
-    rel_to_base = _production_rel_paths()
+    rel_to_base = production_rel_to_basename()
     tokens = _module_tokens()
     base_counts: dict[str, int] = {}
     for base in rel_to_base.values():
@@ -70,9 +61,7 @@ def test_every_production_module_is_named() -> None:
 
 def test_named_packages_exist() -> None:
     """Every package directory named in the Module Map exists."""
-    packages = set(_PACKAGE_TOKEN_RE.findall(_module_map_section()))
-    root = source_dir()
-    dangling = [p for p in sorted(packages) if not (root / p / "__init__.py").exists()]
+    dangling = dangling_packages(package_tokens(_module_map_section()))
     assert not dangling, f"Module Map names packages that do not exist: {dangling}"
 
 

@@ -15,6 +15,7 @@ tests/
 ├── helpers/
 │   ├── __init__.py
 │   ├── ast_guards.py                       # iter_call_sites — shared AST call-site scanner (structural guards)
+│   ├── doc_guards.py                       # shared doc-map scanner — module/package home resolution (map guards)
 │   ├── import_graph.py                     # Filesystem module discovery + import graph (layer contract)
 │   ├── mcp_results.py                      # dual-channel MCP result helpers
 │   ├── mock_tool.py                        # make_mock_tool, make_mock_route

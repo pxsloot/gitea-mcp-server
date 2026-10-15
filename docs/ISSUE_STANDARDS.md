@@ -220,6 +220,13 @@ into the issue body (PR body is used to explain the implementation)
 
 - Starts with a **decisions log**: Rev N, what changed, why, what it
   invalidates.
+- Carries an **Existing facilities considered** section — the forcing function
+  for reuse. For the concern the change addresses, name the facility that owns
+  it in `docs/CAPABILITIES.md` and say whether it is *used*, *adapted*, or
+  *rejected* (with the reason). "No existing facility" is a valid entry, but it
+  must be written, not assumed. This is the plan's counterpart to the reviewer's
+  "is there already code that does this?" — a question that does not fail, an
+  artifact that does.
 - **Reviewed before coding** (plan review), then the invariants are locked as
   tests *before* the migration -- the milestone principle.
 - Plan Rev 2 is healthy. A third revision is a split signal, not a reason to

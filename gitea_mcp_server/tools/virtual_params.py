@@ -28,9 +28,12 @@ Lifecycle for every tool call::
     2. extract_from(kwargs, only=<registration>.virtual_params)  ← pops before
        HTTP call; params not injected (e.g. ``fetch_all`` on autogen tools)
        stay in kwargs and are rejected as unknown by validation
-    3. validate_extracted(extracted)            ← validates each popped value
-       against its registry schema (enum), before the executor — so an invalid
-       ``format``/``detail``/``content_type`` never reaches the API
+    3. validate_call(kwargs, ..., virtual_schemas=extracted_schemas(extracted))
+       ← the contract spine validates the real kwargs and the popped values
+       against their registry schemas, before the executor — so an invalid
+       ``format``/``detail``/``content_type`` never reaches the API.  The
+       registry supplies the schemas as data (:func:`extracted_schemas`); the
+       policy lives in ``validation.validate_call``.
     4. apply_pre_hooks(extracted, kwargs)       ← runs pre-hooks (may mutate kwargs)
     5. executor(kwargs, extracted, ctx)         ← backend execution (HTTP or local)
     6. apply_to(result, extracted)      ← runs post-hooks (sudo cleanup only)
@@ -63,12 +66,11 @@ from gitea_mcp_server.constants import (
 )
 from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.request_context import sudo_context
-from gitea_mcp_server.validation import validate_enum
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from fastmcp.tools.base import ToolResult
 
@@ -491,31 +493,30 @@ def inert_params(extracted: dict[str, Any]) -> frozenset[str]:
     return frozenset(inert)
 
 
-def validate_extracted(extracted: dict[str, Any]) -> None:
-    """Validate extracted virtual-parameter values against their schemas.
+def extracted_schemas(extracted: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Return the registry schemas for *extracted* virtual-param values.
 
-    The registry schema is the single source for both injection
-    (:func:`inject_into`) and validation.  Called by the contract spine
-    **after** :func:`extract_from` and **before** the executor, so an invalid
-    value is rejected before any HTTP call (no side effect for a write tool).
-
-    Only params whose schema declares an ``enum`` are constrained — ``format``,
-    ``detail``, and ``content_type``.  Params with no enum (``sudo``,
-    ``fetch_all``) are a no-op, and a key with no registry entry is ignored
-    (defensive: pipeline metadata such as ``_raw_schema`` is attached to the
-    same dict later, not before this call).
+    The data-supplying sibling of :func:`inert_params`: reads
+    :data:`_VIRTUAL_PARAMS` and returns ``{name: schema}`` for each extracted
+    key the registry knows, so the argument-validation entry
+    (``validation.validate_call``) can apply registry policy without importing
+    this module (the same data-passing pattern as
+    :func:`~gitea_mcp_server.validation.validate_pagination`'s *inert* set —
+    this module and ``validation`` never import each other).  Keys with no
+    registry entry (pipeline metadata such as ``_raw_schema``) are omitted.
 
     Args:
         extracted: The ``{name: value}`` dict returned by :func:`extract_from`.
 
-    Raises:
-        ValidationError: If a value is not one of its schema's declared values.
+    Returns:
+        ``{name: schema}`` for registry-known keys.
     """
-    for name, value in extracted.items():
+    schemas: dict[str, Mapping[str, Any]] = {}
+    for name in extracted:
         vp = _VIRTUAL_PARAMS.get(name)
-        if vp is None:
-            continue
-        validate_enum(value, field=name, schema=vp.schema)
+        if vp is not None:
+            schemas[name] = vp.schema
+    return schemas
 
 
 def apply_pre_hooks(extracted: dict[str, Any], kwargs: dict[str, Any] | None = None) -> None:
@@ -563,7 +564,7 @@ __all__ = [
     "apply_scope_filter",
     "apply_to",
     "extract_from",
+    "extracted_schemas",
     "inert_params",
     "inject_into",
-    "validate_extracted",
 ]

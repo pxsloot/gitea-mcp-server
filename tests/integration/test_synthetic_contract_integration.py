@@ -131,7 +131,7 @@ class TestSyntheticValidationSurface:
 
     @pytest.mark.asyncio
     async def test_unknown_param_rejected_direct_and_proxied(self) -> None:
-        """run_validation rejects typos instead of silently dropping them."""
+        """The shared validation entry rejects typos instead of silently dropping them."""
         mcp, prefix = await _make_server()
 
         with pytest.raises(ToolError) as exc:

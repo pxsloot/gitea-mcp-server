@@ -2,7 +2,7 @@
 
 Shared by cross-cutting guard tests that assert a call may appear in only one
 production module (e.g. the contract spine is the sole MCP-progress emitter,
-#825; the spine is the sole ``run_validation`` caller, #790), and by the
+#825; the spine is the sole ``validate_call`` caller, #790), and by the
 underscore-private boundary guard (#830).  Keeping the scanners here means a
 second guard is a thin caller, not a near-duplicate.
 
@@ -44,7 +44,7 @@ def iter_call_sites(
     """Return ``(lineno, called_name)`` for every matching ``Call`` in *source*.
 
     A call matches when its ``func`` is a bare :class:`ast.Name` whose ``id`` is
-    in *names* (e.g. ``run_validation(...)``), or an :class:`ast.Attribute`
+    in *names* (e.g. ``validate_call(...)``), or an :class:`ast.Attribute`
     whose ``attr`` is in *attrs* (e.g. ``ctx.report_progress(...)``).  The
     matched identifier is returned so callers can map it to a domain-specific
     kind.

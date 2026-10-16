@@ -2022,6 +2022,9 @@ class TestContentTypeVirtualParam:
             parameters={
                 "properties": {
                     "content": {"type": "string"},
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "filepath": {"type": "string"},
                 },
             },
             output_schema={
@@ -2046,7 +2049,6 @@ class TestContentTypeVirtualParam:
         expected_encoded = base64.b64encode(raw_content.encode()).decode()
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,
@@ -2086,6 +2088,9 @@ class TestContentTypeVirtualParam:
             parameters={
                 "properties": {
                     "content": {"type": "string"},
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "filepath": {"type": "string"},
                 },
             },
             output_schema={
@@ -2109,7 +2114,6 @@ class TestContentTypeVirtualParam:
         raw_content = "YWxyZWFkeSBlbmNvZGVk"
 
         with (
-            patch("gitea_mcp_server.server_setup.mcp_builder.run_validation"),
             patch(
                 "gitea_mcp_server.server_setup.mcp_builder.run_with_error_handling",
                 new_callable=AsyncMock,

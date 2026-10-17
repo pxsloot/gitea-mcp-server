@@ -122,10 +122,12 @@ Agent calls a tool (via call_tool proxy or direct MCP call):
     ├─▶ GiteaNamespace            - strip gitea_ prefix
     ├─▶ ToolWrappingTransform    — server-level contract transform
     │     │                         (spine: tools/contract.build_transform_fn)
-    │     │                         extract + validate virtual params
-    │     │                         (registry schema enum, before executor)
-    │     │                         validate real args
-    │     │                         → log context (ctx.info)
+    │     │                         extract virtual params
+    │     │                         → resolve ctx, validate real args +
+    │     │                           virtual params (one entry:
+    │     │                           validation.validate_call; before executor)
+    │     │                         → log context (ctx.info) — one validation line
+    │     │                         → run pre-hooks (may mutate kwargs)
     │     │                         → report progress START (spine-owned)
     │     │                         → call inner tool's run()
     │     └─▶ LabelTransform      — convert labels
@@ -258,7 +260,7 @@ All tool-related runtime concerns live in `gitea_mcp_server/tools/`:
 | `tools/result_pipeline.py` | Single result pipeline — ``ExecutionResult`` (raw executor output) + ``render()`` (shape → paginate → format → ToolResult); the single writer of both channels.  Canonical home of the output contract |
 | `tools/customize.py` | title/category, hint inference, annotation prep |
 | `tools/schemas.py` | ``derive_output_schema``, ``$ref`` resolution, response classification |
-| `tools/errors.py` | runtime validation runner, HTTP error translation |
+| `tools/errors.py` | HTTP error translation (spec-enriched `ValueError`s; validation is spine-owned) |
 | `tools/labels.py` | label string→ID conversion, label schema updates (schema-time) |
 | `tools/label_transform.py` | FastMCP ``Transform`` — runtime label validation (innermost) |
 | `tools/examples.py` | schema→example generation, tool schema serialization |
@@ -314,7 +316,7 @@ each layer's behaviour.
 | `scope.py` | Scope derivation (shared leaf between tools/ and resources/) |
 | `search.py` | Generic BM25 search engine (infra layer) |
 | `pagination.py` | Pagination metadata, headers |
-| `validation.py` | Argument validation + schema augmentation — the two-layer enum mechanism (schema-driven validation + description inference for spec types that lack machine-readable enums) |
+| `validation.py` | Argument validation + schema augmentation — the two-layer enum mechanism (schema-driven validation + description inference for spec types that lack machine-readable enums).  The single public entry `validate_call` (called once by the contract spine) validates real kwargs and extracted virtual params; the primitives below it stay private |
 | `cache_invalidation.py` | `CacheInvalidationMiddleware` — derives write-tool invalidation targets from the spec + registered resource surface and clears the response cache after successful writes |
 | `response_cache.py` | `ResponseCacheMiddleware` — TTL cache for resource reads and listings, keyed by canonical (percent-decoded) resource URIs |
 | `param_rename.py` | The ``x-param-rename`` contract — the single home for the spec operation's normalized→wire rename map.  ``read_param_rename`` exposes the raw map to the tool surface; ``path_param_map`` returns the shared wire↔normalized view consumed by the resource factory and cache invalidation.  Leaf module |
@@ -333,6 +335,12 @@ server-level transform (``mcp.add_transform()``, first in the chain) that wraps
 every tool whose registration record has ``wrap=True``.  Synthetic discovery
 tools are registered manually but carry the same record and ride the same
 transform.  Source: `server_setup/mcp_builder.py`, `tools/contract.py`.
+
+**All argument validation is owned by the spine.** One public entry
+(`validation.validate_call`) validates real kwargs and extracted virtual params
+exactly once, before the executor, identically for autogen and synthetic tools;
+executors only paginate and execute.  Source: `validation.py`,
+`tools/contract.py`; guard: `tests/unit/test_validation_contract.py`.
 
 **Lazy loading, with pinned synthetics.** Tools are not listed by default;
 agents discover them via ``search_tools`` (name-match + BM25).  Synthetic tools

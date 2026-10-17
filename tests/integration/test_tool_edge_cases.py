@@ -336,7 +336,8 @@ class TestPaginationMetadata:
     ) -> None:
         """Autogen tools still enforce the schema bounds (regression #697).
 
-        Pagination validation moved from ``run_validation`` to the autogen
+        Pagination validation moved out of the general argument-validation
+        entry to the autogen
         executor (``validate_pagination_from_schema``); both halves of the
         friendly bound check must survive the move.
         """

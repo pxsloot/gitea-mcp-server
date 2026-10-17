@@ -56,7 +56,7 @@ symptom's wording still lands here.
 | Attach read-time display metadata or formatter context | Resource content meta (`ResourceContent.meta`) | `registration.py`, `resources/factory.py` |
 | Expose a per-call agent input stripped before the HTTP call | Virtual parameter | `tools/virtual_params.py` |
 | Shape, paginate, or format a result | Single result pipeline | `tools/result_pipeline.py` |
-| Validate an argument, or augment a tool schema with constraints/enums | Argument validation + schema augmentation | `validation.py` |
+| Validate an argument, or augment a tool schema with constraints/enums | Argument validation (one spine-invoked entry, `validate_call`) + schema augmentation | `validation.py` |
 | Render a markdown reading view | Formatters + schema-anchored view + display hints | `format.py`, `tools/display.py`, `openapi_converter/display_hints.py` |
 | Invalidate cached resources after a write | Derived invalidation (resource surface + type refs) | `cache_invalidation.py`, `resources/surface.py` |
 | Cache a resource read, or serve a cached read (TTL) | Response cache + resource surface | `response_cache.py`, `resources/surface.py` |

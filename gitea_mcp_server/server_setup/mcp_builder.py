@@ -66,7 +66,7 @@ from gitea_mcp_server.tools.customize import (
     generate_tool_title,
     prepare_annotations,
 )
-from gitea_mcp_server.tools.errors import run_validation, run_with_error_handling
+from gitea_mcp_server.tools.errors import run_with_error_handling
 from gitea_mcp_server.tools.label_transform import LabelTransform
 from gitea_mcp_server.tools.labels import update_labels_schema
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
@@ -648,8 +648,9 @@ class ToolWrappingTransform(Transform):
     wrapping record (e.g. the ``call_tool`` passthrough proxy) pass through
     unchanged.
 
-    Handles: virtual parameter inject/extract, argument validation, error
-    handling, text-response wrapping, and pagination metadata injection.
+    Handles: virtual parameter inject/extract, argument validation (owned by
+    the shared spine via ``validation.validate_call``), error handling,
+    text-response wrapping, and pagination metadata injection.
     The per-call spine is :func:`~tools.contract.build_transform_fn`,
     parameterized with the autogen HTTP-pipeline executor (see
     :meth:`_make_transform_fn`).
@@ -758,10 +759,9 @@ class ToolWrappingTransform(Transform):
         is parameterized with an executor.  Autogen tools use the HTTP
         pipeline executor (:meth:`_make_autogen_executor`); synthetic tools
         resolve theirs from the synthetic-executor registry via the record's
-        ``executor_id`` and have it wrapped with the shared argument validation
-        (:meth:`_wrap_synthetic_executor`), giving them the same
-        missing/unknown/enum validation surface as autogen tools.  Both run
-        through the same spine.
+        ``executor_id``.  Both run through the same spine, which owns argument
+        validation (one entry, ``validation.validate_call``) — no executor
+        validates real args.
 
         Args:
             tool: The ``Tool`` being wrapped.
@@ -776,8 +776,6 @@ class ToolWrappingTransform(Transform):
         executor = self._synthetic_executors.get(registration.executor_id)
         if executor is None:
             executor = self._make_autogen_executor(tool, registration)
-        else:
-            executor = self._wrap_synthetic_executor(tool, executor)
         # The spec flows to the display pipeline (root-list item summaries
         # under detail=concise, #759) — both tool families are wrapped here,
         # so this single call covers autogen and synthetic tools alike.  The
@@ -791,43 +789,6 @@ class ToolWrappingTransform(Transform):
             openapi_spec=self._openapi_spec,
             default_format=self._response_format,
         )
-
-    def _wrap_synthetic_executor(
-        self,
-        tool: Tool,
-        executor: Any,
-    ) -> Any:
-        """Wrap a synthetic executor with the shared argument validation.
-
-        Runs :func:`~tools.errors.run_validation` — missing required params,
-        unknown-parameter rejection, schema-driven enums, and
-        ``SINGLE_VALIDATORS`` — against the tool's parameter schema before
-        delegating to the executor, matching the autogen pipeline's
-        validation surface.  ``ValidationError`` is converted to
-        ``ValueError`` (the friendly error surface autogen uses).
-
-        Pagination is *not* validated here: ``run_validation`` is
-        pagination-agnostic.  The executor built by
-        :func:`~gitea_mcp_server.tools.synthetic_contract.make_impl_executor`
-        owns ``page``/``limit`` bounds and skips them when ``fetch_all``
-        makes the pair inert — validated exactly once, in the layer that
-        pages.
-        """
-        required = tool.parameters.get("required")
-        properties = tool.parameters.get("properties")
-
-        async def wrapped(
-            kwargs: dict[str, Any],
-            extracted: dict[str, Any] | None,
-            ctx: Any | None,
-        ) -> ExecutionResult:
-            try:
-                run_validation(kwargs, required, properties)
-            except ValidationError as e:
-                raise ValueError(str(e)) from e
-            return cast("ExecutionResult", await executor(kwargs, extracted, ctx))
-
-        return wrapped
 
     async def _wrap(self, tool: Tool) -> Tool:
         """Wrap a registered Tool with injected params and a runtime transform.
@@ -874,16 +835,20 @@ class ToolWrappingTransform(Transform):
         ctx: Any | None = None,
         inert: frozenset[str] = frozenset(),
     ) -> ExecutionResult:
-        """Run the full tool execution pipeline: validate, execute, classify.
+        """Run the autogen executor: execute and classify the response.
+
+        Argument validation is owned by the contract spine
+        (``validation.validate_call``), which runs before this executor; this
+        pipeline validates only pagination bounds (see
+        :meth:`_pipeline_with_context`).
 
         Label conversion is handled by the inner :class:`LabelTransform`
         that runs before this method is invoked via ``tool.run()``.
 
-        ``ctx`` is resolved by the caller (``transform_fn`` in :meth:`_wrap`)
-        and passed down for structured logging inside the pipeline.  When
-        ``ctx`` is ``None`` (no active MCP session), context logging degrades
-        gracefully.  Progress reporting is owned by the contract spine, not
-        this executor.
+        ``ctx`` is resolved by the spine's ``transform_fn`` and passed down for
+        structured logging inside the pipeline.  When ``ctx`` is ``None`` (no
+        active MCP session), context logging degrades gracefully.  Progress
+        reporting is owned by the contract spine, not this executor.
 
         Returns raw data only — an :class:`ExecutionResult` (data,
         total_count, shape).  The single result pipeline renders it; no
@@ -1246,28 +1211,15 @@ class ToolWrappingTransform(Transform):
            confirmation message so agents receive an explicit success signal.
         """
         try:
-            run_validation(
-                kwargs,
-                tool.parameters.get("required"),
-                tool.parameters.get("properties"),
-            )
-            # Pagination bounds are the paging executor's concern, not
-            # run_validation's (see its docstring).  Params neutralized by
-            # the call's active mode (derived from the registry) are
-            # skipped; autogen has none today.
+            # Pagination bounds are the paging executor's concern (the spine
+            # owns argument validation via ``validation.validate_call``, which
+            # already ran).  Params neutralized by the call's active mode
+            # (derived from the registry, stamped by the spine) are skipped;
+            # autogen has none today.  ValidationError → ValueError keeps the
+            # boundary type unchanged; no log here — the spine owns validation
+            # logging (one voice).
             validate_pagination_from_schema(kwargs, tool.parameters.get("properties"), inert=inert)
-
-            await safe_ctx_info(
-                ctx,
-                f"Validated {tool.name}",
-                extra={"arg_keys": list(kwargs.keys()), "valid": True},
-            )
         except ValidationError as e:
-            await safe_ctx_info(
-                ctx,
-                f"Validation failed for {tool.name}: {e}",
-                extra={"error": str(e)},
-            )
             raise ValueError(str(e)) from e
 
         try:

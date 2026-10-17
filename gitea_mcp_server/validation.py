@@ -6,12 +6,13 @@ tool arguments meet Gitea API requirements before execution.
 Architecture — two layers of enum validation:
 
 1. **Schema-driven validation** (runtime): :func:`validate_enum` is the shared
-   public entry.  It checks whether a parameter's own JSON Schema defines an
+   primitive.  It checks whether a parameter's own JSON Schema defines an
    ``enum`` (walking ``anyOf``/``oneOf``) and validates against it — no
-   hardcoded values needed.  Both real-parameter validation
-   (``tools.errors.run_validation``) and virtual-parameter validation
-   (``tools.virtual_params.validate_extracted``) delegate to it, so the two
-   surfaces share one mechanism and one error shape.
+   hardcoded values needed.  Both real-parameter validation (the private
+   :func:`_run_validation`) and virtual-parameter validation route through
+   :func:`validate_call`, the single public entry the contract spine
+   (``tools/contract.py``) calls, so the two surfaces share one mechanism and
+   one error shape.
 
 2. **Description-to-enum inference** (schema time in
    ``augment_schema_with_validation``): Some Gitea spec types (e.g.
@@ -22,8 +23,8 @@ Architecture — two layers of enum validation:
 """
 
 import re
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, NoReturn
 
 from fastmcp.server.providers.openapi import OpenAPITool
 
@@ -53,9 +54,22 @@ SHA_PATTERN = r"^[a-fA-F0-9]{40}$"
 # Validator functions
 
 
-def _raise_validation_error(message: str, field: str) -> None:
-    """Raise ValidationError with pre-computed message."""
-    raise ValidationError(message, field=field)
+def _raise_validation_error(
+    message: str,
+    field: str,
+    *,
+    cause: Exception | None = None,
+) -> NoReturn:
+    """Raise ValidationError with pre-computed message, chaining *cause* if given.
+
+    The single error-raising helper in this module: the common form passes only
+    ``(message, field)``; the real-args runner chains the underlying
+    ``ValueError``/``ValidatorError`` at the sites that had one.
+    """
+    error = ValidationError(message, field=field)
+    if cause is not None:
+        raise error from cause
+    raise error
 
 
 def _validate_string(
@@ -240,10 +254,9 @@ def validate_pagination_from_schema(
     mode such as ``fetch_all``); those are dropped before validation.  A no-op
     when neither parameter is present or both are inert.
 
-    This is a distinct concern from
-    :func:`~gitea_mcp_server.tools.errors.run_validation` (presence / type /
-    enum / unknown args).  Pagination bounds are validated by the executor that
-    owns paging — exactly once per call.
+    This is a distinct concern from :func:`validate_call` (real + virtual
+    args — presence / type / enum / unknown).  Pagination bounds are validated
+    by the executor that owns paging — exactly once per call.
 
     Args:
         kwargs: The tool arguments.
@@ -278,7 +291,7 @@ def validate_pagination_from_schema(
 # ---------------------------------------------------------------------------
 
 
-def collect_enum_values(schema: dict[str, Any]) -> list[Any] | None:
+def collect_enum_values(schema: Mapping[str, Any]) -> list[Any] | None:
     """Collect enum values from a schema, walking anyOf/oneOf if needed.
 
     The resolved OpenAPI schema may place enum on the top-level object or
@@ -339,13 +352,12 @@ def _validate_enum_from_schema(
         _raise_validation_error(f"{field} must be one of: {valid}", field)
 
 
-def validate_enum(value: Any, *, field: str, schema: dict[str, Any]) -> bool:
+def validate_enum(value: Any, *, field: str, schema: Mapping[str, Any]) -> bool:
     """Validate *value* against the ``enum`` declared in *schema*, if any.
 
-    The public, single-source entry point for schema-driven enum validation,
-    shared by real-parameter validation (:func:`~tools.errors.run_validation`)
-    and virtual-parameter validation
-    (:func:`~tools.virtual_params.validate_extracted`).  It walks
+    The public, single-source entry point for schema-driven enum validation.
+    Applied to real parameters and virtual parameters alike through
+    :func:`validate_call` (called once by the contract spine); it walks
     ``anyOf``/``oneOf`` for the enum (see :func:`collect_enum_values`).
 
     Args:
@@ -692,7 +704,7 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
 
        If inference adds an enum to the resolved schema, it is injected
        back into both the ``$defs`` definition and the original parameter
-       schema's ``$ref`` branch, so downstream consumers (``run_validation``,
+       schema's ``$ref`` branch, so downstream consumers (``validate_call``,
        ``tool_info``) see the enum regardless of ``$ref`` resolution.
 
     Args:
@@ -731,3 +743,204 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
         if _infer_enum_from_description(resolved):
             # Inference added enum to resolved schema — inject back.
             _inject_enum_into_defs(existing_schema, resolved, defs)
+
+
+# ---------------------------------------------------------------------------
+# Argument validation entry
+# ---------------------------------------------------------------------------
+#
+# One stage, one entry: the contract spine (``tools/contract.py``) calls
+# :func:`validate_call` exactly once per tool call, before the executor, for
+# both tool families.  The entry validates the extracted virtual params against
+# their registry schemas (supplied as data by
+# ``virtual_params.extracted_schemas``) and then the real kwargs.  The private
+# primitives below stay internal (``test_private_imports`` forbids importing the
+# underscore names across a boundary); the contract spine reaches the stage
+# through the public :func:`validate_call`.
+
+
+def _param_is_boolean(properties: dict[str, Any] | None, name: str) -> bool:
+    """Check whether a parameter's JSON schema declares it as boolean type.
+
+    A JSON-schema type predicate: ``True`` for ``"boolean"`` or a list
+    containing it.  Delegates the string/list handling to the shared
+    :func:`~gitea_mcp_server.schema_utils.schema_type_matches`, keeping the
+    ``isinstance(schema, dict)`` guard that helper requires (it assumes a dict
+    and would ``AttributeError`` on a non-dict entry).
+
+    Args:
+        properties: The tool's parameter properties dict, or ``None``.
+        name: The parameter name to check.
+
+    Returns:
+        ``True`` if the parameter schema has type ``'boolean'`` or
+        ``['boolean', ...]``.
+    """
+    if not properties:
+        return False
+    schema = properties.get(name)
+    if not isinstance(schema, dict):
+        return False
+    return schema_type_matches(schema, "boolean")
+
+
+def _format_missing_params(
+    missing: list[str],
+    param_properties: dict[str, Any] | None,
+) -> str:
+    """Build the error fragment for missing required parameters.
+
+    When a param's schema has an ``enum``, the message includes the expected
+    values so agents know what to provide.
+
+    Returns a string like ``"owner, state (expected one of: open, closed)"``.
+    """
+    parts: list[str] = []
+    for p in missing:
+        if param_properties and isinstance(param_properties.get(p), dict):
+            enum_vals = collect_enum_values(param_properties[p])
+            if enum_vals:
+                parts.append(f"{p} (expected one of: {', '.join(str(v) for v in enum_vals)})")
+            else:
+                parts.append(p)
+        else:
+            parts.append(p)
+    return ", ".join(parts)
+
+
+def _run_validation(
+    kwargs: dict[str, Any],
+    required_params: list[str] | None = None,
+    param_properties: dict[str, Any] | None = None,
+) -> None:
+    """Validate real tool arguments against registered validators and schema enums.
+
+    The real-args half of :func:`validate_call` (which also validates extracted
+    virtual params).  Private: the contract spine calls :func:`validate_call`,
+    never this runner directly.
+
+    Validation is performed in three ordered stages:
+
+    1. **Missing required** — every param in *required_params* must be
+       present in *kwargs*.
+    2. **Unknown parameters** — when *param_properties* is non-empty,
+       every key in *kwargs* must be declared in *param_properties*.
+       Virtual params (format, detail, etc.) have already been extracted
+       by the caller, so any remaining key not in the schema is an agent
+       typo and is rejected.  When *param_properties* is ``None`` or
+       ``{}`` the check is skipped (insufficient schema information).
+    3. **Per-argument dispatch** — for each argument:
+       1. Schema-driven enum validation (``enum`` / ``anyOf`` / ``oneOf``).
+       2. Registered validator in :data:`SINGLE_VALIDATORS`.
+       3. Boolean type skip (FastMCP handles type coercion).
+
+    Step 3.1 enables tools like ``gitea_repo_create_status`` whose
+    ``state`` parameter's valid values are resolved from the spec
+    rather than hardcoded to issue-state values.
+
+    Pagination bounds are deliberately **not** validated here: they are a
+    separate concern owned by the executor that pages
+    (:func:`validate_pagination_from_schema` for autogen,
+    :func:`~gitea_mcp_server.tools.synthetic_contract.make_impl_executor`
+    for synthetic), so a mode such as ``fetch_all=true`` that makes
+    ``page``/``limit`` inert also skips their validation.
+
+    Args:
+        kwargs: The tool arguments from the agent.
+        required_params: List of required parameter names, or ``None``.
+        param_properties: The tool's ``parameters.properties`` dict, or
+            ``None``.  Used for enum checks and unknown-arg rejection.
+    """
+    missing = [p for p in (required_params or []) if p not in kwargs]
+    if missing:
+        parts = _format_missing_params(missing, param_properties)
+        msg = f"Missing required parameter(s): {parts}"
+        _raise_validation_error(msg, missing[0], cause=ValueError(msg))
+    # Reject unknown parameters when the parameter schema is available.
+    # Virtual params (format, detail, sudo, etc.) have already been
+    # extracted by the contract spine via extract_from() before this runner
+    # is called, so any remaining key not in the schema is an agent typo that
+    # must be rejected rather than silently ignored (which would succeed on the
+    # wire: Gitea drops unknown query params and FastMCP drops unknown kwargs).
+    if param_properties:
+        unknown = [k for k in kwargs if k not in param_properties]
+        if unknown:
+            quoted = ", ".join(repr(k) for k in unknown)
+            msg = f"Unknown parameter(s): {quoted}"
+            _raise_validation_error(msg, unknown[0], cause=ValueError(msg))
+    for name, value in kwargs.items():
+        # Schema-driven enum validation: if the param's own schema defines
+        # an enum (resolved from the spec or inferred from description),
+        # validate against it.  This handles all tools, even those without
+        # a hardcoded validator entry (e.g. ``state`` on the commit status
+        # tool, whose enum comes from description inference).  When an enum
+        # is present it is the whole contract, so the hardcoded validator is
+        # skipped.
+        schema = param_properties.get(name) if param_properties else None
+        if isinstance(schema, dict) and validate_enum(value, field=name, schema=schema):
+            continue
+        if name in SINGLE_VALIDATORS:
+            if _param_is_boolean(param_properties, name):
+                continue
+            try:
+                SINGLE_VALIDATORS[name](value, field=name)
+            except ValidationError:
+                raise
+            except (TypeError, ValueError, KeyError) as e:
+                msg = f"Validation error for {name}: {e}"
+                _raise_validation_error(msg, name, cause=e)
+
+
+def validate_call(
+    kwargs: dict[str, Any],
+    *,
+    required: list[str] | None,
+    properties: dict[str, Any] | None,
+    virtual_values: Mapping[str, Any],
+    virtual_schemas: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """The single argument-validation entry — called once by the spine.
+
+    Validates extracted virtual-param values against their registry schemas,
+    then real kwargs (missing required -> unknown keys -> enum /
+    :data:`SINGLE_VALIDATORS`).  Raises :class:`ValidationError`; the caller
+    (the contract spine) owns the agent-facing conversion and logging, so both
+    tool families share one boundary error type and one voice.
+
+    Args:
+        kwargs: The real tool arguments (virtual params already extracted).
+        required: The tool's ``parameters.required`` list, or ``None``.
+        properties: The tool's ``parameters.properties`` dict, or ``None``.
+        virtual_values: ``{name: value}`` extracted virtual params.
+        virtual_schemas: ``{name: schema}`` for the extracted params, from
+            :func:`~gitea_mcp_server.tools.virtual_params.extracted_schemas`.
+            Keys absent here (non-registry pipeline metadata) are ignored.
+    """
+    for name, value in virtual_values.items():
+        schema = virtual_schemas.get(name)
+        if schema is not None:
+            validate_enum(value, field=name, schema=schema)
+    _run_validation(kwargs, required, properties)
+
+
+__all__ = [
+    "FILEPATH_PATTERN",
+    "OWNER_REPO_PATTERN",
+    "REF_PATTERN",
+    "SCHEMA_CONSTRAINTS",
+    "SHA_PATTERN",
+    "SINGLE_VALIDATORS",
+    "USERNAME_PATTERN",
+    "augment_schema_with_validation",
+    "collect_enum_values",
+    "validate_call",
+    "validate_enum",
+    "validate_filepath",
+    "validate_labels",
+    "validate_owner_repo",
+    "validate_pagination",
+    "validate_pagination_from_schema",
+    "validate_ref",
+    "validate_sha",
+    "validate_username",
+]

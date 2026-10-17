@@ -148,7 +148,7 @@ Tool customizations are organized under `gitea_mcp_server/tools/`:
 | `tools/contract.py` | Generic agent-facing contract spine — `build_transform_fn(tool, executor, registration=..., default_format=...)`, shared by autogen and synthetic tools |
 | `tools/customize.py` | Helpers: title/category generation, hint inference |
 | `tools/schemas.py` | Output schema derivation, `$ref` resolution |
-| `tools/errors.py` | Error translation, argument validation runner |
+| `tools/errors.py` | HTTP error translation (spec-enriched messages; validation is spine-owned) |
 | `tools/labels.py` | Label name→ID conversion, label schema updates |
 | `tools/examples.py` | Schema→example generation, tool schema serialization |
 | `tools/search.py` | Name-match + BM25 search + `TolerantSearchTransform`, synthetic tools |
@@ -242,7 +242,8 @@ The validation system has two layers. Most cases are handled automatically:
 
 **Schema-driven enum validation** (automatic): If a parameter's resolved
 JSON Schema defines an ``enum`` (either directly or inside an
-``anyOf``/``oneOf`` branch), ``run_validation`` validates against that
+``anyOf``/``oneOf`` branch), the validation entry (``validate_call``)
+validates against that
 enum — no code needed.  This is the primary path: the spec defines the
 valid values, and validation follows.
 
@@ -353,10 +354,12 @@ The lifecycle functions are called automatically in the transform pipeline:
 2. ``extract_from(kwargs, only=<registration>.virtual_params)`` — pops it from
    kwargs before the HTTP request; params not injected (e.g. ``fetch_all`` on
    an autogen tool) stay in kwargs and are rejected as unknown
-3. ``validate_extracted(extracted)`` — validates each popped value against its
+3. ``validate_call(kwargs, ..., virtual_schemas=extracted_schemas(extracted))``
+   — the spine validates the real kwargs and each popped value against its
    registry schema (``enum``), **before** the executor, so an invalid
    ``format``/``detail``/``content_type`` never reaches the API.  Params with
-   no enum (``sudo``, ``fetch_all``) are a no-op.
+   no enum (``sudo``, ``fetch_all``) are a no-op.  The registry supplies the
+   schemas as data; the policy lives in ``validation.validate_call``.
 4. ``apply_pre_hooks(extracted, kwargs)`` — runs pre-hooks; hooks receive
    ``(value, kwargs)`` and may mutate kwargs (e.g. content encoding)
 5. ``safe_ctx_report_progress(ctx, 0.0, total=1.0)`` — the spine emits the
@@ -420,7 +423,7 @@ From this doc's how-to angle: to add a new scope-gated param, set
 All parameters — including ``format``, ``detail``, and ``content_type`` — follow
 the standard :ref:`virtual params lifecycle <virtual-params-lifecycle>`:
 ``inject_into`` (schema) → ``extract_from`` (pop from kwargs) →
-``validate_extracted`` (schema enum, before the executor) →
+``validate_call`` (real + virtual, schema enum, before the executor) →
 ``apply_pre_hooks`` (mutate kwargs, e.g. content encoding) →
 HTTP call → ``render`` (the result pipeline) → ``apply_to`` (sudo cleanup).
 The registry retains only pre-request concerns (``sudo``, ``content_type``);
@@ -1163,9 +1166,10 @@ OpenAPI spec). They live in the same codebase and register themselves via
    (``tools/result_pipeline.render``) slices, envelopes, and formats.  No
    ``_formatted`` marker exists; display is centralized, not opt-out.
    Set ``wrap=False`` on proxy tools (``call_tool``) that must pass arguments
-   through untouched.  The transform wraps synthetic executors with the same
-   ``run_validation`` surface as autogen tools (missing/unknown/enum checks;
-   pagination-agnostic).  Pagination bounds are owned by the paging executor
+   through untouched.  The shared spine validates every call exactly once
+   through ``validation.validate_call`` (missing/unknown/enum over the real
+   kwargs and the extracted virtual params; pagination-agnostic), identically
+   for both tool families.  Pagination bounds are owned by the paging executor
    and validated exactly once per call — autogen via
    ``validation.validate_pagination_from_schema``, synthetic via
    ``make_impl_executor`` — with the inert set the spine derives once

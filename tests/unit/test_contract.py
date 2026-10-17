@@ -26,7 +26,7 @@ from gitea_mcp_server.tools.contract import (
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult
 from gitea_mcp_server.tools.virtual_params import INERT_KEY
 from tests.helpers.progress import RecordingContext
-from tests.helpers.registration import autogen_meta
+from tests.helpers.registration import autogen_meta, synthetic_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
 if TYPE_CHECKING:
@@ -55,6 +55,25 @@ def _make_tool(
             view_hints=view_hints,
             injected=injected,
         ),
+    )
+
+
+def _make_tool_from_params(
+    parameters: dict[str, Any],
+    *,
+    injected: set[str] | frozenset[str] | None = frozenset({"format", "detail"}),
+) -> Tool:
+    """Tool with real parameter ``required``/``properties`` for validation tests.
+
+    ``_make_tool`` deliberately has an empty ``properties`` (validation's
+    unknown-key check is skipped when the schema is empty); this helper carries
+    a real schema so the spine's validation stage is actually exercised.
+    """
+    return Tool(
+        name="test_tool",
+        description="A test tool.",
+        parameters=parameters,
+        meta=autogen_meta(injected=injected),
     )
 
 
@@ -768,3 +787,260 @@ class TestProgressLifecycle:
             result = await transform_fn(query="q")
 
         assert result.structured_content == {"result": "ok"}
+
+
+class TestValidationStage:
+    """The contract spine owns argument validation (#790).
+
+    Validation runs once, on the agent's raw input, before the executor: real
+    kwargs and the extracted virtual params go through the same entry
+    (:func:`gitea_mcp_server.validation.validate_call`), identically for both
+    tool families.  A failure emits the one failure log and **no** progress
+    start; a success emits the one success log.
+    """
+
+    @pytest.mark.asyncio
+    async def test_missing_required_rejected_before_executor(self) -> None:
+        """A missing required arg fails in the spine, before the executor."""
+        calls = {"n": 0}
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params(
+            {"properties": {"owner": {"type": "string"}}, "required": ["owner"]}
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+
+        with pytest.raises(ValueError, match="Missing required parameter"):
+            await transform_fn(repo="r")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_key_rejected_before_executor(self) -> None:
+        """An undeclared arg is rejected by the spine, before the executor."""
+        calls = {"n": 0}
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params({"properties": {"owner": {"type": "string"}}})
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+
+        with pytest.raises(ValueError, match="Unknown parameter"):
+            await transform_fn(owner="o", typo=1)
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_schema_enum_rejected_before_executor(self) -> None:
+        """A value outside the schema enum is rejected before the executor."""
+        calls = {"n": 0}
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params(
+            {"properties": {"state": {"type": "string", "enum": ["open", "closed"]}}}
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+
+        with pytest.raises(ValueError, match="state must be one of"):
+            await transform_fn(state="bogus")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_real_and_virtual_both_fail_through_the_same_entry(self) -> None:
+        """One stage, one entry: real and virtual invalid values both fail it."""
+        calls = {"n": 0}
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            calls["n"] += 1
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params(
+            {"properties": {"state": {"type": "string", "enum": ["open"]}}}
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+
+        with pytest.raises(ValueError, match="format must be one of"):
+            await transform_fn(state="open", format="bogus")
+        with pytest.raises(ValueError, match="state must be one of"):
+            await transform_fn(state="bogus", format="json")
+
+        assert calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_entry_called_exactly_once_with_real_and_virtual(self, monkeypatch: Any) -> None:
+        """The single entry receives the real kwargs *and* the virtual values."""
+        from gitea_mcp_server.tools import contract as contract_module
+
+        seen: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        real_validate_call = contract_module.validate_call
+
+        def _spy(*args: Any, **kwargs: Any) -> None:
+            # Snapshot: the spine mutates ``virtual_values`` after validation
+            # (attaches ``_raw_schema``), so a live reference would drift.
+            snapshot = dict(kwargs)
+            snapshot["virtual_values"] = dict(snapshot["virtual_values"])
+            seen.append((args, snapshot))
+            real_validate_call(*args, **kwargs)
+
+        monkeypatch.setattr(contract_module, "validate_call", _spy)
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params({"properties": {"owner": {"type": "string"}}})
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+        await transform_fn(owner="o", format="json")
+
+        assert len(seen) == 1
+        args, kwargs = seen[0]
+        # Virtual params are popped before validation: the entry sees only real kwargs.
+        assert args == ({"owner": "o"},)
+        assert kwargs["required"] is None
+        assert kwargs["properties"] == {"owner": {"type": "string"}}
+        assert kwargs["virtual_values"] == {"format": "json"}
+        assert set(kwargs["virtual_schemas"]) == {"format"}
+
+    @pytest.mark.asyncio
+    async def test_families_share_the_same_rejection_message(self) -> None:
+        """Autogen and synthetic records reject identically at this seam."""
+        params = {"properties": {"owner": {"type": "string"}}}
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        records = {
+            "autogen": Tool(
+                name="t",
+                description="d",
+                parameters=params,
+                meta=autogen_meta(injected=frozenset({"format"})),
+            ),
+            "synthetic": Tool(
+                name="t",
+                description="d",
+                parameters=params,
+                meta=synthetic_meta("t", {"format"}, injected=frozenset({"format"})),
+            ),
+        }
+
+        messages: dict[str, str] = {}
+        for family, tool in records.items():
+            transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+            with pytest.raises(ValueError, match="Unknown parameter") as exc:
+                await transform_fn(owner="o", typo=1)
+            messages[family] = str(exc.value)
+
+        assert messages["autogen"] == messages["synthetic"]
+        assert "Unknown parameter" in messages["autogen"]
+
+    @pytest.mark.asyncio
+    async def test_validation_failure_emits_no_progress(self) -> None:
+        """A validation failure emits no progress start and no terminal signal.
+
+        The spine must not claim work that never started (decision: no
+        start-then-fail).  ``RecordingContext.info`` records nothing, so an
+        empty log means neither signal fired.
+        """
+        ctx = RecordingContext()
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params(
+            {"properties": {"state": {"type": "string", "enum": ["open"]}}}
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+        with (
+            patch(
+                "gitea_mcp_server.tools.contract.resolve_current_context",
+                new=AsyncMock(return_value=ctx),
+            ),
+            pytest.raises(ValueError, match="state must be one of"),
+        ):
+            await transform_fn(state="bogus")
+
+        assert ctx.calls == []
+        assert ctx.progress == []
+
+    @pytest.mark.asyncio
+    async def test_success_logs_exactly_one_validated_line(self, monkeypatch: Any) -> None:
+        """A successful call emits one ``Validated <tool>`` line (one voice)."""
+        logged: list[str] = []
+
+        async def _record(_ctx: Any, message: str, **_extra: Any) -> None:
+            logged.append(message)
+
+        monkeypatch.setattr("gitea_mcp_server.tools.contract.safe_ctx_info", _record)
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        transform_fn = build_transform_fn(_make_tool(), executor, default_format="markdown")
+        await transform_fn(query="q", format="json")
+
+        assert [m for m in logged if m.startswith("Validated ")] == ["Validated test_tool"]
+
+    @pytest.mark.asyncio
+    async def test_failure_logs_exactly_one_validation_failed_line(self, monkeypatch: Any) -> None:
+        """A failing call emits one ``Validation failed for <tool>`` line."""
+        logged: list[str] = []
+
+        async def _record(_ctx: Any, message: str, **_extra: Any) -> None:
+            logged.append(message)
+
+        monkeypatch.setattr("gitea_mcp_server.tools.contract.safe_ctx_info", _record)
+
+        async def executor(kwargs: Any, extracted: Any, _ctx: Any) -> ExecutionResult:
+            return ExecutionResult(data="ok", shape="scalar")
+
+        tool = _make_tool_from_params(
+            {"properties": {"state": {"type": "string", "enum": ["open"]}}}
+        )
+        transform_fn = build_transform_fn(tool, executor, default_format="markdown")
+        with pytest.raises(ValueError, match="state must be one of"):
+            await transform_fn(state="bogus")
+
+        failed = [m for m in logged if m.startswith("Validation failed for ")]
+        assert len(failed) == 1
+        assert failed[0].startswith("Validation failed for test_tool")
+
+    def test_entry_raises_validation_error_not_value_error(self) -> None:
+        """The entry itself raises ``ValidationError``, not the ``ValueError``.
+
+        The spine owns the ``ValidationError -> ValueError`` conversion; the
+        entry must not pre-empt it.
+        """
+        from gitea_mcp_server.exceptions import ValidationError
+        from gitea_mcp_server.validation import validate_call
+
+        with pytest.raises(ValidationError):
+            validate_call(
+                {"state": "bogus"},
+                required=None,
+                properties={"state": {"type": "string", "enum": ["open"]}},
+                virtual_values={},
+                virtual_schemas={},
+            )
+
+    def test_entry_validates_virtual_param_against_its_schema(self) -> None:
+        """The entry validates virtual values against the supplied registry schema."""
+        from gitea_mcp_server.exceptions import ValidationError
+        from gitea_mcp_server.validation import validate_call
+
+        with pytest.raises(ValidationError, match="format must be one of"):
+            validate_call(
+                {},
+                required=None,
+                properties=None,
+                virtual_values={"format": "bogus"},
+                virtual_schemas={"format": {"type": "string", "enum": ["json"]}},
+            )

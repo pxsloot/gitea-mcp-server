@@ -1,7 +1,7 @@
 """Unit tests for input validation functionality."""
 
 import re
-from typing import Any
+from typing import Any, Never
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,23 +12,49 @@ from gitea_mcp_server.validation import (
     OWNER_REPO_PATTERN,
     REF_PATTERN,
     SHA_PATTERN,
+    SINGLE_VALIDATORS,
     USERNAME_PATTERN,
     _find_string_schema,
     _infer_enum_from_description,
     _inject_enum_into_defs,
+    _param_is_boolean,
     _resolve_local_refs,
     _validate_enum_from_schema,
     augment_schema_with_validation,
     collect_enum_values,
+    validate_call,
     validate_enum,
     validate_filepath,
     validate_labels,
     validate_owner_repo,
     validate_pagination,
+    validate_pagination_from_schema,
     validate_ref,
     validate_sha,
     validate_username,
 )
+
+
+def _validate_real(
+    kwargs: dict[str, Any],
+    *,
+    required: list[str] | None = None,
+    properties: dict[str, Any] | None = None,
+) -> None:
+    """Call the public validation entry with no virtual params.
+
+    ``validate_call`` is the single entry the contract spine calls.  These
+    real-args tests pass empty virtual inputs, so the call exercises the
+    real-arg half (missing required -> unknown keys -> enum /
+    ``SINGLE_VALIDATORS``).
+    """
+    validate_call(
+        kwargs,
+        required=required,
+        properties=properties,
+        virtual_values={},
+        virtual_schemas={},
+    )
 
 
 class TestOwnerRepoPattern:
@@ -1221,68 +1247,52 @@ class TestAugmentSchemaWithValidation:
         )
 
 
-class TestRunValidation:
-    """Tests for run_validation function."""
+class TestValidateCall:
+    """Tests for the public validation entry, real-argument half.
+
+    ``validate_call`` is the single entry the contract spine calls; it validates
+    the real kwargs through the private runner.  These tests exercise that half
+    directly (empty virtual inputs); composition with the virtual half is
+    covered by :class:`TestValidateCallComposition`.
+    """
+
+    def test_no_required_params(self) -> None:
+        """When required is None/empty, should not raise."""
+        _validate_real({"x": 1})
 
     def test_missing_required_raises_validation_error(self) -> None:
         """Missing required params should raise a clear validation error."""
-        from gitea_mcp_server.tools.errors import (
-            run_validation,
-        )
-
         with pytest.raises(ValidationError) as exc:
-            run_validation({"page": 1}, required_params=["owner", "repo"])
+            _validate_real({"page": 1}, required=["owner", "repo"])
         assert "owner" in str(exc.value)
         assert "repo" in str(exc.value)
 
     def test_all_required_params_present_passes(self) -> None:
         """No error when all required params are provided."""
-        from gitea_mcp_server.tools.errors import run_validation
-
-        run_validation(
-            {"owner": "test", "repo": "test", "page": 1},
-            required_params=["owner", "repo"],
-        )
+        _validate_real({"owner": "test", "repo": "test", "page": 1}, required=["owner", "repo"])
 
     def test_no_required_params_list_passes(self) -> None:
-        """No error when required_params is None."""
-        from gitea_mcp_server.tools.errors import run_validation
-
-        run_validation({"owner": "test"})
+        """No error when required is None."""
+        _validate_real({"owner": "test"})
 
     def test_empty_required_params_list_passes(self) -> None:
-        """No error when required_params is empty."""
-        from gitea_mcp_server.tools.errors import run_validation
-
-        run_validation({"owner": "test"}, required_params=[])
+        """No error when required is empty."""
+        _validate_real({"owner": "test"}, required=[])
 
     def test_single_missing_required_param(self) -> None:
         """A single missing required param should name it."""
-        from gitea_mcp_server.tools.errors import (
-            run_validation,
-        )
-
         with pytest.raises(ValidationError) as exc:
-            run_validation({"repo": "test"}, required_params=["owner"])
+            _validate_real({"repo": "test"}, required=["owner"])
         assert "owner" in str(exc.value)
         assert "Missing required parameter(s): owner" in str(exc.value)
 
     def test_missing_required_enum_param_includes_enum_values(self) -> None:
         """Missing required enum param should include valid values in the error."""
-        from gitea_mcp_server.tools.errors import (
-            run_validation,
-        )
-
         with pytest.raises(ValidationError) as exc:
-            run_validation(
+            _validate_real(
                 {"owner": "test", "repo": "test", "index": 1},
-                required_params=["diffType"],
-                param_properties={
-                    "diffType": {
-                        "type": "string",
-                        "enum": ["diff", "patch"],
-                    },
-                },
+                required=["diffType"],
+                properties={"diffType": {"type": "string", "enum": ["diff", "patch"]}},
             )
         msg = str(exc.value)
         assert "diffType" in msg
@@ -1292,17 +1302,11 @@ class TestRunValidation:
 
     def test_missing_required_param_without_enum_unchanged(self) -> None:
         """Missing required param without enum should not add enum hint."""
-        from gitea_mcp_server.tools.errors import (
-            run_validation,
-        )
-
         with pytest.raises(ValidationError) as exc:
-            run_validation(
+            _validate_real(
                 {"repo": "test"},
-                required_params=["owner"],
-                param_properties={
-                    "owner": {"type": "string"},
-                },
+                required=["owner"],
+                properties={"owner": {"type": "string"}},
             )
         msg = str(exc.value)
         assert "owner" in msg
@@ -1310,13 +1314,314 @@ class TestRunValidation:
 
     def test_validation_still_runs_on_present_params(self) -> None:
         """Existing validation for present params should still run alongside missing check."""
-        from gitea_mcp_server.tools.errors import (
-            run_validation,
+        with pytest.raises(ValidationError) as exc:
+            _validate_real({"owner": "!!invalid!!", "page": 1}, required=["owner"])
+        assert "contains invalid characters" in str(exc.value)
+
+    def test_pagination_is_not_the_concern(self) -> None:
+        """The entry is pagination-agnostic (bounds belong to the executor).
+
+        Regression for #697: pagination bounds are validated once, by the
+        executor that pages; the entry must not reject an out-of-bounds
+        page/limit, or a mode that makes them inert (``fetch_all=true``) cannot
+        bypass the check.
+        """
+        _validate_real({"page": 1, "limit": 99999})  # should not raise
+
+    def test_validator_raises_type_error_wraps_cleanly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When a SINGLE_VALIDATOR raises TypeError, it should be wrapped as ValidationError."""
+
+        def bad_validator(value: Any, *, field: str) -> Never:
+            raise TypeError
+
+        monkeypatch.setitem(SINGLE_VALIDATORS, "owner", bad_validator)
+        with pytest.raises(ValidationError, match="Validation error"):
+            _validate_real({"owner": "anything"})
+
+    def test_validator_raises_validation_error_re_raises(self) -> None:
+        """When a SINGLE_VALIDATOR raises ValidationError, it should re-raise unchanged."""
+        with pytest.raises(ValidationError):
+            _validate_real({"owner": ""})
+
+    def test_rejects_unknown_parameters_when_schema_present(self) -> None:
+        """Unknown kwargs not in properties should raise ValidationError.
+
+        Regression: validation iterated kwargs and validated each against known
+        validators and schema enums, but never checked that a key was declared
+        in the parameter schema at all.  Unknown args (typos by the agent)
+        passed through silently and were either dropped by FastMCP or forwarded
+        to Gitea as unknown query params.
+        """
+        with pytest.raises(ValidationError, match="Unknown parameter"):
+            _validate_real(
+                {"owner": "valid", "typo_parm": 42},
+                properties={"owner": {"type": "string"}},
+            )
+
+    def test_unknown_params_message_names_offenders(self) -> None:
+        """Error message should name the unknown parameter(s) for fast debugging."""
+        with pytest.raises(ValidationError, match="typo_parm"):
+            _validate_real(
+                {"owner": "valid", "typo_parm": 42, "another_typo": "x"},
+                properties={"owner": {"type": "string"}},
+            )
+
+    def test_allows_unknown_args_when_schema_absent(self) -> None:
+        """When properties is None, unknown args MUST NOT be rejected.
+
+        Without a schema we cannot distinguish between a legitimate argument
+        and an agent typo, so the unknown-arg guard is skipped.
+        """
+        # Should not raise — no schema to check against.
+        _validate_real({"owner": "valid", "extra": "value"})
+
+    def test_allows_unknown_args_when_schema_empty(self) -> None:
+        """When properties is an empty dict, unknown args MUST NOT be rejected."""
+        # The label validator raises separately, but that is a different path.
+        with pytest.raises(ValidationError, match="must be a list"):
+            _validate_real({"labels": True}, properties={})
+
+
+class TestValidateCallComposition:
+    """The one entry composes the virtual and real halves, in that order."""
+
+    def test_virtual_value_validated_against_supplied_schema(self) -> None:
+        with pytest.raises(ValidationError, match="format must be one of"):
+            validate_call(
+                {},
+                required=None,
+                properties=None,
+                virtual_values={"format": "bogus"},
+                virtual_schemas={"format": {"type": "string", "enum": ["json"]}},
+            )
+
+    def test_virtual_unknown_key_ignored(self) -> None:
+        """A virtual key with no supplied schema is ignored (pipeline metadata)."""
+        validate_call(
+            {},
+            required=None,
+            properties=None,
+            virtual_values={"_raw_schema": None},
+            virtual_schemas={},
         )
 
-        with pytest.raises(ValidationError) as exc:
-            run_validation(
-                {"owner": "!!invalid!!", "page": 1},
-                required_params=["owner"],
+    def test_virtual_checked_before_real(self) -> None:
+        """Virtual params validate first, so that error wins over the real one."""
+        with pytest.raises(ValidationError, match="format must be one of"):
+            validate_call(
+                {"state": "bogus"},
+                required=None,
+                properties={"state": {"type": "string", "enum": ["open"]}},
+                virtual_values={"format": "bogus"},
+                virtual_schemas={"format": {"type": "string", "enum": ["json"]}},
             )
-        assert "contains invalid characters" in str(exc.value)
+
+
+class TestSchemaAwarePagination:
+    """``validate_pagination_from_schema`` — the autogen executor's bound check."""
+
+    def test_accepts_valid(self) -> None:
+        """validate_pagination_from_schema passes valid values through."""
+        validate_pagination_from_schema(
+            {"page": 1, "limit": 50}, {"limit": {"type": "integer", "maximum": 100}}
+        )
+
+    def test_rejects_above_schema_max(self) -> None:
+        """The bound is read from the parameter schema's ``limit.maximum``."""
+        with pytest.raises(ValidationError, match="limit must be <= 100"):
+            validate_pagination_from_schema(
+                {"page": 1, "limit": 101},
+                {"limit": {"type": "integer", "maximum": 100}},
+            )
+
+    def test_no_op_without_params(self) -> None:
+        """Absent page/limit means nothing to validate."""
+        validate_pagination_from_schema({}, {"limit": {"maximum": 100}})
+        validate_pagination_from_schema({"query": "x"})
+
+    def test_skips_inert(self) -> None:
+        """Params neutralized by the active mode are dropped before validation."""
+        validate_pagination_from_schema(
+            {"page": 0, "limit": 99999},
+            {"limit": {"maximum": 100}},
+            inert=frozenset({"page", "limit"}),
+        )
+        with pytest.raises(ValidationError, match="page must be >= 1"):
+            validate_pagination_from_schema(
+                {"page": 0, "limit": 99999},
+                {"limit": {"maximum": 100}},
+                inert=frozenset({"limit"}),
+            )
+
+
+class TestBooleanParamSkip:
+    """Regression: a validator is skipped when the param schema declares boolean."""
+
+    def test_labels_boolean_skips_validate_labels(self) -> None:
+        """labels param with boolean schema should NOT trigger validate_labels."""
+        _validate_real({"labels": True}, properties={"labels": {"type": "boolean"}})
+
+    def test_labels_boolean_nullable_skips_validate_labels(self) -> None:
+        """labels param with ['boolean', 'null'] schema should NOT trigger validate_labels."""
+        _validate_real({"labels": True}, properties={"labels": {"type": ["boolean", "null"]}})
+
+    def test_labels_array_still_validates(self) -> None:
+        """labels param with array schema should still trigger validate_labels."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _validate_real(
+                {"labels": True},
+                properties={"labels": {"type": "array", "items": {"type": "string"}}},
+            )
+
+    def test_boolean_skip_does_not_affect_other_validators(self) -> None:
+        """Other validators should still run even when labels is boolean."""
+        with pytest.raises(ValidationError, match="contains invalid characters"):
+            _validate_real(
+                {"labels": True, "owner": "!!invalid!!"},
+                properties={
+                    "labels": {"type": "boolean"},
+                    "owner": {"type": "string"},
+                },
+            )
+
+    def test_no_properties_still_validates(self) -> None:
+        """When properties is None, all validators should run."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _validate_real({"labels": True})
+
+    def test_empty_properties_skips_boolean_check(self) -> None:
+        """When properties is empty dict, validators should run."""
+        with pytest.raises(ValidationError, match="must be a list"):
+            _validate_real({"labels": True}, properties={})
+
+
+class TestParamIsBoolean:
+    """Tests for the _param_is_boolean helper."""
+
+    def test_none_properties_returns_false(self) -> None:
+        assert _param_is_boolean(None, "labels") is False
+
+    def test_missing_param_returns_false(self) -> None:
+        assert _param_is_boolean({"owner": {"type": "string"}}, "labels") is False
+
+    def test_string_type_returns_false(self) -> None:
+        assert _param_is_boolean({"labels": {"type": "string"}}, "labels") is False
+
+    def test_array_type_returns_false(self) -> None:
+        assert _param_is_boolean({"labels": {"type": "array"}}, "labels") is False
+
+    def test_boolean_type_string_returns_true(self) -> None:
+        assert _param_is_boolean({"labels": {"type": "boolean"}}, "labels") is True
+
+    def test_boolean_in_list_type_returns_true(self) -> None:
+        assert _param_is_boolean({"labels": {"type": ["boolean", "null"]}}, "labels") is True
+
+    def test_array_in_list_type_returns_false(self) -> None:
+        assert _param_is_boolean({"labels": {"type": ["array", "null"]}}, "labels") is False
+
+
+class TestParamIsBooleanEdgeCases:
+    """Tests for _param_is_boolean edge cases."""
+
+    def test_non_string_non_list_type_returns_false(self) -> None:
+        """_param_is_boolean returns False when type is neither str nor list."""
+        assert _param_is_boolean({"flag": {"type": {}}}, "flag") is False
+
+    def test_non_dict_schema_returns_false(self) -> None:
+        """_param_is_boolean returns False when the schema entry is not a dict."""
+        assert _param_is_boolean({"flag": "string_value"}, "flag") is False
+
+
+class TestSchemaDrivenEnumValidation:
+    """Schema-driven enum validation in the validation entry.
+
+    When a parameter's schema defines an ``enum`` (either directly or via an
+    ``anyOf``/``oneOf`` branch), validation uses that enum and skips the
+    hardcoded ``SINGLE_VALIDATORS`` entry.
+    """
+
+    def test_param_with_top_level_enum_accepts_valid(self) -> None:
+        """state with a top-level enum should accept valid values."""
+        _validate_real(
+            {"state": "pending"},
+            properties={"state": {"type": "string", "enum": ["pending", "success", "error"]}},
+        )
+
+    def test_param_with_top_level_enum_rejects_invalid(self) -> None:
+        """state with a top-level enum should reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _validate_real(
+                {"state": "bogus"},
+                properties={"state": {"type": "string", "enum": ["pending", "success", "error"]}},
+            )
+
+    def test_param_with_enum_in_anyof_accepts_valid(self) -> None:
+        """state with enum in an anyOf branch should validate against it."""
+        _validate_real(
+            {"state": "success"},
+            properties={
+                "state": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "enum": ["pending", "success", "error", "failure", "warning"],
+                        },
+                        {"type": "null"},
+                    ]
+                },
+            },
+        )
+
+    def test_param_with_enum_in_anyof_rejects_invalid(self) -> None:
+        """state with enum in an anyOf branch should reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _validate_real(
+                {"state": "closed"},  # Valid for issues, NOT for commit status
+                properties={
+                    "state": {
+                        "anyOf": [
+                            {"type": "string", "enum": ["pending", "success", "error"]},
+                            {"type": "null"},
+                        ]
+                    },
+                },
+            )
+
+    def test_param_without_enum_uses_single_validator(self) -> None:
+        """When no enum is in the schema, the SINGLE_VALIDATORS entry should run."""
+        with pytest.raises(ValidationError, match="contains invalid characters"):
+            _validate_real({"owner": "!!invalid!!"}, properties={"owner": {"type": "string"}})
+
+    def test_owner_validation_still_works_with_enum_present(self) -> None:
+        """When enum is present but param also has a SINGLE_VALIDATORS entry,
+        the enum takes priority — but the param should still be checked."""
+        _validate_real(
+            {"owner": "valid-owner"},
+            properties={"owner": {"type": "string", "enum": ["valid-owner", "other"]}},
+        )
+
+    def test_issue_state_enum_from_spec(self) -> None:
+        """Tools with spec-defined enum (like issueListIssues) work correctly."""
+        _validate_real(
+            {"state": "open"},
+            properties={"state": {"type": "string", "enum": ["closed", "open", "all"]}},
+        )
+
+    def test_issue_state_invalid_from_spec(self) -> None:
+        """Tools with spec-defined enum reject invalid values."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            _validate_real(
+                {"state": "bogus"},
+                properties={"state": {"type": "string", "enum": ["closed", "open", "all"]}},
+            )
+
+    def test_missing_required_with_enum_shows_enum_in_error(self) -> None:
+        """When a required param with enum is missing, error shows the enum."""
+        with pytest.raises(ValidationError, match="expected one of"):
+            _validate_real(
+                {"owner": "test"},
+                required=["state"],
+                properties={"state": {"type": "string", "enum": ["open", "closed"]}},
+            )

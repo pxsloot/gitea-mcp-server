@@ -21,10 +21,11 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_scope_filter,
     apply_to,
     extract_from,
+    extracted_schemas,
     inert_params,
     inject_into,
-    validate_extracted,
 )
+from gitea_mcp_server.validation import validate_call
 from tests.helpers.registration import autogen_meta
 from tests.helpers.spec_fixtures import make_openapi_spec
 
@@ -249,48 +250,82 @@ class TestInjectInto:
 
 
 # ---------------------------------------------------------------------------
-# validate_extracted
+# extracted_schemas + validate_call (the registry's data half)
 # ---------------------------------------------------------------------------
 
 
-class TestValidateExtracted:
-    """Tests for validate_extracted — pre-executor virtual-param validation.
+def _validate_virtual(extracted: dict[str, Any]) -> None:
+    """Validate extracted virtual values through the public entry.
 
-    The registry schema is the single source for injection and validation;
-    only enum-bearing params (``format``/``detail``/``content_type``) are
-    constrained (#789).
+    The registry supplies the schemas as data (:func:`extracted_schemas`); the
+    policy is :func:`~gitea_mcp_server.validation.validate_call`.
+    """
+    validate_call(
+        {},
+        required=None,
+        properties=None,
+        virtual_values=extracted,
+        virtual_schemas=extracted_schemas(extracted),
+    )
+
+
+class TestExtractedSchemas:
+    """Tests for extracted_schemas — the registry's schema data supplier.
+
+    The sibling of ``inert_params``: the registry exposes data, the validation
+    facility applies policy.  Replaces the retired ``validate_extracted`` (#790).
+    """
+
+    def test_returns_registry_schemas_for_known_keys(self) -> None:
+        schemas = extracted_schemas({"format": "json", "detail": "concise"})
+        assert set(schemas) == {"format", "detail"}
+        assert "json" in schemas["format"]["enum"]
+        assert "concise" in schemas["detail"]["enum"]
+
+    def test_omits_non_registry_keys(self) -> None:
+        """Pipeline metadata (e.g. ``_raw_schema``) has no registry entry."""
+        schemas = extracted_schemas({"_raw_schema": None, "not_a_virtual_param": "x"})
+        assert schemas == {}
+
+    def test_unknown_key_ignored_by_validation(self) -> None:
+        """A key with no registry schema is ignored defensively."""
+        _validate_virtual({"not_a_virtual_param": "x"})
+
+    def test_empty_noop(self) -> None:
+        _validate_virtual({})
+
+
+class TestValidateCallVirtualParams:
+    """Virtual-param validation through the public entry.
+
+    The registry schema is the single source for injection and validation; only
+    enum-bearing params (``format``/``detail``/``content_type``) are constrained
+    (#789).
     """
 
     def test_valid_values_pass(self) -> None:
-        validate_extracted({"format": "json", "detail": "concise", "content_type": "text"})
+        _validate_virtual({"format": "json", "detail": "concise", "content_type": "text"})
 
     def test_invalid_format_raises(self) -> None:
         with pytest.raises(ValidationError, match="format must be one of"):
-            validate_extracted({"format": "bogus"})
+            _validate_virtual({"format": "bogus"})
 
     def test_invalid_detail_raises(self) -> None:
         with pytest.raises(ValidationError, match="detail must be one of"):
-            validate_extracted({"detail": "bogus"})
+            _validate_virtual({"detail": "bogus"})
 
     def test_invalid_content_type_raises(self) -> None:
         with pytest.raises(ValidationError, match="content_type must be one of"):
-            validate_extracted({"content_type": "bogus"})
+            _validate_virtual({"content_type": "bogus"})
 
     def test_none_value_rejected(self) -> None:
         """An explicit null is not a declared value — rejected, not defaulted."""
         with pytest.raises(ValidationError, match="format must be one of"):
-            validate_extracted({"format": None})
+            _validate_virtual({"format": None})
 
     def test_params_without_enum_pass(self) -> None:
         """sudo/fetch_all declare no enum, so any value is a no-op."""
-        validate_extracted({"sudo": "alice", "fetch_all": True})
-
-    def test_unknown_key_ignored(self) -> None:
-        """Non-registry keys (pipeline metadata) are ignored defensively."""
-        validate_extracted({"not_a_virtual_param": "x"})
-
-    def test_empty_noop(self) -> None:
-        validate_extracted({})
+        _validate_virtual({"sudo": "alice", "fetch_all": True})
 
 
 # ---------------------------------------------------------------------------

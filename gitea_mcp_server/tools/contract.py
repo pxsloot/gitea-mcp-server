@@ -17,22 +17,30 @@ for both tool families:
        params are popped — an off-profile registry-name key (e.g.
        ``fetch_all`` on an autogen tool) stays in kwargs and is rejected as
        unknown rather than silently dropped.
-    2. ``validate_extracted(...)`` — validate each popped value against its
-       registry schema (enum) **before** the executor, so an invalid
-       ``format``/``detail``/``content_type`` never reaches the API (and a
-       write never runs before the error).  The registry schema is the single
-       source for injection and validation.
-    3. ``apply_pre_hooks(...)`` — run pre-hooks (may mutate kwargs, e.g.
-       content_type base64-encodes ``content``).
-    4. Resolve the MCP ``Context`` via
+    2. Resolve the MCP ``Context`` via
        :func:`~gitea_mcp_server.context_utils.resolve_current_context` —
        progress reporting and structured logging degrade to no-ops when no
        session is active, and a side-channel failure never aborts the call
        (best-effort observability).
+    3. ``validate_call(...)`` — the **single** argument-validation entry,
+       invoked exactly once, on the agent's raw input, **before** the
+       executor.  It validates the extracted virtual params against their
+       registry schemas **and** the real kwargs (missing required → unknown
+       keys → enum / ``SINGLE_VALIDATORS``).  One stage, one voice: the spine
+       emits the single ``"Validated <tool>"`` / ``"Validation failed for
+       <tool>"`` log and converts the validation layer's ``ValidationError``
+       to the agent-facing ``ValueError``.  The registry schema is the single
+       source for injection and validation.
+    4. ``apply_pre_hooks(...)`` — run pre-hooks (may mutate kwargs, e.g.
+       content_type base64-encodes ``content``).  Validation runs *before*
+       this point: a pre-hook must not be relied on to normalise or repair a
+       validated argument.
     5. Emit the progress **start** signal via
        :func:`~gitea_mcp_server.context_utils.safe_ctx_report_progress`.  The
        spine owns the MCP progress lifecycle (start before execution, terminal
-       after render); executors never report progress.
+       after render); executors never report progress.  A validation failure
+       emits **no** start signal — the spine does not claim work that never
+       began.
     6. ``executor(kwargs, extracted, ctx)`` — backend-specific execution.
        Executors return raw data only — an
        :class:`~gitea_mcp_server.tools.result_pipeline.ExecutionResult`
@@ -76,7 +84,11 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.tools.base import ToolResult  # noqa: TC002 - see module docstring
 
 from gitea_mcp_server.constants import DEFAULT_DETAIL, DEFAULT_PAGE_SIZE
-from gitea_mcp_server.context_utils import resolve_current_context, safe_ctx_report_progress
+from gitea_mcp_server.context_utils import (
+    resolve_current_context,
+    safe_ctx_info,
+    safe_ctx_report_progress,
+)
 from gitea_mcp_server.exceptions import ValidationError
 from gitea_mcp_server.registration import get_tool_registration
 from gitea_mcp_server.tools.result_pipeline import ExecutionResult, render
@@ -85,9 +97,10 @@ from gitea_mcp_server.tools.virtual_params import (
     apply_pre_hooks,
     apply_to,
     extract_from,
+    extracted_schemas,
     inert_params,
-    validate_extracted,
 )
+from gitea_mcp_server.validation import validate_call
 
 if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
@@ -163,12 +176,22 @@ def build_transform_fn(
     """Build the per-call :func:`transform_fn` closure for a tool.
 
     The returned callable receives ``**kwargs`` (the agent's arguments) and
-    runs the full agent-facing contract spine: extract virtual params, validate
-    them against their registry schemas, run pre-hooks, resolve the context,
-    emit the progress start signal, delegate to *executor*, render the raw
-    ``ExecutionResult`` through the single result pipeline, hand off to
-    :func:`apply_to` for post-hooks (sudo cleanup), then emit the progress
-    terminal signal on success.  The spine is the sole emitter of MCP progress.
+    runs the full agent-facing contract spine: extract virtual params, resolve
+    the context, validate the real kwargs and the virtual params through the
+    single validation entry, run pre-hooks, emit the progress start signal,
+    delegate to *executor*, render the raw ``ExecutionResult`` through the
+    single result pipeline, hand off to :func:`apply_to` for post-hooks (sudo
+    cleanup), then emit the progress terminal signal on success.  The spine is
+    the sole emitter of MCP progress and the sole caller of
+    :func:`~gitea_mcp_server.validation.validate_call`.
+
+    ``required`` / ``properties`` are captured once from the tool's
+    (post-injection) parameter schema when the closure is built — no per-call
+    lookup.
+
+    **Invariant.**  Argument validation runs on the agent's raw input, before
+    :func:`apply_pre_hooks`.  A pre-hook must not be relied on to normalise or
+    repair a validated argument.
 
     ``openapi_spec`` is captured by the closure and forwarded to
     :func:`render` — it enables root-list item summaries under
@@ -212,6 +235,14 @@ def build_transform_fn(
         wrapping path).
     """
 
+    # Capture the validation schema once, at build time, from the tool's
+    # post-injection parameter schema (injection runs in ``_wrap`` before this
+    # builder).  The per-call path holds no schema lookups; both executors read
+    # the same schema today, and now so does the one validation stage.
+    params = tool.parameters or {}
+    required = params.get("required")
+    properties = params.get("properties")
+
     async def transform_fn(**kwargs: Any) -> ToolResult:
         reg = registration if registration is not None else get_tool_registration(tool)
         if reg is None:
@@ -229,25 +260,46 @@ def build_transform_fn(
         # dropped.
         virtual_values = extract_from(kwargs, only=reg.virtual_params)
 
-        # Validate the popped values against their registry schemas (enum)
-        # *before* the executor: an invalid format/detail/content_type must be
-        # rejected here, not after the HTTP call (and never after a write has
-        # already run).  The registry schema is the single source for both
-        # injection and validation.  ValidationError is the validation layer's
-        # type; the agent-facing surface is a plain ValueError, matching the
-        # executors' boundary convention.
+        # Resolve the current MCP Context so progress reporting and
+        # structured logging work inside the pipeline — and so the validation
+        # stage can emit its single log line.
+        ctx = await resolve_current_context()
+
+        # One validation stage, one entry, before the executor: validate the
+        # real kwargs and the extracted virtual params against their schemas.
+        # An invalid format/detail/content_type or a missing/unknown/typed
+        # argument is rejected here — never after the HTTP call, and never
+        # after a write has already run.  ValidationError is the validation
+        # layer's type; the agent-facing surface is a plain ValueError, and
+        # this is the single conversion + log site (one voice, both tool
+        # families).  A failure emits no progress start — the spine does not
+        # claim work that never began.
         try:
-            validate_extracted(virtual_values)
+            validate_call(
+                kwargs,
+                required=required,
+                properties=properties,
+                virtual_values=virtual_values,
+                virtual_schemas=extracted_schemas(virtual_values),
+            )
         except ValidationError as e:
+            await safe_ctx_info(
+                ctx,
+                f"Validation failed for {tool.name}: {e}",
+                extra={"error": str(e)},
+            )
             raise ValueError(str(e)) from e
+        await safe_ctx_info(
+            ctx,
+            f"Validated {tool.name}",
+            extra={"arg_keys": list(kwargs.keys()), "valid": True},
+        )
 
         # Run pre-hooks.  Hooks may mutate kwargs (e.g. content_type
-        # base64-encodes ``content``).
+        # base64-encodes ``content``).  Validation already ran on the agent's
+        # raw input, before this point — a pre-hook must not be relied on to
+        # normalise or repair a validated argument.
         apply_pre_hooks(virtual_values, kwargs)
-
-        # Resolve the current MCP Context so progress reporting and
-        # structured logging work inside the pipeline.
-        ctx = await resolve_current_context()
 
         # Capture pagination state before the executor runs — page/limit are
         # real tool parameters (API query params for autogen, impl params for

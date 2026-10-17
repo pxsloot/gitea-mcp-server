@@ -754,8 +754,9 @@ def augment_schema_with_validation(component: OpenAPITool) -> None:
 # both tool families.  The entry validates the extracted virtual params against
 # their registry schemas (supplied as data by
 # ``virtual_params.extracted_schemas``) and then the real kwargs.  The private
-# primitives below stay internal; only :func:`validate_call` crosses the module
-# boundary (``test_private_imports`` forbids importing the underscore names).
+# primitives below stay internal (``test_private_imports`` forbids importing the
+# underscore names across a boundary); the contract spine reaches the stage
+# through the public :func:`validate_call`.
 
 
 def _param_is_boolean(properties: dict[str, Any] | None, name: str) -> bool:

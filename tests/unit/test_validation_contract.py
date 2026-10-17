@@ -10,7 +10,7 @@ the concern.  It is AST-based (robust to whitespace and comments) and walks the
 filesystem-discovered production module set, so the checked set cannot drift
 from a hand-maintained list.
 
-Blind spots (aliasing, dynamic dispatch, and a direct call to a private
+Blind spots (aliasing, dynamic dispatch, and a direct call to a lower-level
 primitive such as ``validate_enum`` or a ``SINGLE_VALIDATORS`` entry) are out of
 scope — this is a reintroduction deny-list on the public entry, not taint
 analysis.  The same residual shape is documented on
